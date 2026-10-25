@@ -44,4 +44,4 @@ jobs:
 
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
-        run: python forex_alert.py
+        run: python Forex_alert.py
