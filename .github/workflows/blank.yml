@@ -1,0 +1,47 @@
+
+
+name: Forex Alert Bot
+
+on:
+
+  workflow_dispatch:
+
+  schedule:
+
+    - cron: "*/5 * * * 1-5"
+
+jobs:
+
+  run-bot:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Get bot code
+
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+
+        uses: actions/setup-python@v5
+
+        with:
+
+          python-version: "3.12"
+
+      - name: Install dependencies
+
+        run: |
+
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Run forex alert bot
+
+        env:
+
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+        run: python forex_alert.py
