@@ -3,7 +3,7 @@
 name: Forex Alert Bot
 
 on:
-
+  push
   workflow_dispatch:
 
   schedule:
