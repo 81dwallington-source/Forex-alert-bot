@@ -111,11 +111,15 @@ def get_candles(pair, interval):
         raise ValueError("Not enough candles")
 
     # Exclude the latest candle because it may still be forming.
-latest age= datetime.now(timezone.utc).timestamp() - timestamps[-1]
-max_age= 180 if interval == "1m" else 600
-est_age > max_age:
-ise ValueError("Market data is stale - no signal allowed")
-    return candles[:-1]
+        latest_age = datetime.now(timezone.utc).timestamp() - timestamps[-1]
+
+        max_age = 180 if interval == "1m" else 600
+
+        if latest_age > max_age:
+
+            raise ValueError("Market data is stale - no signal allowed")
+
+        return candles[:-1]
 
 def ema(values, period):
 
