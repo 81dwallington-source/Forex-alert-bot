@@ -4,6 +4,478 @@ import os
 
 import time
 
+import requests
+
+from datetime import datetime, timezone
+
+# ============================================================
+
+# FOREX ALERT BOT - QUALITY FILTERED M5 VERSION
+
+# Signals only. Does not place trades.
+
+# Data: Yahoo Finance; broker prices/spread are not verified.
+
+# ============================================================
+
+BOT_TOKEN = (
+
+    os.getenv("TELEGRAM_BOT_TOKEN")
+
+    or os.getenv("BOT_TOKEN")
+
+)
+
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID") or os.getenv("CHAT_ID")
+
+MIN_RR = 1.5
+
+MAX_CANDLE_AGE_MINUTES = 10
+
+REQUEST_TIMEOUT = 15
+
+PAIRS = [
+
+    "EURUSD", "GBPUSD", "USDJPY", "USDCHF",
+
+    "USDCAD", "AUDUSD", "NZDUSD",
+
+    "EURGBP", "EURJPY", "EURCHF", "EURCAD",
+
+    "EURAUD", "EURNZD",
+
+    "GBPJPY", "GBPCHF", "GBPCAD", "GBPAUD", "GBPNZD",
+
+    "CHFJPY", "CADJPY", "AUDJPY", "NZDJPY",
+
+    "CADCHF", "AUDCHF", "NZDCHF",
+
+    "AUDCAD", "NZDCAD", "AUDNZD"
+
+]
+
+SESSION = requests.Session()
+
+SESSION.headers.update({"User-Agent": "Mozilla/5.0"})
+
+def log(message):
+
+    print(f"[{datetime.now(timezone.utc).isoformat()}] {message}")
+
+def yahoo_candles(pair, interval, period="5d"):
+
+    """Download candles and discard the currently forming candle."""
+
+    symbol = pair + "=X"
+
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+
+    response = SESSION.get(
+
+        url,
+
+        params={"range": period, "interval": interval},
+
+        timeout=REQUEST_TIMEOUT,
+
+    )
+
+    response.raise_for_status()
+
+    result = response.json()["chart"]["result"]
+
+    if not result:
+
+        raise ValueError("No chart data returned")
+
+    chart = result[0]
+
+    timestamps = chart.get("timestamp") or []
+
+    quote = chart["indicators"]["quote"][0]
+
+    candles = []
+
+    seconds = {"5m": 300, "15m": 900, "60m": 3600}[interval]
+
+    now = time.time()
+
+    for i, stamp in enumerate(timestamps):
+
+        values = [
+
+            quote[field][i]
+
+            for field in ("open", "high", "low", "close")
+
+        ]
+
+        if any(v is None for v in values):
+
+            continue
+
+        # Only use candles that should have fully closed.
+
+        if stamp + seconds > now:
+
+            continue
+
+        o, h, low, close = map(float, values)
+
+        if min(o, h, low, close) <= 0 or h < low:
+
+            continue
+
+        candles.append({
+
+            "time": int(stamp),
+
+            "open": o,
+
+            "high": h,
+
+            "low": low,
+
+            "close": close,
+
+        })
+
+    if len(candles) < 60:
+
+        raise ValueError(f"Insufficient {interval} candles")
+
+    age = now - (candles[-1]["time"] + seconds)
+
+    if age > MAX_CANDLE_AGE_MINUTES * 60:
+
+        raise ValueError(
+
+            f"Stale {interval} candles: latest closed candle "
+
+            f"is {age / 60:.1f} minutes old"
+
+        )
+
+    return candles
+
+def ema(values, period):
+
+    if len(values) < period:
+
+        raise ValueError("Not enough values for EMA")
+
+    alpha = 2.0 / (period + 1)
+
+    result = [sum(values[:period]) / period]
+
+    for value in values[period:]:
+
+        result.append(alpha * value + (1 - alpha) * result[-1])
+
+    return [None] * (period - 1) + result
+
+def atr(candles, period=14):
+
+    ranges = []
+
+    for i in range(1, len(candles)):
+
+        current = candles[i]
+
+        previous_close = candles[i - 1]["close"]
+
+        ranges.append(max(
+
+            current["high"] - current["low"],
+
+            abs(current["high"] - previous_close),
+
+            abs(current["low"] - previous_close),
+
+        ))
+
+    if len(ranges) < period:
+
+        raise ValueError("Not enough candles for ATR")
+
+    return sum(ranges[-period:]) / period
+
+def aligned_trend(candles, direction):
+
+    closes = [c["close"] for c in candles]
+
+    fast = ema(closes, 20)
+
+    slow = ema(closes, 50)
+
+    if fast[-1] is None or slow[-1] is None:
+
+        return False
+
+    if direction == "BUY":
+
+        return fast[-1] > slow[-1] and closes[-1] > fast[-1]
+
+    return fast[-1] < slow[-1] and closes[-1] < fast[-1]
+
+def find_setup(pair):
+
+    m5 = yahoo_candles(pair, "5m")
+
+    m15 = yahoo_candles(pair, "15m")
+
+    h1 = yahoo_candles(pair, "60m", "10d")
+
+    closes = [c["close"] for c in m5]
+
+    fast = ema(closes, 9)
+
+    slow = ema(closes, 21)
+
+    trend = ema(closes, 50)
+
+    i = len(m5) - 1
+
+    # Require a fresh EMA crossover on the latest closed M5 candle.
+
+    crossed_up = (
+
+        fast[i - 1] <= slow[i - 1]
+
+        and fast[i] > slow[i]
+
+    )
+
+    crossed_down = (
+
+        fast[i - 1] >= slow[i - 1]
+
+        and fast[i] < slow[i]
+
+    )
+
+    if crossed_up:
+
+        direction = "BUY"
+
+    elif crossed_down:
+
+        direction = "SELL"
+
+    else:
+
+        return None
+
+    close = closes[-1]
+
+    # Require M5 trend and both higher-timeframe trends to agree.
+
+    if direction == "BUY":
+
+        if close <= trend[-1]:
+
+            return None
+
+    else:
+
+        if close >= trend[-1]:
+
+            return None
+
+    if not aligned_trend(m15, direction):
+
+        return None
+
+    if not aligned_trend(h1, direction):
+
+        return None
+
+    volatility = atr(m5)
+
+    if volatility <= 0:
+
+        return None
+
+    # Structural stop beyond the recent five-candle swing,
+
+    # with an additional volatility buffer.
+
+    recent = m5[-6:-1]
+
+    buffer = volatility * 0.25
+
+    if direction == "BUY":
+
+        sl = min(c["low"] for c in recent) - buffer
+
+        risk = close - sl
+
+        tp = close + MIN_RR * risk
+
+    else:
+
+        sl = max(c["high"] for c in recent) + buffer
+
+        risk = sl - close
+
+        tp = close - MIN_RR * risk
+
+    if risk <= 0 or tp <= 0:
+
+        return None
+
+    # Reject stops that are extremely wide relative to volatility.
+
+    if risk > 3.0 * volatility:
+
+        return None
+
+    rr = abs(tp - close) / risk
+
+    if rr < MIN_RR:
+
+        return None
+
+    return {
+
+        "pair": pair,
+
+        "direction": direction,
+
+        "entry": close,
+
+        "sl": sl,
+
+        "tp": tp,
+
+        "rr": rr,
+
+        "candle_time": m5[-1]["time"],
+
+        "atr": volatility,
+
+    }
+
+def format_price(value):
+
+    return f"{value:.5f}"
+
+def send_telegram(message):
+
+    if not BOT_TOKEN or not CHAT_ID:
+
+        raise RuntimeError(
+
+            "Telegram secrets missing. Check GitHub Actions secrets."
+
+        )
+
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+
+    response = SESSION.post(
+
+        url,
+
+        json={"chat_id": CHAT_ID, "text": message},
+
+        timeout=REQUEST_TIMEOUT,
+
+    )
+
+    response.raise_for_status()
+
+    if not response.json().get("ok"):
+
+        raise RuntimeError("Telegram rejected the message")
+
+def main():
+
+    if not BOT_TOKEN or not CHAT_ID:
+
+        raise RuntimeError("Telegram token/chat ID not configured")
+
+    log("Starting M5 quality-filtered scan")
+
+    signals = 0
+
+    errors = 0
+
+    for pair in PAIRS:
+
+        try:
+
+            setup = find_setup(pair)
+
+            if not setup:
+
+                continue
+
+            candle_time = datetime.fromtimestamp(
+
+                setup["candle_time"], timezone.utc
+
+            ).strftime("%Y-%m-%d %H:%M UTC")
+
+            message = (
+
+                "FOREX SETUP - 5m\n"
+
+                f"Pair: {setup['pair'][:3]}/{setup['pair'][3:]}\n"
+
+                f"Direction: {setup['direction']}\n"
+
+                f"Entry reference: {format_price(setup['entry'])}\n"
+
+                f"Stop-loss: {format_price(setup['sl'])}\n"
+
+                f"Take-profit: {format_price(setup['tp'])}\n"
+
+                f"Planned risk/reward: 1:{setup['rr']:.2f}\n"
+
+                "5m trigger: fresh EMA 9/21 crossover\n"
+
+                "15m confirmation: aligned EMA 20/50 trend\n"
+
+                "1h trend: aligned EMA 20/50 trend\n"
+
+                f"Closed candle: {candle_time}\n"
+
+                "Data source: Yahoo Finance, not broker-verified.\n"
+
+                "Check Pepperstone MT4 price and spread before entry. "
+
+                "No trade is guaranteed."
+
+            )
+
+            send_telegram(message)
+
+            signals += 1
+
+            log(f"Signal sent: {pair} {setup['direction']}")
+
+        except Exception as exc:
+
+            errors += 1
+
+            log(f"{pair}: skipped - {exc}")
+
+    log(
+
+        f"Scan complete. Signals sent: {signals}. "
+
+        f"Pairs skipped/errors: {errors}."
+
+    )
+
+if __name__ == "__main__":
+
+    main()
+
+import os
+
+import time
+
 from datetime import datetime, timezone
 
 import requests
