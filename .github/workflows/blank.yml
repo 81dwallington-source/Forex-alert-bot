@@ -52,6 +52,10 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if [ -f signals_state.json ]; then git add -f signals_state.json; fi
           if [ -f signal_log.csv ]; then git add -f signal_log.csv; fi
+          if [ -f signal_log_legacy.csv ]; then git add -f signal_log_legacy.csv; fi
+          for file in signal_log_legacy_*.csv; do
+            if [ -f "$file" ]; then git add -f "$file"; fi
+          done
           if git diff --cached --quiet; then
             echo "No signal history changes to commit"
             exit 0
