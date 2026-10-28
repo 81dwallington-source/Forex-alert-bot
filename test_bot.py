@@ -15,6 +15,10 @@ class ForexBotRegressionTests(unittest.TestCase):
     def test_entry_timeframe_is_five_minutes(self):
         self.assertEqual(bot.TIMEFRAME, "5m")
 
+    def test_conservative_daily_alert_limits_are_enabled(self):
+        self.assertEqual(bot.MAX_ALERTS_PER_UTC_DAY, 3)
+        self.assertTrue(bot.MAX_ONE_ALERT_PER_PAIR_PER_UTC_DAY)
+
     def test_trend_direction_buy_sell_and_unclear(self):
         self.assertEqual(
             bot.trend_direction(pd.DataFrame([{"EMA20": 1.2, "EMA50": 1.1}])),
