@@ -580,10 +580,24 @@ def update_signal_outcomes():
     try:
         with LOG_FILE.open("r", newline="", encoding="utf-8") as file:
             reader = csv.DictReader(file)
-            if reader.fieldnames != fieldnames:
-                log("Outcome tracking skipped: signal log schema is not the expected version.")
-                return
+            old_fieldnames = reader.fieldnames or []
             rows = list(reader)
+        if old_fieldnames != fieldnames:
+            # Upgrade history before outcome checks, even on scans with no new alerts.
+            for row in rows:
+                for field in fieldnames:
+                    row.setdefault(field, "")
+                if not row.get("evidence_note"):
+                    row["evidence_note"] = "Historical alert; detailed indicator snapshot was not captured by the older bot version."
+                if not row.get("outcome_evidence") and row.get("outcome"):
+                    row["outcome_evidence"] = "Historical outcome label; original candle evidence was not stored."
+            temp_file = LOG_FILE.with_suffix(".upgrade.tmp")
+            with temp_file.open("w", newline="", encoding="utf-8") as upgraded:
+                writer = csv.DictWriter(upgraded, fieldnames=fieldnames, extrasaction="ignore")
+                writer.writeheader()
+                writer.writerows(rows)
+            temp_file.replace(LOG_FILE)
+            log(f"Upgraded signal log schema for outcome tracking; preserved {len(rows)} historical rows")
     except Exception as exc:
         log(f"Outcome tracking could not read signal log: {exc}")
         return
