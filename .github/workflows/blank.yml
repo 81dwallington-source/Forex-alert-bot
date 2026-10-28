@@ -41,6 +41,9 @@ jobs:
           python -m pip install -r requirements.txt
           python -c "import requests, pandas, yfinance; print('All dependencies installed successfully')"
 
+      - name: Run offline regression tests
+        run: python -m unittest -v test_bot.py
+
       - name: Run forex alert bot
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
