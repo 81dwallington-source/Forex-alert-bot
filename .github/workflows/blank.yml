@@ -1,6 +1,12 @@
 name: Forex Alert Bot
 
 on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "signals_state.json"
+      - "signal_log.csv"
+      - "signal_log_legacy*.csv"
   workflow_dispatch:
   schedule:
     - cron: "*/5 * * * 1-5"
