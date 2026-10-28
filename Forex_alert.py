@@ -152,17 +152,36 @@ def save_state(state):
 
 def log_signal(row):
 
+    # Keep a stable CSV schema. Earlier bot versions used different columns,
+    # so preserve the old file and start a clean log rather than misaligning rows.
+    fieldnames = [
+        "timestamp_utc", "pair", "direction", "entry_reference", "stop_loss",
+        "take_profit", "planned_rr", "rsi", "score", "candle_time",
+        "data_source", "outcome",
+    ]
+
+    if LOG_FILE.exists():
+        try:
+            with LOG_FILE.open("r", newline="", encoding="utf-8") as existing:
+                header = next(csv.reader(existing), [])
+            if header != fieldnames:
+                legacy_file = Path("signal_log_legacy.csv")
+                if legacy_file.exists():
+                    legacy_file = Path(
+                        f"signal_log_legacy_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.csv"
+                    )
+                LOG_FILE.replace(legacy_file)
+                log(f"Previous log schema preserved as {legacy_file}")
+        except Exception as exc:
+            log(f"Existing signal log could not be checked: {exc}")
+            raise
+
     exists = LOG_FILE.exists()
-
     with LOG_FILE.open("a", newline="", encoding="utf-8") as file:
-
-        writer = csv.DictWriter(file, fieldnames=list(row.keys()))
-
+        writer = csv.DictWriter(file, fieldnames=fieldnames, extrasaction="ignore")
         if not exists:
-
             writer.writeheader()
-
-        writer.writerow(row)
+        writer.writerow({key: row.get(key, "") for key in fieldnames})
 
 def download_data(ticker, interval, period):
 
