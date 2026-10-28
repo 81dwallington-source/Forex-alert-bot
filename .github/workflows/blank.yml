@@ -1,6 +1,8 @@
 name: Forex Alert Bot
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
   schedule:
     - cron: "*/5 * * * 1-5"
