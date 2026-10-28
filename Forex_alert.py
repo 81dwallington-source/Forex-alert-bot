@@ -1,24 +1,16 @@
 
 
-"""
-
-Selective Forex Telegram Alert Bot
-
-M5 entries with M15/H1 confirmation. Alerts only; never places trades.
-
-Yahoo Finance data is not broker-verified.
-
-"""
-
 import os
 
 import json
 
-import logging
+import csv
 
-from pathlib import Path
+import time
 
 from datetime import datetime, timezone
+
+from pathlib import Path
 
 import requests
 
@@ -26,77 +18,113 @@ import pandas as pd
 
 import yfinance as yf
 
+# =========================================================
+
+# FOREX ALERT BOT — M5 ENTRIES, M15 + H1 CONFIRMATION
+
+# Alerts only. No automatic trading.
+
+# Data source: Yahoo Finance, NOT broker-verified.
+
+# =========================================================
+
+BOT_NAME = "Forex Alert Bot"
+
+DATA_SOURCE = "Yahoo Finance (not broker-verified)"
+
+TIMEFRAME = "5m"
+
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+
 PAIRS = [
 
-    "EURUSD=X", "GBPUSD=X", "USDJPY=X", "USDCHF=X", "USDCAD=X",
+    "EURUSD=X", "GBPUSD=X", "USDJPY=X", "USDCHF=X",
 
-    "AUDUSD=X", "NZDUSD=X", "EURGBP=X", "EURJPY=X", "EURCHF=X",
+    "USDCAD=X", "AUDUSD=X", "NZDUSD=X",
 
-    "EURCAD=X", "EURAUD=X", "EURNZD=X", "GBPJPY=X", "GBPCHF=X",
+    "EURGBP=X", "EURJPY=X", "EURCHF=X", "EURAUD=X",
 
-    "GBPCAD=X", "GBPAUD=X", "GBPNZD=X", "CHFJPY=X", "CADJPY=X",
+    "EURCAD=X", "EURNZD=X",
 
-    "AUDJPY=X", "NZDJPY=X", "CADCHF=X", "AUDCAD=X", "AUDCHF=X",
+    "GBPJPY=X", "GBPCHF=X", "GBPAUD=X", "GBPCAD=X",
 
-    "AUDNZD=X", "NZDCAD=X", "NZDCHF=X",
+    "GBPNZD=X",
+
+    "AUDJPY=X", "AUDCHF=X", "AUDCAD=X", "AUDNZD=X",
+
+    "NZDJPY=X", "NZDCHF=X", "NZDCAD=X",
+
+    "CADJPY=X", "CHFJPY=X",
 
 ]
 
 MIN_RR = 1.5
 
-MAX_M5_AGE_MINUTES = 15
+ATR_STOP_MULTIPLIER = 1.2
+
+MIN_ATR_PERCENT = 0.015
+
+MAX_ATR_PERCENT = 0.60
 
 MAX_CANDLE_ATR = 1.8
 
-MIN_ATR_FRACTION = 0.00008
-
-MAX_ATR_FRACTION = 0.004
-
-MIN_SIGNAL_SCORE = 5
+MIN_SCORE = 5
 
 STATE_FILE = Path("signals_state.json")
 
 LOG_FILE = Path("signal_log.csv")
 
-BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("BOT_TOKEN")
+def log(message):
 
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID") or os.getenv("CHAT_ID")
+    print(f"[{datetime.now(timezone.utc).isoformat()}] {message}",
 
-logging.basicConfig(
+          flush=True)
 
-    level=logging.INFO,
+def telegram_send(message):
 
-    format="%(asctime)s %(levelname)s %(message)s",
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
 
-)
-
-def telegram(message):
-
-    if not BOT_TOKEN or not CHAT_ID:
-
-        logging.error("Missing Telegram bot token or chat ID.")
+        log("Telegram secrets missing. Check repository Actions secrets.")
 
         return False
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
 
     try:
 
         response = requests.post(
 
-            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+            url,
 
-            json={"chat_id": CHAT_ID, "text": message},
+            json={
 
-            timeout=15,
+                "chat_id": TELEGRAM_CHAT_ID,
+
+                "text": message,
+
+                "disable_web_page_preview": True,
+
+            },
+
+            timeout=20,
 
         )
 
         response.raise_for_status()
 
-        return bool(response.json().get("ok"))
+        if not response.json().get("ok"):
+
+            log("Telegram API rejected the message.")
+
+            return False
+
+        return True
 
     except Exception as exc:
 
-        logging.error("Telegram send failed: %s", exc)
+        log(f"Telegram send error: {exc}")
 
         return False
 
@@ -104,135 +132,149 @@ def load_state():
 
     try:
 
-        data = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+        if STATE_FILE.exists():
 
-        if isinstance(data, dict):
+            with STATE_FILE.open("r", encoding="utf-8") as file:
 
-            data.setdefault("sent", [])
-
-            data.setdefault("open_estimates", [])
-
-            return data
-
-    except (OSError, ValueError):
-
-        pass
-
-    return {"sent": [], "open_estimates": []}
-
-def save_state(state):
-
-    STATE_FILE.write_text(
-
-        json.dumps(state, indent=2),
-
-        encoding="utf-8",
-
-    )
-
-def download_candles(symbol, interval, period):
-
-    try:
-
-        df = yf.download(
-
-            symbol,
-
-            period=period,
-
-            interval=interval,
-
-            auto_adjust=False,
-
-            progress=False,
-
-            threads=False,
-
-            timeout=20,
-
-        )
+                return json.load(file)
 
     except Exception as exc:
 
-        logging.warning("%s %s download failed: %s", symbol, interval, exc)
+        log(f"State file could not be read: {exc}")
 
-        return None
+    return {}
 
-    if df is None or df.empty:
+def save_state(state):
 
-        return None
+    with STATE_FILE.open("w", encoding="utf-8") as file:
 
-    if isinstance(df.columns, pd.MultiIndex):
+        json.dump(state, file, indent=2)
 
-        df.columns = df.columns.get_level_values(0)
+def log_signal(row):
 
-    df = df.loc[:, ~df.columns.duplicated()]
+    exists = LOG_FILE.exists()
 
-    needed = ["Open", "High", "Low", "Close"]
+    with LOG_FILE.open("a", newline="", encoding="utf-8") as file:
 
-    if any(col not in df.columns for col in needed):
+        writer = csv.DictWriter(file, fieldnames=list(row.keys()))
 
-        return None
+        if not exists:
 
-    df = df[needed].dropna()
+            writer.writeheader()
 
-    df = df[~df.index.duplicated(keep="last")].sort_index()
+        writer.writerow(row)
 
-    if len(df) < 5:
+def download_data(ticker, interval, period):
 
-        return None
+    data = yf.download(
 
-    # Exclude the newest potentially unfinished candle.
+        ticker,
 
-    return df.iloc[:-1].copy()
+        interval=interval,
 
-def indicators(df):
+        period=period,
 
-    out = df.copy()
+        progress=False,
 
-    close = out["Close"]
+        auto_adjust=False,
 
-    out["ema9"] = close.ewm(span=9, adjust=False).mean()
+        threads=False,
 
-    out["ema20"] = close.ewm(span=20, adjust=False).mean()
+    )
 
-    out["ema21"] = close.ewm(span=21, adjust=False).mean()
+    if data is None or data.empty:
 
-    out["ema50"] = close.ewm(span=50, adjust=False).mean()
+        raise ValueError("No market data returned")
 
-    delta = close.diff()
+    if isinstance(data.columns, pd.MultiIndex):
 
-    gain = delta.clip(lower=0)
+        data.columns = data.columns.get_level_values(0)
 
-    loss = -delta.clip(upper=0)
+    required = ["Open", "High", "Low", "Close"]
 
-    avg_gain = gain.ewm(
+    if any(column not in data.columns for column in required):
 
-        alpha=1 / 14, min_periods=14, adjust=False
+        raise ValueError("Required OHLC columns missing")
 
-    ).mean()
+    data = data[required].copy()
 
-    avg_loss = loss.ewm(
+    data = data.dropna()
 
-        alpha=1 / 14, min_periods=14, adjust=False
+    data = data[~data.index.duplicated(keep="last")]
 
-    ).mean()
+    data = data.sort_index()
+
+    # Exclude the newest candle to avoid acting on an incomplete bar.
+
+    if len(data) < 60:
+
+        raise ValueError("Insufficient candle history")
+
+    data = data.iloc[:-1].copy()
+
+    if len(data) < 55:
+
+        raise ValueError("Insufficient completed candle history")
+
+    return data
+
+def candle_is_fresh(data, max_age_minutes):
+
+    last_time = data.index[-1]
+
+    if last_time.tzinfo is None:
+
+        last_time = last_time.tz_localize("UTC")
+
+    else:
+
+        last_time = last_time.tz_convert("UTC")
+
+    age_minutes = (
+
+        datetime.now(timezone.utc) - last_time.to_pydatetime()
+
+    ).total_seconds() / 60
+
+    return -1 <= age_minutes <= max_age_minutes, age_minutes
+
+def indicators(data):
+
+    df = data.copy()
+
+    df["EMA9"] = df["Close"].ewm(span=9, adjust=False).mean()
+
+    df["EMA21"] = df["Close"].ewm(span=21, adjust=False).mean()
+
+    df["EMA20"] = df["Close"].ewm(span=20, adjust=False).mean()
+
+    df["EMA50"] = df["Close"].ewm(span=50, adjust=False).mean()
+
+    change = df["Close"].diff()
+
+    gain = change.clip(lower=0)
+
+    loss = -change.clip(upper=0)
+
+    avg_gain = gain.ewm(alpha=1 / 14, min_periods=14, adjust=False).mean()
+
+    avg_loss = loss.ewm(alpha=1 / 14, min_periods=14, adjust=False).mean()
 
     rs = avg_gain / avg_loss.replace(0, float("nan"))
 
-    out["rsi"] = 100 - (100 / (1 + rs))
+    df["RSI"] = 100 - (100 / (1 + rs))
 
-    previous_close = close.shift(1)
+    previous_close = df["Close"].shift(1)
 
     true_range = pd.concat(
 
         [
 
-            out["High"] - out["Low"],
+            df["High"] - df["Low"],
 
-            (out["High"] - previous_close).abs(),
+            (df["High"] - previous_close).abs(),
 
-            (out["Low"] - previous_close).abs(),
+            (df["Low"] - previous_close).abs(),
 
         ],
 
@@ -240,453 +282,415 @@ def indicators(df):
 
     ).max(axis=1)
 
-    out["atr"] = true_range.ewm(
+    df["ATR"] = true_range.ewm(
 
-        alpha=1 / 14,
-
-        min_periods=14,
-
-        adjust=False,
+        alpha=1 / 14, min_periods=14, adjust=False
 
     ).mean()
 
-    return out.dropna()
+    return df.dropna()
 
-def get_trend(df):
+def trend_direction(data):
 
-    if df is None:
+    last = data.iloc[-1]
 
-        return None
-
-    ind = indicators(df)
-
-    if len(ind) < 55:
-
-        return None
-
-    row = ind.iloc[-1]
-
-    if row["ema20"] > row["ema50"] and row["Close"] > row["ema50"]:
+    if last["EMA20"] > last["EMA50"]:
 
         return "BUY"
 
-    if row["ema20"] < row["ema50"] and row["Close"] < row["ema50"]:
+    if last["EMA20"] < last["EMA50"]:
 
         return "SELL"
 
-    return None
+    return "NONE"
 
-def candle_age_minutes(timestamp):
+def analyse_pair(ticker):
 
-    ts = pd.Timestamp(timestamp)
+    m5 = indicators(download_data(ticker, "5m", "5d"))
 
-    if ts.tzinfo is None:
+    m15 = indicators(download_data(ticker, "15m", "5d"))
 
-        ts = ts.tz_localize("UTC")
+    h1 = indicators(download_data(ticker, "1h", "1mo"))
 
-    else:
+    fresh, age = candle_is_fresh(m5, 12)
 
-        ts = ts.tz_convert("UTC")
+    if not fresh:
 
-    candle_close = ts + pd.Timedelta(minutes=5)
+        return None, f"stale M5 data ({age:.1f} minutes old)"
 
-    return (
+    fresh15, age15 = candle_is_fresh(m15, 40)
 
-        pd.Timestamp.now(tz="UTC") - candle_close
+    fresh1h, age1h = candle_is_fresh(h1, 150)
 
-    ).total_seconds() / 60
+    if not fresh15 or not fresh1h:
 
-def evaluate_pair(symbol):
+        return None, "stale confirmation data"
 
-    m5_raw = download_candles(symbol, "5m", "5d")
-
-    m15_raw = download_candles(symbol, "15m", "10d")
-
-    h1_raw = download_candles(symbol, "60m", "30d")
-
-    if m5_raw is None or m15_raw is None or h1_raw is None:
-
-        return None, "insufficient data"
-
-    age = candle_age_minutes(m5_raw.index[-1])
-
-    if age < -1 or age > MAX_M5_AGE_MINUTES:
-
-        return None, "stale M5 data"
-
-    m5 = indicators(m5_raw)
-
-    if len(m5) < 55:
-
-        return None, "short M5 history"
-
-    m15_trend = get_trend(m15_raw)
-
-    h1_trend = get_trend(h1_raw)
-
-    if not m15_trend or not h1_trend or m15_trend != h1_trend:
-
-        return None, "M15/H1 not aligned"
-
-    direction = h1_trend
+    last = m5.iloc[-1]
 
     previous = m5.iloc[-2]
 
-    current = m5.iloc[-1]
+    close = float(last["Close"])
 
-    crossed_up = (
+    atr = float(last["ATR"])
 
-        previous["ema9"] <= previous["ema21"]
+    rsi = float(last["RSI"])
 
-        and current["ema9"] > current["ema21"]
-
-    )
-
-    crossed_down = (
-
-        previous["ema9"] >= previous["ema21"]
-
-        and current["ema9"] < current["ema21"]
-
-    )
-
-    # Entry trigger: fresh crossover OR confirmed trend pullback.
-
-    if direction == "BUY":
-
-        fresh_trigger = crossed_up
-
-        pullback_trigger = (
-
-            previous["Low"] <= previous["ema21"] * 1.0005
-
-            and current["Close"] > current["ema9"]
-
-            and current["Close"] > previous["High"]
-
-        )
-
-    else:
-
-        fresh_trigger = crossed_down
-
-        pullback_trigger = (
-
-            previous["High"] >= previous["ema21"] * 0.9995
-
-            and current["Close"] < current["ema9"]
-
-            and current["Close"] < previous["Low"]
-
-        )
-
-    if not (fresh_trigger or pullback_trigger):
-
-        return None, "no crossover or confirmed pullback"
-
-    entry = float(current["Close"])
-
-    atr = float(current["atr"])
-
-    rsi = float(current["rsi"])
-
-    candle_range = float(current["High"] - current["Low"])
-
-    if entry <= 0 or atr <= 0:
+    if close <= 0 or atr <= 0:
 
         return None, "invalid price or ATR"
 
-    atr_fraction = atr / entry
+    atr_percent = atr / close * 100
 
-    if not MIN_ATR_FRACTION <= atr_fraction <= MAX_ATR_FRACTION:
+    if not MIN_ATR_PERCENT <= atr_percent <= MAX_ATR_PERCENT:
 
-        return None, "volatility outside bounds"
+        return None, "volatility outside limits"
 
-    if candle_range > MAX_CANDLE_ATR * atr:
+    candle_range = float(last["High"] - last["Low"])
+
+    if candle_range > atr * MAX_CANDLE_ATR:
 
         return None, "oversized signal candle"
 
-    if direction == "BUY" and not 50 <= rsi <= 68:
+    m15_trend = trend_direction(m15)
 
-        return None, "buy RSI outside preferred range"
+    h1_trend = trend_direction(h1)
 
-    if direction == "SELL" and not 32 <= rsi <= 50:
+    if m15_trend == "NONE" or h1_trend == "NONE":
 
-        return None, "sell RSI outside preferred range"
+        return None, "unclear higher-timeframe trend"
+
+    if m15_trend != h1_trend:
+
+        return None, "M15/H1 trend mismatch"
+
+    direction = m15_trend
+
+    # Require a recent M5 EMA crossover, within the last 3
+
+    # completed candles, with M15 and H1 trend agreement.
+
+    recent = m5.iloc[-4:]
+
+    if direction == "BUY":
+
+        crossed = (
+
+            (recent["EMA9"].shift(1) <= recent["EMA21"].shift(1))
+
+            & (recent["EMA9"] > recent["EMA21"])
+
+        ).any()
+
+        if not crossed:
+
+            return None, "no fresh M5 bullish crossover"
+
+        if last["EMA9"] <= last["EMA21"]:
+
+            return None, "M5 momentum no longer bullish"
+
+        if not 50 <= rsi <= 68:
+
+            return None, "RSI outside buy range"
+
+        if close <= float(last["EMA21"]):
+
+            return None, "price not holding above EMA21"
+
+    else:
+
+        crossed = (
+
+            (recent["EMA9"].shift(1) >= recent["EMA21"].shift(1))
+
+            & (recent["EMA9"] < recent["EMA21"])
+
+        ).any()
+
+        if not crossed:
+
+            return None, "no fresh M5 bearish crossover"
+
+        if last["EMA9"] >= last["EMA21"]:
+
+            return None, "M5 momentum no longer bearish"
+
+        if not 32 <= rsi <= 50:
+
+            return None, "RSI outside sell range"
+
+        if close >= float(last["EMA21"]):
+
+            return None, "price not holding below EMA21"
+
+    # Simple quality score. A high score is a filter, not
+
+    # proof that the trade has a high probability of winning.
 
     score = 0
 
-    reasons = []
+    if m15_trend == direction:
 
-    score += 1
+        score += 2
 
-    reasons.append("M15 trend aligned")
+    if h1_trend == direction:
 
-    score += 1
+        score += 2
 
-    reasons.append("H1 trend aligned")
+    if (direction == "BUY" and last["EMA9"] > last["EMA21"]) or (
 
-    if (
-
-        direction == "BUY" and current["Close"] > current["ema50"]
-
-    ) or (
-
-        direction == "SELL" and current["Close"] < current["ema50"]
+        direction == "SELL" and last["EMA9"] < last["EMA21"]
 
     ):
 
         score += 1
 
-        reasons.append("M5 trend aligned")
+    if (direction == "BUY" and 52 <= rsi <= 65) or (
 
-    momentum_ok = (
+        direction == "SELL" and 35 <= rsi <= 48
 
-        53 <= rsi <= 64
-
-        if direction == "BUY"
-
-        else 36 <= rsi <= 47
-
-    )
-
-    if momentum_ok:
+    ):
 
         score += 1
 
-        reasons.append("momentum supportive")
+    if score < MIN_SCORE:
 
-    if pullback_trigger:
+        return None, "quality score too low"
 
-        score += 1
+    # ATR-based stop and 1:1.5 minimum reward-to-risk.
 
-        reasons.append("confirmed pullback")
-
-    if fresh_trigger:
-
-        score += 1
-
-        reasons.append("fresh EMA crossover")
-
-    if score < MIN_SIGNAL_SCORE:
-
-        return None, f"quality score {score}/{MIN_SIGNAL_SCORE}"
-
-    recent = m5.tail(6)
+    stop_distance = atr * ATR_STOP_MULTIPLIER
 
     if direction == "BUY":
 
-        swing_low = float(recent["Low"].min())
+        stop = close - stop_distance
 
-        stop = min(entry - 1.2 * atr, swing_low - 0.1 * atr)
-
-        risk = entry - stop
-
-        target = entry + MIN_RR * risk
+        target = close + stop_distance * MIN_RR
 
     else:
 
-        swing_high = float(recent["High"].max())
+        stop = close + stop_distance
 
-        stop = max(entry + 1.2 * atr, swing_high + 0.1 * atr)
+        target = close - stop_distance * MIN_RR
 
-        risk = stop - entry
+    # Forex quote precision: JPY pairs usually use 3 decimals.
 
-        target = entry - MIN_RR * risk
+    pair = ticker.replace("=X", "")
 
-    if risk <= 0 or target <= 0:
-
-        return None, "invalid risk levels"
-
-    candle_time = str(m5.index[-1])
-
-    signal_id = f"{symbol}|{direction}|{candle_time}"
+    decimals = 3 if pair.endswith("JPY") else 5
 
     return {
 
-        "id": signal_id,
+        "ticker": ticker,
 
-        "pair": symbol.replace("=X", ""),
+        "pair": pair[:3] + "/" + pair[3:],
 
         "direction": direction,
 
-        "entry": entry,
+        "entry": round(close, decimals),
 
-        "stop": stop,
+        "stop": round(stop, decimals),
 
-        "target": target,
+        "target": round(target, decimals),
 
-        "rr": round(abs(target - entry) / risk, 2),
+        "rr": MIN_RR,
 
         "rsi": round(rsi, 1),
 
         "score": score,
 
-        "reasons": reasons,
+        "candle_time": str(m5.index[-1]),
 
-        "candle_time": candle_time,
+        "atr": round(atr, decimals),
 
-    }, "qualified"
-
-def log_signal(signal):
-
-    row = {
-
-        "signal_id": signal["id"],
-
-        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-
-        "pair": signal["pair"],
-
-        "direction": signal["direction"],
-
-        "entry_reference": signal["entry"],
-
-        "stop_loss_estimate": signal["stop"],
-
-        "take_profit_estimate": signal["target"],
-
-        "planned_rr": signal["rr"],
-
-        "score": signal["score"],
-
-        "status": "ESTIMATE_ONLY",
-
-        "outcome": "UNVERIFIED",
-
-    }
-
-    pd.DataFrame([row]).to_csv(
-
-        LOG_FILE,
-
-        mode="a",
-
-        header=not LOG_FILE.exists(),
-
-        index=False,
-
-    )
-
-def format_alert(signal):
-
-    return (
-
-        "FOREX SETUP — M5 (ESTIMATED LEVELS)\n\n"
-
-        f"Pair: {signal['pair']}\n"
-
-        f"Direction: {signal['direction']}\n"
-
-        f"Entry reference: {signal['entry']:.5f}\n"
-
-        f"Stop-loss estimate: {signal['stop']:.5f}\n"
-
-        f"Take-profit estimate: {signal['target']:.5f}\n"
-
-        f"Planned R:R: 1:{signal['rr']:.2f}\n"
-
-        f"Quality score: {signal['score']}/6\n"
-
-        f"RSI: {signal['rsi']}\n"
-
-        f"Closed M5 candle: {signal['candle_time']}\n"
-
-        f"Reasons: {', '.join(signal['reasons'])}\n\n"
-
-        "Yahoo data is not broker-verified. Check broker price, spread "
-
-        "and execution before considering entry. Alert only; no auto-trading."
-
-    )
+    }, "qualifies"
 
 def main():
 
+    log("Starting forex scan")
+
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+
+        raise RuntimeError(
+
+            "Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID GitHub secret"
+
+        )
+
     state = load_state()
-
-    sent = set(state.get("sent", []))
-
-    counts = {}
 
     checked = 0
 
-    qualifying = 0
+    sent = 0
 
-    alerts_sent = 0
+    errors = 0
 
-    for symbol in PAIRS:
+    rejected = {}
+
+    for ticker in PAIRS:
 
         checked += 1
 
         try:
 
-            signal, reason = evaluate_pair(symbol)
-
-            counts[reason] = counts.get(reason, 0) + 1
+            signal, reason = analyse_pair(ticker)
 
             if signal is None:
 
-                continue
+                rejected[reason] = rejected.get(reason, 0) + 1
 
-            qualifying += 1
-
-            if signal["id"] in sent:
-
-                counts["duplicate skipped"] = (
-
-                    counts.get("duplicate skipped", 0) + 1
-
-                )
+                log(f"{ticker}: rejected — {reason}")
 
                 continue
 
-            if telegram(format_alert(signal)):
+            # One alert per pair/direction/completed candle.
 
-                sent.add(signal["id"])
+            key = (
 
-                state["sent"] = list(sent)[-1000:]
+                f"{signal['ticker']}|{signal['direction']}|"
 
-                state.setdefault("open_estimates", []).append(signal)
+                f"{signal['candle_time']}"
 
-                state["open_estimates"] = state["open_estimates"][-200:]
+            )
+
+            if state.get(key):
+
+                log(f"{ticker}: duplicate skipped")
+
+                continue
+
+            message = (
+
+                f"FOREX SETUP — M5\n"
+
+                f"Pair: {signal['pair']}\n"
+
+                f"Direction: {signal['direction']}\n"
+
+                f"Entry reference: {signal['entry']}\n"
+
+                f"Stop-loss: {signal['stop']}\n"
+
+                f"Take-profit: {signal['target']}\n"
+
+                f"Planned risk/reward: 1:{signal['rr']:.2f}\n"
+
+                f"RSI: {signal['rsi']}\n"
+
+                f"Quality filter score: {signal['score']}/6\n"
+
+                f"M15/H1 trend: aligned\n"
+
+                f"Trigger: recent completed M5 EMA 9/21 crossover\n"
+
+                f"Candle time: {signal['candle_time']}\n"
+
+                f"Data: {DATA_SOURCE}\n\n"
+
+                f"Alert only — verify price and spread with your broker "
+
+                f"before considering any trade. Entry is a reference, "
+
+                f"not a guaranteed fill. Risk is not guaranteed."
+
+            )
+
+            if telegram_send(message):
+
+                state[key] = True
 
                 save_state(state)
 
-                log_signal(signal)
+                log_signal({
 
-                alerts_sent += 1
+                    "timestamp_utc": datetime.now(timezone.utc).isoformat(),
 
-        except Exception:
+                    "pair": signal["pair"],
 
-            logging.exception("Analysis error for %s", symbol)
+                    "direction": signal["direction"],
 
-            counts["analysis error"] = counts.get("analysis error", 0) + 1
+                    "entry_reference": signal["entry"],
 
-    summary = [
+                    "stop_loss": signal["stop"],
 
-        "Forex scan complete.",
+                    "take_profit": signal["target"],
 
-        f"Pairs checked: {checked}",
+                    "planned_rr": signal["rr"],
 
-        f"Qualifying setups: {qualifying}",
+                    "rsi": signal["rsi"],
 
-        f"Qualifying alerts sent: {alerts_sent}",
+                    "score": signal["score"],
 
-        "Data source: Yahoo Finance; not broker-verified.",
+                    "candle_time": signal["candle_time"],
 
-        "No signal is not a reason to force a trade.",
+                    "data_source": DATA_SOURCE,
 
-        "Rejections:",
+                    "outcome": "UNVERIFIED",
 
-    ]
+                })
 
-    for reason, number in sorted(counts.items()):
+                sent += 1
 
-        summary.append(f"- {reason}: {number}")
+                log(f"Alert sent: {signal['pair']} {signal['direction']}")
 
-    telegram("\n".join(summary))
+            else:
 
-    logging.info("\n".join(summary))
+                errors += 1
+
+        except Exception as exc:
+
+            errors += 1
+
+            log(f"{ticker}: analysis error — {type(exc).__name__}: {exc}")
+
+        # Avoid hammering the data service.
+
+        time.sleep(0.3)
+
+    summary = (
+
+        f"Forex scan complete.\n"
+
+        f"Pairs checked: {checked}\n"
+
+        f"Qualifying alerts sent: {sent}\n"
+
+        f"Data/analysis errors: {errors}\n"
+
+        f"Rejected setups:\n"
+
+    )
+
+    if rejected:
+
+        summary += "\n".join(
+
+            f"{reason}: {count}"
+
+            for reason, count in sorted(
+
+                rejected.items(), key=lambda item: item[1], reverse=True
+
+            )
+
+        )
+
+    else:
+
+        summary += "None"
+
+    summary += (
+
+        "\n\nData source: Yahoo Finance; not broker-verified.\n"
+
+        "No signal does not mean a trade should be forced."
+
+    )
+
+    log(summary)
+
+    telegram_send(summary)
 
 if __name__ == "__main__":
 
