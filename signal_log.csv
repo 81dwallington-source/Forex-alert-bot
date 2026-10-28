@@ -1,1 +1,4 @@
 id,created_utc,symbol,direction,entry,sl,tp,rr,signal_candle_utc,outcome,outcome_utc,outcome_candle_utc,outcome_detail,data_source
+2026-10-28T18:37:50.302832+00:00,EUR/CHF,BUY,0.92433,0.92358,0.92546,1.5,56.7,6,2026-10-28 18:30:00+00:00,Yahoo Finance (not broker-verified),UNVERIFIED
+2026-10-28T18:37:54.947643+00:00,GBP/CHF,BUY,1.10405,1.10325,1.10525,1.5,56.6,6,2026-10-28 18:30:00+00:00,Yahoo Finance (not broker-verified),UNVERIFIED
+2026-10-28T18:37:58.795393+00:00,AUD/CHF,BUY,0.58434,0.58329,0.58592,1.5,67.2,5,2026-10-28 18:30:00+00:00,Yahoo Finance (not broker-verified),UNVERIFIED
