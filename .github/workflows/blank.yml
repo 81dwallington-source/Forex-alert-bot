@@ -54,7 +54,7 @@ jobs:
 
           python -m pip install yfinance
 
-          python -c "import yfinance; print('yfinance installed successfully')"
+          python -c "import yfinance; print('yfinance OK')"
 
       - name: Run forex alert bot
 
@@ -66,9 +66,13 @@ jobs:
 
         run: python Forex_alert.py
 
-      - name: Save signal history safely
+      - name: Save signal history
+
+        shell: bash
 
         run: |
+
+          set -e
 
           git config user.name "github-actions[bot]"
 
@@ -78,7 +82,7 @@ jobs:
 
           if git diff --cached --quiet; then
 
-            echo "No signal history changes to save."
+            echo "No history changes to save."
 
             exit 0
 
@@ -86,8 +90,34 @@ jobs:
 
           git commit -m "Update Forex signal verification history"
 
-          git fetch origin main
+          for attempt in 1 2 3; do
 
-          git rebase origin/main
+            git fetch origin main
 
-          git push origin HEAD:main
+            if ! git rebase origin/main; then
+
+              git rebase --abort || true
+
+              echo "Rebase failed; check for conflicting changes."
+
+              exit 1
+
+            fi
+
+            if git push origin HEAD:main; then
+
+              echo "Signal history saved successfully."
+
+              exit 0
+
+            fi
+
+            echo "Push attempt $attempt failed; retrying."
+
+            sleep 2
+
+          done
+
+          echo "Could not save history after 3 attempts."
+
+          exit 1
