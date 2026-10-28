@@ -1,8 +1,6 @@
 name: Forex Alert Bot
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
   schedule:
     - cron: "*/5 * * * 1-5"
@@ -39,27 +37,90 @@ jobs:
 
       - name: Run forex alert bot
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_BOT_TOKEN: \${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: \${{ secrets.TELEGRAM_CHAT_ID }}
         run: python Forex_alert.py
 
-      - name: Save signal history
+      - name: Save signal history safely
         if: always() && github.ref == 'refs/heads/main'
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
+          set -e
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if [ -f signals_state.json ]; then git add -f signals_state.json; fi
-          if [ -f signal_log.csv ]; then git add -f signal_log.csv; fi
-          if [ -f signal_log_legacy.csv ]; then git add -f signal_log_legacy.csv; fi
-          for file in signal_log_legacy_*.csv; do
-            if [ -f "$file" ]; then git add -f "$file"; fi
+          mkdir -p /tmp/forex-bot-snapshot
+          for file in signals_state.json signal_log.csv signal_log_legacy.csv signal_log_legacy_*.csv; do
+            if [ -f "$file" ]; then cp "$file" "/tmp/forex-bot-snapshot/$file"; fi
           done
-          if git diff --cached --quiet; then
-            echo "No signal history changes to commit"
-            exit 0
-          fi
-          git commit -m "Save forex signal history"
-          git pull --rebase origin main
-          git push origin HEAD:main
+
+          for attempt in 1 2 3; do
+            echo "Saving signal history (attempt $attempt)"
+            git fetch origin main
+            git reset --hard origin/main
+
+            python - <<'PY'
+          import csv
+          import json
+          import shutil
+          from pathlib import Path
+
+          snap = Path("/tmp/forex-bot-snapshot")
+          state_snap = snap / "signals_state.json"
+          state_path = Path("signals_state.json")
+          if state_snap.exists():
+              try:
+                  incoming = json.loads(state_snap.read_text(encoding="utf-8"))
+                  existing = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
+                  if isinstance(existing, dict) and isinstance(incoming, dict):
+                      existing.update(incoming)
+                      state_path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+              except Exception as exc:
+                  print(f"State merge skipped: {exc}")
+
+          snap_log = snap / "signal_log.csv"
+          log_path = Path("signal_log.csv")
+          if snap_log.exists():
+              def read_csv(path):
+                  with path.open("r", newline="", encoding="utf-8") as f:
+                      reader = csv.DictReader(f)
+                      return reader.fieldnames or [], list(reader)
+
+              incoming_header, incoming_rows = read_csv(snap_log)
+              current_header, current_rows = read_csv(log_path) if log_path.exists() else ([], [])
+              if current_header and incoming_header != current_header:
+                  legacy = Path("signal_log_legacy.csv")
+                  if legacy.exists():
+                      from datetime import datetime, timezone
+                      legacy = Path("signal_log_legacy_" + datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S") + ".csv")
+                  shutil.copy2(log_path, legacy)
+                  current_header, current_rows = [], []
+              if not current_header:
+                  current_header = incoming_header
+              if current_header == incoming_header:
+                  merged = {}
+                  for row in current_rows + incoming_rows:
+                      key = (row.get("timestamp_utc", ""), row.get("pair", ""), row.get("direction", ""), row.get("candle_time", ""))
+                      merged[key] = row
+                  with log_path.open("w", newline="", encoding="utf-8") as f:
+                      writer = csv.DictWriter(f, fieldnames=incoming_header, extrasaction="ignore")
+                      writer.writeheader()
+                      writer.writerows(merged.values())
+
+          for legacy_snap in snap.glob("signal_log_legacy*.csv"):
+              target = Path(legacy_snap.name)
+              if not target.exists():
+                  shutil.copy2(legacy_snap, target)
+
+          PY
+            git add -f signals_state.json signal_log.csv signal_log_legacy*.csv 2>/dev/null || true
+            if git diff --cached --quiet; then
+              echo "No signal history changes to commit"
+              exit 0
+            fi
+            git commit -m "Save forex signal history"
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            git reset --hard origin/main
+          done
+          echo "Could not save signal history after three attempts"
+          exit 1
