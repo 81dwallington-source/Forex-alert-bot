@@ -525,6 +525,116 @@ def analyse_pair(ticker):
 
     }, "qualifies"
 
+
+def update_signal_outcomes():
+    """Resolve prior alerts using later Yahoo M5 candles; never imply broker verification."""
+    if not LOG_FILE.exists():
+        return
+
+    fieldnames = [
+        "timestamp_utc", "pair", "direction", "entry_reference", "stop_loss",
+        "take_profit", "planned_rr", "rsi", "score", "candle_time",
+        "data_source", "outcome",
+    ]
+
+    try:
+        with LOG_FILE.open("r", newline="", encoding="utf-8") as file:
+            reader = csv.DictReader(file)
+            if reader.fieldnames != fieldnames:
+                log("Outcome tracking skipped: signal log schema is not the expected version.")
+                return
+            rows = list(reader)
+    except Exception as exc:
+        log(f"Outcome tracking could not read signal log: {exc}")
+        return
+
+    pending_by_pair = {}
+    for row in rows:
+        if row.get("outcome") not in ("UNVERIFIED", "UNVERIFIED_PENDING", ""):
+            continue
+        pair = (row.get("pair") or "").replace("/", "")
+        ticker = pair + "=X"
+        if pair and ticker in PAIRS:
+            pending_by_pair.setdefault(ticker, []).append(row)
+
+    if not pending_by_pair:
+        return
+
+    changed = False
+    checked_at = datetime.now(timezone.utc).isoformat()
+
+    for ticker, pending_rows in pending_by_pair.items():
+        try:
+            candles = download_data(ticker, "5m", "5d")
+            candles = candles.copy()
+            if candles.index.tz is None:
+                candles.index = candles.index.tz_localize("UTC")
+            else:
+                candles.index = candles.index.tz_convert("UTC")
+
+            for row in pending_rows:
+                try:
+                    signal_time = pd.Timestamp(row["candle_time"])
+                    if signal_time.tzinfo is None:
+                        signal_time = signal_time.tz_localize("UTC")
+                    else:
+                        signal_time = signal_time.tz_convert("UTC")
+                    stop = float(row["stop_loss"])
+                    target = float(row["take_profit"])
+                    direction = row["direction"]
+                except (ValueError, TypeError, KeyError):
+                    continue
+
+                later = candles[candles.index > signal_time]
+                for _, candle in later.iterrows():
+                    high = float(candle["High"])
+                    low = float(candle["Low"])
+                    if direction == "BUY":
+                        stop_hit = low <= stop
+                        target_hit = high >= target
+                    elif direction == "SELL":
+                        stop_hit = high >= stop
+                        target_hit = low <= target
+                    else:
+                        break
+
+                    if stop_hit and target_hit:
+                        row["outcome"] = "AMBIGUOUS_BOTH_HIT_YAHOO"
+                        changed = True
+                        log(f"Outcome ambiguous for {row['pair']}: stop and target touched in same M5 candle")
+                        break
+                    if target_hit:
+                        row["outcome"] = "TP_HIT_YAHOO_UNVERIFIED"
+                        changed = True
+                        log(f"Target touched in Yahoo M5 data for {row['pair']} (not broker-verified)")
+                        break
+                    if stop_hit:
+                        row["outcome"] = "SL_HIT_YAHOO_UNVERIFIED"
+                        changed = True
+                        log(f"Stop touched in Yahoo M5 data for {row['pair']} (not broker-verified)")
+                        break
+                else:
+                    # Keep unresolved alerts pending; no outcome is invented.
+                    if row.get("outcome") != "UNVERIFIED_PENDING":
+                        row["outcome"] = "UNVERIFIED_PENDING"
+                        changed = True
+        except Exception as exc:
+            log(f"Outcome tracking error for {ticker}: {type(exc).__name__}: {exc}")
+
+    if changed:
+        temp_file = LOG_FILE.with_suffix(".tmp")
+        try:
+            with temp_file.open("w", newline="", encoding="utf-8") as file:
+                writer = csv.DictWriter(file, fieldnames=fieldnames, extrasaction="ignore")
+                writer.writeheader()
+                writer.writerows(rows)
+            temp_file.replace(LOG_FILE)
+            log(f"Updated signal outcomes at {checked_at}; Yahoo-based results remain unverified.")
+        except Exception as exc:
+            log(f"Could not save updated signal outcomes: {exc}")
+            if temp_file.exists():
+                temp_file.unlink()
+
 def main():
 
     log("Starting forex scan")
@@ -536,6 +646,8 @@ def main():
             "Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID GitHub secret"
 
         )
+
+    update_signal_outcomes()
 
     state = load_state()
 
