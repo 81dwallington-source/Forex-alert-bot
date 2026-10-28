@@ -3,24 +3,40 @@
 name: Forex Alert Bot
 
 on:
-  push:
+
   workflow_dispatch:
 
   schedule:
 
     - cron: "*/5 * * * 1-5"
 
+permissions:
+
+  contents: write
+
+concurrency:
+
+  group: forex-alert-bot
+
+  cancel-in-progress: false
+
 jobs:
 
-  run-bot:
+  scan-and-verify:
 
     runs-on: ubuntu-latest
 
+    timeout-minutes: 10
+
     steps:
 
-      - name: Get bot code
+      - name: Check out repository
 
         uses: actions/checkout@v4
+
+        with:
+
+          fetch-depth: 0
 
       - name: Set up Python
 
@@ -32,11 +48,9 @@ jobs:
 
       - name: Install dependencies
 
-        run: |
+        run: python -m pip install --upgrade pip yfinance
 
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-
-      - name: Run forex alert bot
+      - name: Run scan and verify past signals
 
         env:
 
@@ -44,4 +58,26 @@ jobs:
 
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
-        run: python Forex_alert.py
+        run: python forex_alert.py
+
+      - name: Save signal history to GitHub
+
+        run: |
+
+          git config user.name "github-actions[bot]"
+
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add signals_state.json signal_log.csv
+
+          if ! git diff --cached --quiet; then
+
+            git commit -m "Update Forex signal verification history"
+
+            git push
+
+          else
+
+            echo "No signal history changes to save."
+
+          fi
