@@ -151,31 +151,38 @@ def save_state(state):
         json.dump(state, file, indent=2)
 
 def log_signal(row):
-
-    # Keep a stable CSV schema. Earlier bot versions used different columns,
-    # so preserve the old file and start a clean log rather than misaligning rows.
+    # Expand older CSV schemas in place so no previous signal history is lost.
     fieldnames = [
         "timestamp_utc", "pair", "direction", "entry_reference", "stop_loss",
         "take_profit", "planned_rr", "rsi", "score", "candle_time",
-        "data_source", "outcome",
+        "data_source", "outcome", "m5_ema9", "m5_ema21", "m15_trend", "h1_trend",
+        "m15_ema20", "m15_ema50", "h1_ema20", "h1_ema50", "atr", "atr_percent",
+        "signal_candle_open", "signal_candle_high", "signal_candle_low",
+        "evidence_note", "outcome_candle_time", "outcome_evidence",
     ]
-
     if LOG_FILE.exists():
         try:
             with LOG_FILE.open("r", newline="", encoding="utf-8") as existing:
-                header = next(csv.reader(existing), [])
-            if header != fieldnames:
-                legacy_file = Path("signal_log_legacy.csv")
-                if legacy_file.exists():
-                    legacy_file = Path(
-                        f"signal_log_legacy_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.csv"
-                    )
-                LOG_FILE.replace(legacy_file)
-                log(f"Previous log schema preserved as {legacy_file}")
+                reader = csv.DictReader(existing)
+                old_header = reader.fieldnames or []
+                old_rows = list(reader)
+            if old_header != fieldnames:
+                temp_file = LOG_FILE.with_suffix(".upgrade.tmp")
+                with temp_file.open("w", newline="", encoding="utf-8") as upgraded:
+                    writer = csv.DictWriter(upgraded, fieldnames=fieldnames, extrasaction="ignore")
+                    writer.writeheader()
+                    for old_row in old_rows:
+                        upgraded_row = {key: old_row.get(key, "") for key in fieldnames}
+                        if not upgraded_row.get("evidence_note"):
+                            upgraded_row["evidence_note"] = "Historical alert; detailed indicator snapshot was not captured by the older bot version."
+                        if not upgraded_row.get("outcome_evidence") and old_row.get("outcome"):
+                            upgraded_row["outcome_evidence"] = "Historical outcome label; original candle evidence was not stored."
+                        writer.writerow(upgraded_row)
+                temp_file.replace(LOG_FILE)
+                log(f"Upgraded signal log schema in place; preserved {len(old_rows)} historical rows")
         except Exception as exc:
-            log(f"Existing signal log could not be checked: {exc}")
+            log(f"Existing signal log could not be upgraded: {exc}")
             raise
-
     exists = LOG_FILE.exists()
     with LOG_FILE.open("a", newline="", encoding="utf-8") as file:
         writer = csv.DictWriter(file, fieldnames=fieldnames, extrasaction="ignore")
@@ -523,6 +530,36 @@ def analyse_pair(ticker):
 
         "atr": round(atr, decimals),
 
+        "atr_percent": round(atr_percent, 4),
+
+        "m5_ema9": round(float(last["EMA9"]), decimals),
+
+        "m5_ema21": round(float(last["EMA21"]), decimals),
+
+        "m15_trend": m15_trend,
+
+        "h1_trend": h1_trend,
+
+        "m15_ema20": round(float(m15.iloc[-1]["EMA20"]), decimals),
+
+        "m15_ema50": round(float(m15.iloc[-1]["EMA50"]), decimals),
+
+        "h1_ema20": round(float(h1.iloc[-1]["EMA20"]), decimals),
+
+        "h1_ema50": round(float(h1.iloc[-1]["EMA50"]), decimals),
+
+        "signal_candle_open": round(float(last["Open"]), decimals),
+
+        "signal_candle_high": round(float(last["High"]), decimals),
+
+        "signal_candle_low": round(float(last["Low"]), decimals),
+
+        "evidence_note": (
+            "Completed M5 EMA9/21 crossover; M15 and H1 EMA20/50 trends aligned; "
+            f"RSI={rsi:.1f}; ATR={atr:.{decimals}f}; ATR%={atr_percent:.4f}; "
+            f"quality filter score={score}/6. Rule-based evidence, not a win-probability estimate."
+        ),
+
     }, "qualifies"
 
 
@@ -534,7 +571,10 @@ def update_signal_outcomes():
     fieldnames = [
         "timestamp_utc", "pair", "direction", "entry_reference", "stop_loss",
         "take_profit", "planned_rr", "rsi", "score", "candle_time",
-        "data_source", "outcome",
+        "data_source", "outcome", "m5_ema9", "m5_ema21", "m15_trend", "h1_trend",
+        "m15_ema20", "m15_ema50", "h1_ema20", "h1_ema50", "atr", "atr_percent",
+        "signal_candle_open", "signal_candle_high", "signal_candle_low",
+        "evidence_note", "outcome_candle_time", "outcome_evidence",
     ]
 
     try:
@@ -586,9 +626,15 @@ def update_signal_outcomes():
                     continue
 
                 later = candles[candles.index > signal_time]
-                for _, candle in later.iterrows():
+                for outcome_time, candle in later.iterrows():
                     high = float(candle["High"])
                     low = float(candle["Low"])
+                    evidence_time = outcome_time.isoformat()
+                    evidence_detail = (
+                        f"Yahoo M5 candle {evidence_time}: high={high}, low={low}; "
+                        f"entry reference={row.get('entry_reference')}, SL={stop}, TP={target}. "
+                        "Not broker-verified."
+                    )
                     if direction == "BUY":
                         stop_hit = low <= stop
                         target_hit = high >= target
@@ -600,16 +646,22 @@ def update_signal_outcomes():
 
                     if stop_hit and target_hit:
                         row["outcome"] = "AMBIGUOUS_BOTH_HIT_YAHOO"
+                        row["outcome_candle_time"] = evidence_time
+                        row["outcome_evidence"] = evidence_detail
                         changed = True
                         log(f"Outcome ambiguous for {row['pair']}: stop and target touched in same M5 candle")
                         break
                     if target_hit:
                         row["outcome"] = "TP_HIT_YAHOO_UNVERIFIED"
+                        row["outcome_candle_time"] = evidence_time
+                        row["outcome_evidence"] = evidence_detail
                         changed = True
                         log(f"Target touched in Yahoo M5 data for {row['pair']} (not broker-verified)")
                         break
                     if stop_hit:
                         row["outcome"] = "SL_HIT_YAHOO_UNVERIFIED"
+                        row["outcome_candle_time"] = evidence_time
+                        row["outcome_evidence"] = evidence_detail
                         changed = True
                         log(f"Stop touched in Yahoo M5 data for {row['pair']} (not broker-verified)")
                         break
@@ -709,9 +761,17 @@ def main():
 
                 f"RSI: {signal['rsi']}\n"
 
-                f"Quality filter score: {signal['score']}/6\n"
+                f"Quality filter score: {signal['score']}/6 (filter, not win probability)\n"
 
-                f"M15/H1 trend: aligned\n"
+                f"M5 EMA9/EMA21: {signal['m5_ema9']} / {signal['m5_ema21']}\n"
+
+                f"M15 trend: {signal['m15_trend']} (EMA20 {signal['m15_ema20']} / EMA50 {signal['m15_ema50']})\n"
+
+                f"H1 trend: {signal['h1_trend']} (EMA20 {signal['h1_ema20']} / EMA50 {signal['h1_ema50']})\n"
+
+                f"ATR: {signal['atr']} | ATR%: {signal['atr_percent']}\n"
+
+                f"Signal candle O/H/L: {signal['signal_candle_open']} / {signal['signal_candle_high']} / {signal['signal_candle_low']}\n"
 
                 f"Trigger: recent completed M5 EMA 9/21 crossover\n"
 
@@ -757,7 +817,39 @@ def main():
 
                     "data_source": DATA_SOURCE,
 
-                    "outcome": "UNVERIFIED",
+                    "outcome": "UNVERIFIED_PENDING",
+
+                    "m5_ema9": signal["m5_ema9"],
+
+                    "m5_ema21": signal["m5_ema21"],
+
+                    "m15_trend": signal["m15_trend"],
+
+                    "h1_trend": signal["h1_trend"],
+
+                    "m15_ema20": signal["m15_ema20"],
+
+                    "m15_ema50": signal["m15_ema50"],
+
+                    "h1_ema20": signal["h1_ema20"],
+
+                    "h1_ema50": signal["h1_ema50"],
+
+                    "atr": signal["atr"],
+
+                    "atr_percent": signal["atr_percent"],
+
+                    "signal_candle_open": signal["signal_candle_open"],
+
+                    "signal_candle_high": signal["signal_candle_high"],
+
+                    "signal_candle_low": signal["signal_candle_low"],
+
+                    "evidence_note": signal["evidence_note"],
+
+                    "outcome_candle_time": "",
+
+                    "outcome_evidence": "",
 
                 })
 
