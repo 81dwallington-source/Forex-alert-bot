@@ -72,6 +72,10 @@ MAX_CANDLE_ATR = 1.8
 
 MIN_SCORE = 5
 
+# Conservative alert-only controls; these do not control broker execution.
+MAX_ALERTS_PER_UTC_DAY = 3
+MAX_ONE_ALERT_PER_PAIR_PER_UTC_DAY = True
+
 STATE_FILE = Path("signals_state.json")
 
 LOG_FILE = Path("signal_log.csv")
@@ -391,6 +395,22 @@ def analyse_pair(ticker):
         return None, "M15/H1 trend mismatch"
 
     direction = m15_trend
+
+    # Filter weak/choppy trends using ATR-normalized EMA separation.
+    m15_last = m15.iloc[-1]
+    h1_last = h1.iloc[-1]
+    if abs(float(m15_last["EMA20"]) - float(m15_last["EMA50"])) < float(m15_last["ATR"]) * 0.08:
+        return None, "M15 trend too weak / choppy"
+    if abs(float(h1_last["EMA20"]) - float(h1_last["EMA50"])) < float(h1_last["ATR"]) * 0.08:
+        return None, "H1 trend too weak / choppy"
+
+    # Avoid chasing a move that is already stretched from the trigger EMA.
+    if abs(close - float(last["EMA21"])) > atr * 0.8:
+        return None, "entry too extended from M5 EMA21"
+    if direction == "BUY" and float(last["Close"]) <= float(last["Open"]):
+        return None, "M5 signal candle did not close bullish"
+    if direction == "SELL" and float(last["Close"]) >= float(last["Open"]):
+        return None, "M5 signal candle did not close bearish"
 
     # Require a recent M5 EMA crossover, within the last 3
 
@@ -716,6 +736,24 @@ def main():
     update_signal_outcomes()
 
     state = load_state()
+    today_utc = datetime.now(timezone.utc).date().isoformat()
+    daily_pair_prefix = f"daily_pair|{today_utc}|"
+    alerts_today = 0
+    if LOG_FILE.exists():
+        try:
+            with LOG_FILE.open("r", newline="", encoding="utf-8") as file:
+                for logged_row in csv.DictReader(file):
+                    if (logged_row.get("timestamp_utc") or "")[:10] == today_utc:
+                        alerts_today += 1
+        except Exception as exc:
+            log(f"Could not read daily alert count; fail-safe is to stop new alerts: {exc}")
+            telegram_send("Forex bot safety stop: unable to read daily alert log. No new signals will be sent until the log is checked.")
+            return
+    if alerts_today >= MAX_ALERTS_PER_UTC_DAY:
+        summary = f"Forex scan safety stop: UTC daily alert cap reached ({alerts_today}/{MAX_ALERTS_PER_UTC_DAY}). No more alerts today. Alert-only control; it does not track broker P/L or replace FTMO account limits."
+        log(summary)
+        telegram_send(summary)
+        return
 
     checked = 0
 
@@ -739,6 +777,15 @@ def main():
 
                 log(f"{ticker}: rejected — {reason}")
 
+                continue
+
+            # Limit repeat alerts for the same pair and cap total alerts per UTC day.
+            daily_pair_key = daily_pair_prefix + signal["ticker"]
+            if MAX_ONE_ALERT_PER_PAIR_PER_UTC_DAY and state.get(daily_pair_key):
+                rejected["daily pair alert limit"] = rejected.get("daily pair alert limit", 0) + 1
+                continue
+            if alerts_today + sent >= MAX_ALERTS_PER_UTC_DAY:
+                rejected["UTC daily alert cap reached"] = rejected.get("UTC daily alert cap reached", 0) + 1
                 continue
 
             # One alert per pair/direction/completed candle.
@@ -804,6 +851,7 @@ def main():
             if telegram_send(message):
 
                 state[key] = True
+                state[daily_pair_key] = True
 
                 save_state(state)
 
