@@ -6,19 +6,23 @@ import time
 
 import math
 
-import logging
+import requests
 
 from datetime import datetime, timezone
 
-from urllib.parse import quote
+# ============================================================
 
-import requests
+# FOREX ALERT BOT — QUALITY FILTERS
 
-# Forex Alert Bot — improved diagnostics
+# Signal-only: no automatic trading.
 
-# Yahoo Finance data only. Not a broker feed.
+# Data: Yahoo Finance chart API; not broker-verified.
 
-# Alerts only: this script does not place trades.
+# ============================================================
+
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
 PAIRS = [
 
@@ -28,117 +32,99 @@ PAIRS = [
 
     "EURGBP=X", "EURJPY=X", "EURCHF=X", "EURCAD=X",
 
-    "EURAUD=X", "EURNZD=X", "GBPJPY=X", "GBPCHF=X",
+    "EURAUD=X", "EURNZD=X",
 
-    "GBPCAD=X", "GBPAUD=X", "GBPNZD=X",
+    "GBPJPY=X", "GBPCHF=X", "GBPCAD=X", "GBPAUD=X",
+
+    "GBPNZD=X",
 
     "AUDJPY=X", "AUDCHF=X", "AUDCAD=X", "AUDNZD=X",
 
     "NZDJPY=X", "NZDCHF=X", "NZDCAD=X",
 
-    "CADJPY=X", "CADCHF=X"
+    "CADJPY=X", "CHFJPY=X",
 
 ]
 
-MAX_M5_AGE_MINUTES = 7
+MIN_RR = 1.5
 
-MIN_M5_BARS = 80
+MAX_CANDLE_ATR = 1.8
 
-MIN_M15_BARS = 60
+MIN_ATR_PCT = 0.015
 
-MIN_H1_BARS = 60
+MAX_ATR_PCT = 0.60
 
-MIN_ADX_M5 = 16.0
+MAX_M5_AGE_MINUTES = 15
 
-MIN_ADX_M15 = 18.0
+MIN_ADX = 18
 
-MIN_ATR_PIPS = 1.5
+MIN_RSI_BUY = 52
 
-MAX_ATR_PIPS = 35.0
+MAX_RSI_BUY = 68
 
-RISK_REWARD = 1.5
+MIN_RSI_SELL = 32
 
-ATR_SL_MULTIPLIER = 1.5
-
-REQUEST_TIMEOUT = 15
-
-BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+MAX_RSI_SELL = 48
 
 SESSION = requests.Session()
 
-SESSION.headers.update({
+SESSION.headers.update({"User-Agent": "Mozilla/5.0"})
 
-    "User-Agent": "Mozilla/5.0 ForexAlertBot/1.0"
-
-})
-
-logging.basicConfig(
-
-    level=logging.INFO,
-
-    format="%(asctime)s UTC %(levelname)s: %(message)s"
-
-)
-
-def telegram_send(message):
+def telegram(message):
 
     if not BOT_TOKEN or not CHAT_ID:
 
-        raise RuntimeError(
+        print("Telegram secrets missing; message not sent.")
 
-            "Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID secrets"
-
-        )
+        return False
 
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
-    response = SESSION.post(
+    try:
 
-        url,
+        response = SESSION.post(
 
-        data={"chat_id": CHAT_ID, "text": message},
+            url,
 
-        timeout=REQUEST_TIMEOUT
+            json={"chat_id": CHAT_ID, "text": message},
 
-    )
+            timeout=15,
 
-    response.raise_for_status()
+        )
 
-    result = response.json()
+        response.raise_for_status()
 
-    if not result.get("ok"):
+        result = response.json()
 
-        raise RuntimeError("Telegram rejected the message")
+        if not result.get("ok"):
 
-def fetch_candles(symbol, interval, range_value):
+            print("Telegram rejected message:", result)
 
-    url = (
+            return False
 
-        "https://query1.finance.yahoo.com/v8/finance/chart/"
+        return True
 
-        + quote(symbol, safe="")
+    except Exception as exc:
 
-    )
+        print("Telegram error:", exc)
 
-    response = SESSION.get(
+        return False
 
-        url,
+def fetch_candles(symbol, interval, range_value="5d"):
 
-        params={
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 
-            "interval": interval,
+    params = {
 
-            "range": range_value,
+        "interval": interval,
 
-            "includePrePost": "true"
+        "range": range_value,
 
-        },
+        "includePrePost": "false",
 
-        timeout=REQUEST_TIMEOUT
+    }
 
-    )
+    response = SESSION.get(url, params=params, timeout=20)
 
     response.raise_for_status()
 
@@ -148,129 +134,113 @@ def fetch_candles(symbol, interval, range_value):
 
     if chart.get("error"):
 
-        raise RuntimeError(str(chart["error"]))
+        raise ValueError(str(chart["error"]))
 
-    results = chart.get("result") or []
+    results = chart.get("result")
 
     if not results:
 
-        raise RuntimeError("Yahoo returned no chart data")
+        raise ValueError("No chart data returned")
 
     result = results[0]
 
     timestamps = result.get("timestamp") or []
 
-    quote_data = (
+    quote_list = result.get("indicators", {}).get("quote", [])
 
-        result.get("indicators", {}).get("quote") or [{}]
+    if not quote_list:
 
-    )[0]
+        raise ValueError("No OHLC data")
 
-    opens = quote_data.get("open") or []
+    quote = quote_list[0]
 
-    highs = quote_data.get("high") or []
-
-    lows = quote_data.get("low") or []
-
-    closes = quote_data.get("close") or []
-
-    bars = []
+    candles = []
 
     for i, stamp in enumerate(timestamps):
 
-        if any(i >= len(values) for values in
-
-               (opens, highs, lows, closes)):
-
-            continue
-
-        values = (opens[i], highs[i], lows[i], closes[i])
-
-        if any(value is None for value in values):
-
-            continue
-
         try:
 
-            o, h, l, c = map(float, values)
+            o = quote["open"][i]
 
-        except (TypeError, ValueError):
+            h = quote["high"][i]
+
+            low = quote["low"][i]
+
+            c = quote["close"][i]
+
+            if None in (o, h, low, c):
+
+                continue
+
+            if not all(math.isfinite(float(v)) for v in (o, h, low, c)):
+
+                continue
+
+            if h < low or h < max(o, c) or low > min(o, c):
+
+                continue
+
+            candles.append({
+
+                "time": int(stamp),
+
+                "open": float(o),
+
+                "high": float(h),
+
+                "low": float(low),
+
+                "close": float(c),
+
+            })
+
+        except (IndexError, TypeError, ValueError, KeyError):
 
             continue
 
-        if not all(math.isfinite(v) for v in (o, h, l, c)):
+    candles.sort(key=lambda candle: candle["time"])
 
-            continue
+    # Remove the currently forming candle. Yahoo timestamps mark
 
-        if min(o, h, l, c) <= 0 or h < l:
+    # the candle's opening time, so only use candles whose interval
 
-            continue
+    # has fully elapsed.
 
-        bars.append({
+    interval_seconds = {
 
-            "time": int(stamp),
+        "5m": 300,
 
-            "open": o,
+        "15m": 900,
 
-            "high": h,
+        "60m": 3600,
 
-            "low": l,
+        "1h": 3600,
 
-            "close": c
-
-        })
-
-    seconds = {"5m": 300, "15m": 900, "60m": 3600}[interval]
+    }.get(interval, 300)
 
     now = int(time.time())
 
-    # Only use candles whose full interval has ended.
+    candles = [
 
-    bars = [
+        candle for candle in candles
 
-        bar for bar in bars
-
-        if bar["time"] + seconds <= now
+        if candle["time"] + interval_seconds <= now
 
     ]
 
-    if len(bars) < 3:
+    if len(candles) < 60:
 
-        raise RuntimeError(
+        raise ValueError(f"Insufficient completed {interval} candles")
 
-            f"Too few completed valid candles: {len(bars)}"
-
-        )
-
-    return bars
+    return candles
 
 def ema(values, period):
 
     if len(values) < period:
 
-        return [None] * len(values)
+        return []
 
-    result = [None] * (period - 1)
-
-    current = sum(values[:period]) / period
-
-    result.append(current)
-
-    alpha = 2.0 / (period + 1.0)
-
-    for value in values[period:]:
-
-        current = alpha * value + (1.0 - alpha) * current
-
-        result.append(current)
-
-    return result
-
-def wilder_average(values, period):
-
-    if len(values) < period:
-
-        return [None] * len(values)
+    alpha = 2 / (period + 1)
 
     result = [None] * (period - 1)
 
@@ -280,511 +250,419 @@ def wilder_average(values, period):
 
     for value in values[period:]:
 
-        current = (
-
-            current * (period - 1) + value
-
-        ) / period
+        current = alpha * value + (1 - alpha) * current
 
         result.append(current)
 
     return result
 
-def indicators(bars):
+def rsi(values, period=14):
 
-    closes = [b["close"] for b in bars]
+    if len(values) <= period:
 
-    highs = [b["high"] for b in bars]
+        return None
 
-    lows = [b["low"] for b in bars]
+    changes = [values[i] - values[i - 1] for i in range(1, len(values))]
 
-    tr = []
+    gains = [max(change, 0) for change in changes]
 
-    plus_dm = []
+    losses = [max(-change, 0) for change in changes]
 
-    minus_dm = []
+    avg_gain = sum(gains[:period]) / period
 
-    for i in range(len(bars)):
+    avg_loss = sum(losses[:period]) / period
 
-        if i == 0:
+    for i in range(period, len(gains)):
 
-            tr.append(highs[i] - lows[i])
+        avg_gain = ((avg_gain * (period - 1)) + gains[i]) / period
 
-            plus_dm.append(0.0)
+        avg_loss = ((avg_loss * (period - 1)) + losses[i]) / period
 
-            minus_dm.append(0.0)
+    if avg_loss == 0:
 
-            continue
+        return 100.0
 
-        tr.append(max(
+    rs = avg_gain / avg_loss
 
-            highs[i] - lows[i],
+    return 100 - (100 / (1 + rs))
 
-            abs(highs[i] - closes[i - 1]),
+def atr(candles, period=14):
 
-            abs(lows[i] - closes[i - 1])
+    if len(candles) <= period:
+
+        return None
+
+    true_ranges = []
+
+    for i in range(1, len(candles)):
+
+        current = candles[i]
+
+        previous_close = candles[i - 1]["close"]
+
+        true_ranges.append(max(
+
+            current["high"] - current["low"],
+
+            abs(current["high"] - previous_close),
+
+            abs(current["low"] - previous_close),
 
         ))
 
-        up = highs[i] - highs[i - 1]
+    value = sum(true_ranges[:period]) / period
 
-        down = lows[i - 1] - lows[i]
+    for tr in true_ranges[period:]:
 
-        plus_dm.append(
+        value = ((value * (period - 1)) + tr) / period
 
-            up if up > down and up > 0 else 0.0
+    return value
 
-        )
+def adx(candles, period=14):
 
-        minus_dm.append(
+    if len(candles) < period * 3:
 
-            down if down > up and down > 0 else 0.0
+        return None
 
-        )
+    trs, plus_dm, minus_dm = [], [], []
 
-    atr = wilder_average(tr, 14)
+    for i in range(1, len(candles)):
 
-    sm_tr = wilder_average(tr, 14)
+        cur, prev = candles[i], candles[i - 1]
 
-    sm_plus = wilder_average(plus_dm, 14)
+        up = cur["high"] - prev["high"]
 
-    sm_minus = wilder_average(minus_dm, 14)
+        down = prev["low"] - cur["low"]
 
-    dx = []
+        plus_dm.append(up if up > down and up > 0 else 0.0)
 
-    for i in range(len(bars)):
+        minus_dm.append(down if down > up and down > 0 else 0.0)
 
-        if (
+        trs.append(max(
 
-            sm_tr[i] is None
+            cur["high"] - cur["low"],
 
-            or sm_plus[i] is None
+            abs(cur["high"] - prev["close"]),
 
-            or sm_minus[i] is None
+            abs(cur["low"] - prev["close"]),
 
-            or sm_tr[i] == 0
+        ))
 
-        ):
+    dx_values = []
 
-            dx.append(None)
+    for i in range(period - 1, len(trs)):
+
+        start = i - period + 1
+
+        tr_sum = sum(trs[start:i + 1])
+
+        if tr_sum <= 0:
 
             continue
 
-        pdi = 100 * sm_plus[i] / sm_tr[i]
+        plus = 100 * sum(plus_dm[start:i + 1]) / tr_sum
 
-        mdi = 100 * sm_minus[i] / sm_tr[i]
+        minus = 100 * sum(minus_dm[start:i + 1]) / tr_sum
 
-        denom = pdi + mdi
+        denominator = plus + minus
 
-        dx.append(
+        dx_values.append(
 
-            100 * abs(pdi - mdi) / denom if denom else 0.0
+            0.0 if denominator == 0
+
+            else 100 * abs(plus - minus) / denominator
 
         )
 
-    # Smooth valid DX values without treating missing values as zero.
+    if len(dx_values) < period:
 
-    valid_dx = [v for v in dx if v is not None]
+        return None
 
-    adx_values = wilder_average(valid_dx, 14)
+    value = sum(dx_values[:period]) / period
 
-    adx = [None] * (len(dx) - len(adx_values)) + adx_values
+    for dx in dx_values[period:]:
 
-    gains = [0.0]
+        value = ((value * (period - 1)) + dx) / period
 
-    losses = [0.0]
+    return value
 
-    for i in range(1, len(closes)):
+def trend_direction(candles):
 
-        change = closes[i] - closes[i - 1]
+    closes = [c["close"] for c in candles]
 
-        gains.append(max(change, 0.0))
+    fast = ema(closes, 20)
 
-        losses.append(max(-change, 0.0))
+    slow = ema(closes, 50)
 
-    avg_gain = wilder_average(gains, 14)
+    if not fast or not slow:
 
-    avg_loss = wilder_average(losses, 14)
+        return None
 
-    rsi = []
+    if fast[-1] is None or slow[-1] is None:
 
-    for gain, loss in zip(avg_gain, avg_loss):
+        return None
 
-        if gain is None or loss is None:
+    if fast[-1] > slow[-1] and closes[-1] > fast[-1]:
 
-            rsi.append(None)
+        return "BUY"
 
-        elif loss == 0:
+    if fast[-1] < slow[-1] and closes[-1] < fast[-1]:
 
-            rsi.append(100.0)
+        return "SELL"
 
-        else:
+    return None
 
-            rs = gain / loss
+def analyse_pair(symbol):
 
-            rsi.append(100.0 - 100.0 / (1.0 + rs))
+    m5 = fetch_candles(symbol, "5m", "5d")
 
-    return {
+    m15 = fetch_candles(symbol, "15m", "10d")
 
-        "close": closes,
+    h1 = fetch_candles(symbol, "60m", "30d")
 
-        "ema9": ema(closes, 9),
+    # Reject stale M5 data rather than inventing a current price.
 
-        "ema21": ema(closes, 21),
+    now = int(time.time())
 
-        "ema20": ema(closes, 20),
+    age_minutes = (now - m5[-1]["time"]) / 60
 
-        "ema50": ema(closes, 50),
+    if age_minutes > MAX_M5_AGE_MINUTES:
 
-        "atr": atr,
+        raise ValueError(f"Stale M5 data ({age_minutes:.1f} min old)")
 
-        "adx": adx,
+    closes = [c["close"] for c in m5]
 
-        "rsi": rsi,
+    fast = ema(closes, 9)
 
-        "pdi": [
+    slow = ema(closes, 21)
 
-            100 * p / t if p is not None and t else None
+    if len(closes) < 55 or fast[-2] is None or slow[-2] is None:
 
-            for p, t in zip(sm_plus, sm_tr)
+        raise ValueError("Not enough indicator history")
 
-        ],
+    # Require a fresh crossover on the latest completed M5 candle.
 
-        "mdi": [
+    crossed_up = fast[-2] <= slow[-2] and fast[-1] > slow[-1]
 
-            100 * m / t if m is not None and t else None
+    crossed_down = fast[-2] >= slow[-2] and fast[-1] < slow[-1]
 
-            for m, t in zip(sm_minus, sm_tr)
+    if not crossed_up and not crossed_down:
 
-        ]
+        return None, "no fresh crossover"
+
+    direction = "BUY" if crossed_up else "SELL"
+
+    if trend_direction(m15) != direction:
+
+        return None, "M15 trend not aligned"
+
+    if trend_direction(h1) != direction:
+
+        return None, "H1 trend not aligned"
+
+    momentum = rsi(closes, 14)
+
+    strength = adx(m5, 14)
+
+    volatility = atr(m5, 14)
+
+    if momentum is None or strength is None or volatility is None:
+
+        return None, "indicator unavailable"
+
+    if strength < MIN_ADX:
+
+        return None, "weak trend strength"
+
+    if direction == "BUY" and not (MIN_RSI_BUY <= momentum <= MAX_RSI_BUY):
+
+        return None, "buy momentum outside range"
+
+    if direction == "SELL" and not (MIN_RSI_SELL <= momentum <= MAX_RSI_SELL):
+
+        return None, "sell momentum outside range"
+
+    entry = m5[-1]["close"]
+
+    candle_range = m5[-1]["high"] - m5[-1]["low"]
+
+    if entry <= 0 or volatility <= 0:
+
+        return None, "invalid price/volatility"
+
+    atr_percent = (volatility / entry) * 100
+
+    if not (MIN_ATR_PCT <= atr_percent <= MAX_ATR_PCT):
+
+        return None, "volatility outside range"
+
+    if candle_range > MAX_CANDLE_ATR * volatility:
+
+        return None, "oversized signal candle"
+
+    # ATR-based protective stop. TP is at least 1:1.5 RR.
+
+    risk_distance = 1.2 * volatility
+
+    reward_distance = risk_distance * MIN_RR
+
+    if direction == "BUY":
+
+        stop = entry - risk_distance
+
+        target = entry + reward_distance
+
+    else:
+
+        stop = entry + risk_distance
+
+        target = entry - reward_distance
+
+    # Format precision based on the currency quote convention.
+
+    # JPY pairs normally use 3 decimals; most others use 5.
+
+    pair_name = symbol.replace("=X", "")
+
+    decimals = 3 if pair_name.endswith("JPY") else 5
+
+    candle_time = datetime.fromtimestamp(
+
+        m5[-1]["time"], timezone.utc
+
+    ).strftime("%Y-%m-%d %H:%M UTC")
+
+    signal = {
+
+        "pair": pair_name[:3] + "/" + pair_name[3:],
+
+        "direction": direction,
+
+        "entry": round(entry, decimals),
+
+        "sl": round(stop, decimals),
+
+        "tp": round(target, decimals),
+
+        "rr": MIN_RR,
+
+        "rsi": round(momentum, 1),
+
+        "adx": round(strength, 1),
+
+        "atr": round(volatility, decimals),
+
+        "candle_time": candle_time,
+
+        "signal_id": f"{symbol}:{direction}:{m5[-1]['time']}",
 
     }
 
-def last_valid(values):
-
-    for value in reversed(values):
-
-        if value is not None:
-
-            return value
-
-    return None
-
-def pip_size(symbol):
-
-    pair = symbol.split("=")[0]
-
-    return 0.01 if pair.endswith("JPY") else 0.0001
-
-def analyse_pair(symbol, stats):
-
-    stats["checked"] += 1
-
-    try:
-
-        m5 = fetch_candles(symbol, "5m", "5d")
-
-        stats["m5_received"] += 1
-
-        age = (
-
-            time.time() - (m5[-1]["time"] + 300)
-
-        ) / 60.0
-
-        if age > MAX_M5_AGE_MINUTES:
-
-            stats["stale"] += 1
-
-            logging.info("%s rejected: stale M5 candle (%.1f min)",
-
-                         symbol, age)
-
-            return None
-
-        if len(m5) < MIN_M5_BARS:
-
-            stats["short_history"] += 1
-
-            return None
-
-        m15 = fetch_candles(symbol, "15m", "5d")
-
-        h1 = fetch_candles(symbol, "60m", "1mo")
-
-        if (
-
-            len(m15) < MIN_M15_BARS
-
-            or len(h1) < MIN_H1_BARS
-
-        ):
-
-            stats["short_history"] += 1
-
-            return None
-
-        stats["usable"] += 1
-
-        i5 = indicators(m5)
-
-        i15 = indicators(m15)
-
-        i1 = indicators(h1)
-
-        e9, e21 = i5["ema9"], i5["ema21"]
-
-        if any(v is None for v in
-
-               (e9[-1], e9[-2], e21[-1], e21[-2])):
-
-            stats["indicator_errors"] += 1
-
-            return None
-
-        bullish = e9[-2] <= e21[-2] and e9[-1] > e21[-1]
-
-        bearish = e9[-2] >= e21[-2] and e9[-1] < e21[-1]
-
-        if not bullish and not bearish:
-
-            stats["no_cross"] += 1
-
-            return None
-
-        direction = "BUY" if bullish else "SELL"
-
-        close = i5["close"][-1]
-
-        atr = last_valid(i5["atr"])
-
-        adx5 = last_valid(i5["adx"])
-
-        adx15 = last_valid(i15["adx"])
-
-        rsi = last_valid(i5["rsi"])
-
-        m15c = i15["close"][-1]
-
-        m15e20 = last_valid(i15["ema20"])
-
-        m15e50 = last_valid(i15["ema50"])
-
-        h1c = i1["close"][-1]
-
-        h1e20 = last_valid(i1["ema20"])
-
-        h1e50 = last_valid(i1["ema50"])
-
-        e50 = last_valid(i5["ema50"])
-
-        pdi = last_valid(i5["pdi"])
-
-        mdi = last_valid(i5["mdi"])
-
-        if any(v is None for v in (
-
-            atr, adx5, adx15, rsi, m15e20, m15e50,
-
-            h1e20, h1e50, e50, pdi, mdi
-
-        )):
-
-            stats["indicator_errors"] += 1
-
-            return None
-
-        atr_pips = atr / pip_size(symbol)
-
-        if not MIN_ATR_PIPS <= atr_pips <= MAX_ATR_PIPS:
-
-            stats["volatility_rejected"] += 1
-
-            return None
-
-        if adx5 < MIN_ADX_M5 or adx15 < MIN_ADX_M15:
-
-            stats["momentum_rejected"] += 1
-
-            return None
-
-        if direction == "BUY":
-
-            trend_ok = (
-
-                m15c > m15e20 > m15e50
-
-                and h1c > h1e20 > h1e50
-
-                and close > e50
-
-            )
-
-            momentum_ok = 50 <= rsi <= 68 and pdi > mdi
-
-        else:
-
-            trend_ok = (
-
-                m15c < m15e20 < m15e50
-
-                and h1c < h1e20 < h1e50
-
-                and close < e50
-
-            )
-
-            momentum_ok = 32 <= rsi <= 50 and mdi > pdi
-
-        if not trend_ok:
-
-            stats["trend_rejected"] += 1
-
-            return None
-
-        if not momentum_ok:
-
-            stats["momentum_rejected"] += 1
-
-            return None
-
-        last_bar = m5[-1]
-
-        candle_range = last_bar["high"] - last_bar["low"]
-
-        if candle_range > 1.8 * atr:
-
-            stats["candle_rejected"] += 1
-
-            return None
-
-        risk = ATR_SL_MULTIPLIER * atr
-
-        if direction == "BUY":
-
-            sl = close - risk
-
-            tp = close + risk * RISK_REWARD
-
-        else:
-
-            sl = close + risk
-
-            tp = close - risk * RISK_REWARD
-
-        pair = symbol.replace("=X", "")
-
-        candle_time = datetime.fromtimestamp(
-
-            m5[-1]["time"], timezone.utc
-
-        ).strftime("%Y-%m-%d %H:%M UTC")
-
-        stats["signals"] += 1
-
-        return (
-
-            f"FOREX SETUP — 5m\n"
-
-            f"Pair: {pair}\n"
-
-            f"Direction: {direction}\n"
-
-            f"Entry reference: {close:.5f}\n"
-
-            f"Stop-loss: {sl:.5f}\n"
-
-            f"Take-profit: {tp:.5f}\n"
-
-            f"Planned risk/reward: 1:{RISK_REWARD:.2f}\n"
-
-            f"Trigger: completed M5 EMA 9/21 crossover\n"
-
-            f"M15/H1 trend: aligned\n"
-
-            f"RSI: {rsi:.1f}; ADX M5/M15: {adx5:.1f}/{adx15:.1f}\n"
-
-            f"Closed candle: {candle_time}\n"
-
-            f"Data: Yahoo Finance, not broker-verified. "
-
-            f"Confirm price and spread on MT4."
-
-        )
-
-    except requests.RequestException as exc:
-
-        stats["fetch_errors"] += 1
-
-        logging.warning("%s request failed: %s", symbol, exc)
-
-    except (ValueError, KeyError, IndexError, TypeError, RuntimeError) as exc:
-
-        stats["data_errors"] += 1
-
-        logging.warning("%s data error: %s", symbol, exc)
-
-    except Exception:
-
-        stats["unexpected_errors"] += 1
-
-        logging.exception("Unexpected error for %s", symbol)
-
-    return None
+    return signal, "qualified"
 
 def main():
 
+    print("Forex alert bot scan started.")
+
+    print("Source: Yahoo Finance chart API; not broker-verified.")
+
+    print("Timeframe: M5 entry, M15/H1 trend confirmation.")
+
     if not BOT_TOKEN or not CHAT_ID:
 
-        raise RuntimeError(
+        print(
 
-            "Add TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID "
+            "WARNING: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID "
 
-            "to GitHub Actions secrets"
+            "is missing from the environment."
 
         )
 
-    telegram_send(
+    stats = {
 
-        "Forex alert bot scan started. "
+        "checked": 0,
 
-        "Strict M5/M15/H1 filters active."
+        "signals": 0,
 
-    )
+        "reasons": {},
 
-    stats = {key: 0 for key in [
+        "errors": 0,
 
-        "checked", "m5_received", "usable", "stale",
-
-        "short_history", "no_cross", "trend_rejected",
-
-        "momentum_rejected", "volatility_rejected",
-
-        "candle_rejected", "indicator_errors",
-
-        "fetch_errors", "data_errors", "unexpected_errors",
-
-        "signals"
-
-    ]}
-
-    signals = []
+    }
 
     for symbol in PAIRS:
 
-        result = analyse_pair(symbol, stats)
+        stats["checked"] += 1
 
-        if result:
+        try:
 
-            signals.append(result)
+            signal, reason = analyse_pair(symbol)
 
-        time.sleep(0.15)
+            if signal is None:
 
-    for signal in signals:
+                stats["reasons"][reason] = (
 
-        telegram_send(signal)
+                    stats["reasons"].get(reason, 0) + 1
 
-        time.sleep(0.4)
+                )
+
+                print(f"{symbol}: rejected — {reason}")
+
+                continue
+
+            message = (
+
+                "FOREX SETUP — 5m\n"
+
+                f"Pair: {signal['pair']}\n"
+
+                f"Direction: {signal['direction']}\n"
+
+                f"Entry reference: {signal['entry']}\n"
+
+                f"Stop-loss: {signal['sl']}\n"
+
+                f"Take-profit: {signal['tp']}\n"
+
+                f"Planned risk/reward: 1:{signal['rr']:.2f}\n"
+
+                "5m trigger: fresh EMA 9/21 crossover\n"
+
+                "15m/1h confirmation: EMA 20/50 trend aligned\n"
+
+                f"RSI: {signal['rsi']} | ADX: {signal['adx']}\n"
+
+                f"Closed candle: {signal['candle_time']}\n"
+
+                "Data source: Yahoo Finance; not broker-verified.\n"
+
+                "Check the live broker price and spread before entry."
+
+            )
+
+            if telegram(message):
+
+                stats["signals"] += 1
+
+                print(f"{signal['pair']} {signal['direction']}: alert sent")
+
+            else:
+
+                print(f"{signal['pair']}: Telegram alert failed")
+
+        except Exception as exc:
+
+            stats["errors"] += 1
+
+            print(f"{symbol}: data/analysis error — {exc}")
+
+    reasons = "\n".join(
+
+        f"{reason}: {count}"
+
+        for reason, count in sorted(stats["reasons"].items())
+
+    ) or "None"
 
     summary = (
 
@@ -792,45 +670,21 @@ def main():
 
         f"Pairs checked: {stats['checked']}\n"
 
-        f"M5 data received: {stats['m5_received']}\n"
+        f"Qualifying signals sent: {stats['signals']}\n"
 
-        f"Pairs with usable M5/M15/H1 data: {stats['usable']}\n"
+        f"Data/analysis errors: {stats['errors']}\n"
 
-        f"Qualifying signals: {stats['signals']}\n"
+        f"Rejected setups:\n{reasons}\n\n"
 
-        f"Rejected — stale M5: {stats['stale']}\n"
+        "Data source: Yahoo Finance; not broker-verified.\n"
 
-        f"Rejected — short history: {stats['short_history']}\n"
-
-        f"Rejected — no fresh crossover: {stats['no_cross']}\n"
-
-        f"Rejected — trend: {stats['trend_rejected']}\n"
-
-        f"Rejected — momentum: {stats['momentum_rejected']}\n"
-
-        f"Rejected — volatility: {stats['volatility_rejected']}\n"
-
-        f"Rejected — oversized candle: {stats['candle_rejected']}\n"
-
-        f"Indicator issues: {stats['indicator_errors']}\n"
-
-        f"Data request errors: {stats['fetch_errors']}\n"
-
-        f"Other data errors: {stats['data_errors']}\n"
-
-        f"Unexpected errors: {stats['unexpected_errors']}\n"
-
-        "Stale/incomplete M5 candles are rejected.\n"
-
-        "Data source: Yahoo Finance, not a broker feed. "
-
-        "Verify entries on MT4."
+        "No signal does not mean a trade should be forced."
 
     )
 
-    telegram_send(summary)
+    print(summary)
 
-    logging.info(summary.replace("\n", " | "))
+    telegram(summary)
 
 if __name__ == "__main__":
 
