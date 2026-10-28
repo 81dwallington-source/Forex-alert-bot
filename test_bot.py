@@ -55,7 +55,7 @@ class ForexBotRegressionTests(unittest.TestCase):
             periods=100,
             freq="5min",
         )
-        close = pd.Series([1.10 + i * 0.0001 for i in range(100)], index=index)
+        close = pd.Series([1.10 + i * 0.0001 + (0.0003 if i % 2 else 0.0) for i in range(100)], index=index)
         frame = pd.DataFrame(
             {
                 "Open": close - 0.00005,
