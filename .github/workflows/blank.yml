@@ -66,7 +66,7 @@ jobs:
 
         run: python Forex_alert.py
 
-      - name: Save signal history
+      - name: Save signal history safely
 
         run: |
 
@@ -76,14 +76,18 @@ jobs:
 
           git add -f signals_state.json signal_log.csv
 
-          if ! git diff --cached --quiet; then
-
-            git commit -m "Update Forex signal verification history"
-
-            git push
-
-          else
+          if git diff --cached --quiet; then
 
             echo "No signal history changes to save."
 
+            exit 0
+
           fi
+
+          git commit -m "Update Forex signal verification history"
+
+          git fetch origin main
+
+          git rebase origin/main
+
+          git push origin HEAD:main
