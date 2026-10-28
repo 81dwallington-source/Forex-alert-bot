@@ -12,11 +12,15 @@ import requests
 
 import yfinance as yf
 
-# =========================
+# ==================================================
 
-# CONFIGURATION
+# STRICT FOREX ALERT BOT
 
-# =========================
+# M5 entry | M15 + H1 confirmation | 1.5R target
+
+# Yahoo Finance data is NOT a broker execution feed.
+
+# ==================================================
 
 PAIRS = [
 
@@ -28,49 +32,75 @@ PAIRS = [
 
     "EURAUD", "EURNZD",
 
-    "GBPJPY", "GBPCHF", "GBPCAD", "GBPAUD",
-
-    "GBPNZD",
+    "GBPJPY", "GBPCHF", "GBPCAD", "GBPAUD", "GBPNZD",
 
     "AUDJPY", "AUDCHF", "AUDCAD", "AUDNZD",
 
-    "CADJPY", "CADCHF", "NZDJPY", "NZDCHF",
-
-    "CHFJPY",
+    "CADJPY", "CADCHF", "NZDJPY", "NZDCHF", "CHFJPY",
 
 ]
 
-MAX_M5_AGE_MINUTES = 10
+MAX_M5_CANDLE_AGE_MINUTES = 7
 
-ATR_PERIOD = 14
+REWARD_RISK = 1.5
 
 ATR_MULTIPLIER = 1.5
 
-REWARD_RISK = 1.5
+MIN_M15_ADX = 18
+
+MIN_M5_ADX = 16
+
+MIN_ATR_PIPS = 1.0
+
+MAX_ATR_PIPS = 30.0
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# =========================
+STATS = {
 
-# TELEGRAM
+    "checked": 0,
 
-# =========================
+    "data_ok": 0,
+
+    "stale": 0,
+
+    "no_crossover": 0,
+
+    "trend_rejected": 0,
+
+    "momentum_rejected": 0,
+
+    "volatility_rejected": 0,
+
+    "signals": 0,
+
+    "errors": 0,
+
+}
+
+def utc_now():
+
+    return datetime.now(timezone.utc)
 
 def send_telegram(message):
 
     if not TOKEN or not CHAT_ID:
 
-        raise RuntimeError("Telegram secrets are missing.")
-
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+        raise RuntimeError("Missing Telegram secrets.")
 
     response = requests.post(
 
-        url,
+        f"https://api.telegram.org/bot{TOKEN}/sendMessage",
 
-        data={"chat_id": CHAT_ID, "text": message},
+        data={
+
+            "chat_id": CHAT_ID,
+
+            "text": message,
+
+        },
 
         timeout=20,
 
@@ -82,21 +112,13 @@ def send_telegram(message):
 
     if not result.get("ok"):
 
-        raise RuntimeError("Telegram did not confirm delivery.")
+        raise RuntimeError("Telegram rejected the message.")
 
-    print("TELEGRAM DELIVERY CONFIRMED")
+    print("Telegram delivery confirmed.")
 
-# =========================
+def get_candles(pair, interval, period, minutes):
 
-# MARKET DATA
-
-# =========================
-
-def get_candles(pair, interval, period):
-
-    ticker = pair + "=X"
-
-    frame = yf.Ticker(ticker).history(
+    frame = yf.Ticker(pair + "=X").history(
 
         period=period,
 
@@ -110,7 +132,7 @@ def get_candles(pair, interval, period):
 
     if frame is None or frame.empty:
 
-        raise ValueError(f"No {interval} candles returned.")
+        raise ValueError(f"No {interval} data.")
 
     frame = frame.copy()
 
@@ -118,17 +140,11 @@ def get_candles(pair, interval, period):
 
     frame = frame.sort_index()
 
-    required = ["Open", "High", "Low", "Close"]
+    frame = frame.dropna(
 
-    if any(column not in frame.columns for column in required):
+        subset=["Open", "High", "Low", "Close"]
 
-        raise ValueError(f"Missing OHLC data for {interval}.")
-
-    frame = frame.dropna(subset=required)
-
-    # Exclude the candle that may still be forming.
-
-    now = pd.Timestamp.now(tz="UTC")
+    )
 
     if frame.index.tz is None:
 
@@ -138,9 +154,17 @@ def get_candles(pair, interval, period):
 
         frame.index = frame.index.tz_convert("UTC")
 
-    duration = pd.Timedelta(interval)
+    # Use completed candles only.
 
-    frame = frame[(frame.index + duration) <= now]
+    now = pd.Timestamp.now(tz="UTC")
+
+    candle_duration = pd.Timedelta(minutes=minutes)
+
+    frame = frame[
+
+        (frame.index + candle_duration) <= now
+
+    ]
 
     if frame.empty:
 
@@ -152,41 +176,47 @@ def add_indicators(frame):
 
     frame = frame.copy()
 
-    frame["EMA9"] = frame["Close"].ewm(
+    close = frame["Close"]
+
+    high = frame["High"]
+
+    low = frame["Low"]
+
+    previous_close = close.shift(1)
+
+    frame["EMA9"] = close.ewm(
 
         span=9, adjust=False
 
     ).mean()
 
-    frame["EMA21"] = frame["Close"].ewm(
+    frame["EMA21"] = close.ewm(
 
         span=21, adjust=False
 
     ).mean()
 
-    frame["EMA20"] = frame["Close"].ewm(
+    frame["EMA20"] = close.ewm(
 
         span=20, adjust=False
 
     ).mean()
 
-    frame["EMA50"] = frame["Close"].ewm(
+    frame["EMA50"] = close.ewm(
 
         span=50, adjust=False
 
     ).mean()
 
-    previous_close = frame["Close"].shift(1)
-
     true_range = pd.concat(
 
         [
 
-            frame["High"] - frame["Low"],
+            high - low,
 
-            (frame["High"] - previous_close).abs(),
+            (high - previous_close).abs(),
 
-            (frame["Low"] - previous_close).abs(),
+            (low - previous_close).abs(),
 
         ],
 
@@ -196,87 +226,193 @@ def add_indicators(frame):
 
     frame["ATR"] = true_range.ewm(
 
-        alpha=1 / ATR_PERIOD,
+        alpha=1 / 14,
 
         adjust=False,
 
-        min_periods=ATR_PERIOD,
+        min_periods=14,
 
     ).mean()
 
+    # ADX: a trend-strength filter, not a direction predictor.
+
+    up_move = high.diff()
+
+    down_move = -low.diff()
+
+    plus_dm = up_move.where(
+
+        (up_move > down_move) & (up_move > 0), 0.0
+
+    )
+
+    minus_dm = down_move.where(
+
+        (down_move > up_move) & (down_move > 0), 0.0
+
+    )
+
+    atr_smooth = true_range.ewm(
+
+        alpha=1 / 14,
+
+        adjust=False,
+
+        min_periods=14,
+
+    ).mean()
+
+    plus_di = (
+
+        100 * plus_dm.ewm(
+
+            alpha=1 / 14, adjust=False, min_periods=14
+
+        ).mean() / atr_smooth.replace(0, float("nan"))
+
+    )
+
+    minus_di = (
+
+        100 * minus_dm.ewm(
+
+            alpha=1 / 14, adjust=False, min_periods=14
+
+        ).mean() / atr_smooth.replace(0, float("nan"))
+
+    )
+
+    dx = (
+
+        100 * (plus_di - minus_di).abs()
+
+        / (plus_di + minus_di).replace(0, float("nan"))
+
+    )
+
+    frame["ADX"] = dx.ewm(
+
+        alpha=1 / 14,
+
+        adjust=False,
+
+        min_periods=14,
+
+    ).mean()
+
+    frame["PLUS_DI"] = plus_di
+
+    frame["MINUS_DI"] = minus_di
+
+    # RSI momentum check.
+
+    change = close.diff()
+
+    gain = change.clip(lower=0).ewm(
+
+        alpha=1 / 14, adjust=False, min_periods=14
+
+    ).mean()
+
+    loss = (-change.clip(upper=0)).ewm(
+
+        alpha=1 / 14, adjust=False, min_periods=14
+
+    ).mean()
+
+    rs = gain / loss.replace(0, float("nan"))
+
+    frame["RSI"] = 100 - (100 / (1 + rs))
+
     return frame
 
-# =========================
+def format_price(pair, value):
 
-# DIAGNOSTICS
+    decimals = 3 if pair.endswith("JPY") else 5
 
-# =========================
-
-stats = {
-
-    "pairs_checked": 0,
-
-    "m5_data_loaded": 0,
-
-    "stale_m5": 0,
-
-    "m5_crossovers": 0,
-
-    "m15_h1_aligned": 0,
-
-    "signals": 0,
-
-    "errors": 0,
-
-}
-
-# =========================
-
-# SIGNAL SCAN
-
-# =========================
+    return f"{value:.{decimals}f}"
 
 def scan_pair(pair):
 
     try:
 
-        m5 = add_indicators(get_candles(pair, "5m", "5d"))
+        m5 = add_indicators(
 
-        m15 = add_indicators(get_candles(pair, "15m", "5d"))
+            get_candles(pair, "5m", "5d", 5)
 
-        h1 = add_indicators(get_candles(pair, "60m", "30d"))
+        )
 
-        stats["m5_data_loaded"] += 1
+        m15 = add_indicators(
+
+            get_candles(pair, "15m", "10d", 15)
+
+        )
+
+        h1 = add_indicators(
+
+            get_candles(pair, "1h", "30d", 60)
+
+        )
+
+        STATS["data_ok"] += 1
+
+        if len(m5) < 60 or len(m15) < 60 or len(h1) < 60:
+
+            raise ValueError("Not enough candles for indicators.")
 
         now = pd.Timestamp.now(tz="UTC")
 
-        last_m5_time = m5.index[-1]
+        last_time = m5.index[-1]
 
-        age_minutes = (now - last_m5_time).total_seconds() / 60
+        age = (
 
-        if age_minutes > MAX_M5_AGE_MINUTES:
+            now - (last_time + pd.Timedelta(minutes=5))
 
-            stats["stale_m5"] += 1
+        ).total_seconds() / 60
 
-            print(f"{pair}: rejected; M5 candle is stale.")
+        if age < -0.1 or age > MAX_M5_CANDLE_AGE_MINUTES:
+
+            STATS["stale"] += 1
+
+            print(f"{pair}: rejected; stale M5 candle.")
 
             return None
-
-        if len(m5) < 3 or len(m15) < 55 or len(h1) < 55:
-
-            raise ValueError("Insufficient candles for indicators.")
 
         previous = m5.iloc[-2]
 
         current = m5.iloc[-1]
 
-        if pd.isna(current["ATR"]) or current["ATR"] <= 0:
+        trend15 = m15.iloc[-1]
 
-            raise ValueError("ATR is unavailable.")
+        trend1h = h1.iloc[-1]
 
-        # Fresh crossover on the most recently closed M5 candle.
+        needed = [
 
-        bullish_cross = (
+            current["EMA9"], current["EMA21"],
+
+            current["EMA50"], current["ATR"],
+
+            current["ADX"], current["RSI"],
+
+            trend15["EMA20"], trend15["EMA50"],
+
+            trend15["ADX"],
+
+            trend1h["EMA20"], trend1h["EMA50"],
+
+        ]
+
+        if any(pd.isna(value) for value in needed):
+
+            raise ValueError("Indicator values unavailable.")
+
+        if current["ATR"] <= 0 or current["Close"] <= 0:
+
+            raise ValueError("Invalid price or ATR.")
+
+        # A new crossover on the latest completed M5 candle.
+
+        buy_cross = (
 
             previous["EMA9"] <= previous["EMA21"]
 
@@ -284,7 +420,7 @@ def scan_pair(pair):
 
         )
 
-        bearish_cross = (
+        sell_cross = (
 
             previous["EMA9"] >= previous["EMA21"]
 
@@ -292,117 +428,197 @@ def scan_pair(pair):
 
         )
 
-        if not bullish_cross and not bearish_cross:
+        if not buy_cross and not sell_cross:
+
+            STATS["no_crossover"] += 1
 
             return None
 
-        stats["m5_crossovers"] += 1
+        direction = "BUY" if buy_cross else "SELL"
 
-        m15_last = m15.iloc[-1]
+        # Require M15 and H1 trend alignment.
 
-        h1_last = h1.iloc[-1]
-
-        if bullish_cross:
-
-            direction = "BUY"
+        if direction == "BUY":
 
             aligned = (
 
-                m15_last["EMA20"] > m15_last["EMA50"]
+                trend15["EMA20"] > trend15["EMA50"]
 
-                and h1_last["EMA20"] > h1_last["EMA50"]
+                and trend1h["EMA20"] > trend1h["EMA50"]
+
+                and current["Close"] > current["EMA50"]
 
             )
 
         else:
 
-            direction = "SELL"
-
             aligned = (
 
-                m15_last["EMA20"] < m15_last["EMA50"]
+                trend15["EMA20"] < trend15["EMA50"]
 
-                and h1_last["EMA20"] < h1_last["EMA50"]
+                and trend1h["EMA20"] < trend1h["EMA50"]
+
+                and current["Close"] < current["EMA50"]
 
             )
 
         if not aligned:
 
-            print(f"{pair}: crossover rejected; M15/H1 not aligned.")
+            STATS["trend_rejected"] += 1
+
+            print(f"{pair}: crossover rejected; trend misaligned.")
 
             return None
 
-        stats["m15_h1_aligned"] += 1
+        # Avoid weak momentum and low-strength trends.
 
-        entry = float(current["Close"])
+        if (
 
-        risk_distance = float(current["ATR"]) * ATR_MULTIPLIER
+            current["ADX"] < MIN_M5_ADX
+
+            or trend15["ADX"] < MIN_M15_ADX
+
+        ):
+
+            STATS["momentum_rejected"] += 1
+
+            print(f"{pair}: rejected; ADX too weak.")
+
+            return None
+
+        rsi = float(current["RSI"])
 
         if direction == "BUY":
 
-            stop_loss = entry - risk_distance
+            momentum_ok = (
 
-            take_profit = entry + (risk_distance * REWARD_RISK)
+                50 <= rsi <= 68
+
+                and current["PLUS_DI"] > current["MINUS_DI"]
+
+                and current["Close"] > current["Open"]
+
+            )
 
         else:
 
-            stop_loss = entry + risk_distance
+            momentum_ok = (
 
-            take_profit = entry - (risk_distance * REWARD_RISK)
+                32 <= rsi <= 50
 
-        stats["signals"] += 1
+                and current["MINUS_DI"] > current["PLUS_DI"]
+
+                and current["Close"] < current["Open"]
+
+            )
+
+        if not momentum_ok:
+
+            STATS["momentum_rejected"] += 1
+
+            print(f"{pair}: rejected; momentum not confirmed.")
+
+            return None
+
+        # Avoid unusually tiny or extreme volatility.
+
+        pip_size = 0.01 if pair.endswith("JPY") else 0.0001
+
+        atr_pips = float(current["ATR"]) / pip_size
+
+        if not MIN_ATR_PIPS <= atr_pips <= MAX_ATR_PIPS:
+
+            STATS["volatility_rejected"] += 1
+
+            print(f"{pair}: rejected; ATR outside allowed range.")
+
+            return None
+
+        # Use only the latest closed candle as the reference entry.
+
+        entry = float(current["Close"])
+
+        distance = float(current["ATR"]) * ATR_MULTIPLIER
+
+        if direction == "BUY":
+
+            stop = entry - distance
+
+            target = entry + distance * REWARD_RISK
+
+        else:
+
+            stop = entry + distance
+
+            target = entry - distance * REWARD_RISK
+
+        STATS["signals"] += 1
 
         return (
 
-            f"FOREX SETUP - 5m\n"
+            "FOREX SETUP - 5m\n"
 
             f"Pair: {pair[:3]}/{pair[3:]}\n"
 
             f"Direction: {direction}\n"
 
-            f"Entry reference: {entry:.5f}\n"
+            f"Entry reference: {format_price(pair, entry)}\n"
 
-            f"Stop-loss: {stop_loss:.5f}\n"
+            f"Stop-loss: {format_price(pair, stop)}\n"
 
-            f"Take-profit: {take_profit:.5f}\n"
+            f"Take-profit: {format_price(pair, target)}\n"
 
             f"Planned risk/reward: 1:{REWARD_RISK:.2f}\n"
 
-            f"5m trigger: fresh closed-candle EMA 9/21 crossover\n"
+            "5m trigger: fresh closed-candle EMA 9/21 crossover\n"
 
-            f"15m confirmation: EMA 20/50 aligned\n"
+            "15m confirmation: EMA 20/50 trend aligned\n"
 
-            f"1h confirmation: EMA 20/50 aligned\n"
+            "1h confirmation: EMA 20/50 trend aligned\n"
 
-            f"Closed candle: {last_m5_time.strftime('%Y-%m-%d %H:%M UTC')}\n"
+            f"M5 ADX: {current['ADX']:.1f}\n"
 
-            f"Data source: Yahoo Finance; verify on broker."
+            f"M15 ADX: {trend15['ADX']:.1f}\n"
+
+            f"RSI: {rsi:.1f}\n"
+
+            f"ATR: {atr_pips:.1f} pips\n"
+
+            f"Closed candle: {last_time.strftime('%Y-%m-%d %H:%M UTC')}\n"
+
+            f"Alert generated: {utc_now().strftime('%Y-%m-%d %H:%M UTC')}\n"
+
+            "Data source: Yahoo Finance, not a broker feed.\n"
+
+            "Verify current price, spread and entry on your broker."
 
         )
 
     except Exception as error:
 
-        stats["errors"] += 1
+        STATS["errors"] += 1
 
-        print(f"{pair}: data/scan error: {error}")
+        print(f"{pair}: scan/data error: {error}")
 
         return None
 
-# =========================
-
-# MAIN
-
-# =========================
-
 def main():
 
-    print("Starting forex scan.")
+    print("Starting strict forex scan.")
+
+    try:
+
+        send_telegram("Forex alert bot: strict scan starting.")
+
+    except Exception as error:
+
+        print(f"Telegram start message failed: {error}")
 
     signals = []
 
     for pair in PAIRS:
 
-        stats["pairs_checked"] += 1
+        STATS["checked"] += 1
 
         signal = scan_pair(pair)
 
@@ -410,39 +626,43 @@ def main():
 
             signals.append(signal)
 
-        # Avoid hammering the data provider.
-
         time.sleep(0.5)
-
-    # Send any qualifying signals.
 
     for signal in signals:
 
-        send_telegram(signal)
+        try:
+
+            send_telegram(signal)
+
+        except Exception as error:
+
+            print(f"Signal delivery failed: {error}")
 
     summary = (
 
         "FOREX SCAN DIAGNOSTICS\n"
 
-        f"Pairs checked: {stats['pairs_checked']}\n"
+        f"Pairs checked: {STATS['checked']}\n"
 
-        f"M5 data loaded: {stats['m5_data_loaded']}\n"
+        f"Pairs with usable data: {STATS['data_ok']}\n"
 
-        f"Stale M5 candles rejected: {stats['stale_m5']}\n"
+        f"Stale M5 candles rejected: {STATS['stale']}\n"
 
-        f"Fresh M5 crossovers: {stats['m5_crossovers']}\n"
+        f"No fresh crossover: {STATS['no_crossover']}\n"
 
-        f"M15/H1 aligned after crossover: "
+        f"Trend rejected: {STATS['trend_rejected']}\n"
 
-        f"{stats['m15_h1_aligned']}\n"
+        f"Momentum rejected: {STATS['momentum_rejected']}\n"
 
-        f"Qualifying signals: {stats['signals']}\n"
+        f"Volatility rejected: {STATS['volatility_rejected']}\n"
 
-        f"Data/scan errors: {stats['errors']}\n\n"
+        f"Qualifying signals: {STATS['signals']}\n"
 
-        "Data source: Yahoo Finance, not a broker feed.\n"
+        f"Data/scan errors: {STATS['errors']}\n\n"
 
-        "Confirm prices and entry conditions on your broker."
+        "Strict filters are not proof of profitability.\n"
+
+        "Yahoo Finance is not a broker feed; verify before trading."
 
     )
 
