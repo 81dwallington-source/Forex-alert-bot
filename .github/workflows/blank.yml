@@ -12,7 +12,7 @@ on:
 
 permissions:
 
-  contents: write
+  contents: read
 
 concurrency:
 
@@ -34,10 +34,6 @@ jobs:
 
         uses: actions/checkout@v4
 
-        with:
-
-          fetch-depth: 0
-
       - name: Set up Python
 
         uses: actions/setup-python@v5
@@ -54,7 +50,7 @@ jobs:
 
           python -m pip install yfinance
 
-          python -c "import yfinance; print('yfinance OK')"
+          python -c "import yfinance; print('yfinance installed successfully')"
 
       - name: Run forex alert bot
 
@@ -65,59 +61,3 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
         run: python Forex_alert.py
-
-      - name: Save signal history
-
-        shell: bash
-
-        run: |
-
-          set -e
-
-          git config user.name "github-actions[bot]"
-
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add -f signals_state.json signal_log.csv
-
-          if git diff --cached --quiet; then
-
-            echo "No history changes to save."
-
-            exit 0
-
-          fi
-
-          git commit -m "Update Forex signal verification history"
-
-          for attempt in 1 2 3; do
-
-            git fetch origin main
-
-            if ! git rebase origin/main; then
-
-              git rebase --abort || true
-
-              echo "Rebase failed; check for conflicting changes."
-
-              exit 1
-
-            fi
-
-            if git push origin HEAD:main; then
-
-              echo "Signal history saved successfully."
-
-              exit 0
-
-            fi
-
-            echo "Push attempt $attempt failed; retrying."
-
-            sleep 2
-
-          done
-
-          echo "Could not save history after 3 attempts."
-
-          exit 1
