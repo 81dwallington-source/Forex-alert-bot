@@ -14,8 +14,6 @@ import yfinance as yf
 
 import pandas as pd
 
-# ================= SETTINGS =================
-
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -28,17 +26,15 @@ PAIRS = [
 
     "EURGBP=X", "EURJPY=X", "EURCHF=X", "EURCAD=X",
 
-    "EURAUD=X", "EURNZD=X",
+    "EURAUD=X", "EURNZD=X", "GBPJPY=X", "GBPCHF=X",
 
-    "GBPJPY=X", "GBPCHF=X", "GBPCAD=X", "GBPAUD=X",
+    "GBPCAD=X", "GBPAUD=X", "GBPNZD=X", "AUDJPY=X",
 
-    "GBPNZD=X",
+    "AUDCHF=X", "AUDCAD=X", "AUDNZD=X", "NZDJPY=X",
 
-    "AUDJPY=X", "AUDCHF=X", "AUDCAD=X", "AUDNZD=X",
+    "NZDCHF=X", "NZDCAD=X", "CADJPY=X", "CADCHF=X",
 
-    "NZDJPY=X", "NZDCHF=X", "NZDCAD=X",
-
-    "CADJPY=X", "CADCHF=X", "CHFJPY=X"
+    "CHFJPY=X"
 
 ]
 
@@ -48,49 +44,33 @@ RISK_REWARD = 1.5
 
 ATR_MULTIPLIER = 1.5
 
-MIN_ATR_PERCENT = 0.015
-
-# ================= TELEGRAM =================
-
 def send_telegram(message):
 
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
 
-        print("ERROR: Telegram secrets are missing.")
-
-        return False
+        raise RuntimeError("Telegram secrets are missing.")
 
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
 
-    try:
+    response = requests.post(
 
-        response = requests.post(
+        url,
 
-            url,
+        data={"chat_id": TELEGRAM_CHAT_ID, "text": message},
 
-            data={
+        timeout=15
 
-                "chat_id": TELEGRAM_CHAT_ID,
+    )
 
-                "text": message
+    response.raise_for_status()
 
-            },
+    result = response.json()
 
-            timeout=15
+    if not result.get("ok"):
 
-        )
+        raise RuntimeError("Telegram rejected the message.")
 
-        response.raise_for_status()
-
-        return True
-
-    except Exception as error:
-
-        print(f"Telegram error: {error}")
-
-        return False
-
-# ================= STATE =================
+    return True
 
 def load_state():
 
@@ -110,13 +90,9 @@ def save_state(state):
 
         json.dump(state, file)
 
-# ================= INDICATORS =================
+def indicators(df):
 
-def add_indicators(df):
-
-    df = df.copy()
-
-    df = df.dropna()
+    df = df.copy().dropna()
 
     df["ema9"] = df["Close"].ewm(span=9, adjust=False).mean()
 
@@ -128,7 +104,7 @@ def add_indicators(df):
 
     previous_close = df["Close"].shift(1)
 
-    ranges = pd.concat([
+    true_ranges = pd.concat([
 
         df["High"] - df["Low"],
 
@@ -138,13 +114,13 @@ def add_indicators(df):
 
     ], axis=1)
 
-    df["atr"] = ranges.max(axis=1).rolling(14).mean()
+    df["atr"] = true_ranges.max(axis=1).rolling(14).mean()
 
     return df.dropna()
 
-def resample_candles(df, timeframe):
+def resample(df, period):
 
-    result = df.resample(timeframe).agg({
+    return df.resample(period).agg({
 
         "Open": "first",
 
@@ -156,17 +132,9 @@ def resample_candles(df, timeframe):
 
         "Volume": "sum"
 
-    })
+    }).dropna(subset=["Open", "High", "Low", "Close"])
 
-    return result.dropna(subset=["Open", "High", "Low", "Close"])
-
-def pair_name(ticker):
-
-    return ticker.replace("=X", "").replace("USD", "/USD", 1)
-
-# ================= SIGNAL CHECK =================
-
-def analyse_pair(ticker, state):
+def analyse(ticker, state):
 
     try:
 
@@ -174,7 +142,7 @@ def analyse_pair(ticker, state):
 
             ticker,
 
-            period="5d",
+            period="10d",
 
             interval="5m",
 
@@ -188,9 +156,9 @@ def analyse_pair(ticker, state):
 
         if raw is None or raw.empty:
 
-            print(f"{ticker}: no data returned")
+            print(f"{ticker}: no data")
 
-            return
+            return None
 
         if isinstance(raw.columns, pd.MultiIndex):
 
@@ -198,103 +166,91 @@ def analyse_pair(ticker, state):
 
         required = ["Open", "High", "Low", "Close", "Volume"]
 
-        if not all(column in raw.columns for column in required):
+        if not all(c in raw.columns for c in required):
 
-            print(f"{ticker}: missing candle data")
+            print(f"{ticker}: missing columns")
 
-            return
+            return None
 
         raw = raw[required].dropna()
 
         raw.index = pd.to_datetime(raw.index)
 
-        # Exclude the newest candle because it may still be forming.
-
         if len(raw) < 100:
 
-            print(f"{ticker}: insufficient candles")
+            print(f"{ticker}: insufficient data")
 
-            return
+            return None
 
-        candles_5m = add_indicators(raw.iloc[:-1].copy())
+        # Never use the newest possibly unfinished 5m candle.
 
-        candles_15m = add_indicators(
+        five = indicators(raw.iloc[:-1].copy())
 
-            resample_candles(raw, "15min").iloc[:-1].copy()
+        fifteen = indicators(resample(raw, "15min").iloc[:-1].copy())
 
-        )
+        hourly = indicators(resample(raw, "1h").iloc[:-1].copy())
 
-        candles_1h = add_indicators(
+        if min(len(five), len(fifteen), len(hourly)) < 50:
 
-            resample_candles(raw, "1h").iloc[:-1].copy()
+            print(f"{ticker}: insufficient timeframe history")
 
-        )
+            return None
 
-        if min(len(candles_5m), len(candles_15m), len(candles_1h)) < 55:
+        last = five.iloc[-1]
 
-            print(f"{ticker}: insufficient higher-timeframe history")
+        prev = five.iloc[-2]
 
-            return
+        t15 = fifteen.iloc[-1]
 
-        last = candles_5m.iloc[-1]
+        t1h = hourly.iloc[-1]
 
-        previous = candles_5m.iloc[-2]
-
-        trend15 = candles_15m.iloc[-1]
-
-        trend1h = candles_1h.iloc[-1]
-
-        candle_time = candles_5m.index[-1]
-
-        now = datetime.now(timezone.utc)
+        candle_time = five.index[-1]
 
         if candle_time.tzinfo is None:
 
             candle_time = candle_time.tz_localize("UTC")
 
-        age_minutes = (now - candle_time.to_pydatetime()).total_seconds() / 60
+        age = (
 
-        # Reject obviously stale or future-dated candle data.
+            datetime.now(timezone.utc) - candle_time.to_pydatetime()
 
-        if age_minutes < 0 or age_minutes > 20:
+        ).total_seconds() / 60
 
-            print(f"{ticker}: candle data too old ({age_minutes:.1f} minutes)")
+        if age < 0 or age > 20:
 
-            return
+            print(f"{ticker}: stale candle data ({age:.1f}m)")
 
-        # Fresh 5-minute EMA crossover only.
+            return None
 
-        bullish_cross = (
+        buy_cross = (
 
-            previous["ema9"] <= previous["ema21"]
+            prev["ema9"] <= prev["ema21"]
 
             and last["ema9"] > last["ema21"]
 
         )
 
-        bearish_cross = (
+        sell_cross = (
 
-            previous["ema9"] >= previous["ema21"]
+            prev["ema9"] >= prev["ema21"]
 
             and last["ema9"] < last["ema21"]
 
         )
 
-        # Higher-timeframe direction must agree.
+        buy_trend = (
 
-        bullish_trend = (
+            t15["ema20"] > t15["ema50"]
 
-            trend15["ema20"] > trend15["ema50"]
-
-            and trend1h["ema20"] > trend1h["ema50"]
+            and t1h["ema20"] > t1h["ema50"]
 
         )
 
-        bearish_trend = (
+        sell_trend = (
 
-            trend15["ema20"] < trend15["ema50"]
+            t15["ema20"] < t15["ema50"]
 
-            and trend1h["ema20"] < trend1h["ema50"]
+            and t1h["ema20"] < t1h["ema50"]
 
         )
 
@@ -304,69 +260,65 @@ def analyse_pair(ticker, state):
 
         if price <= 0 or atr <= 0:
 
-            return
-
-        atr_percent = (atr / price) * 100
-
-        if atr_percent < MIN_ATR_PERCENT:
-
-            print(f"{ticker}: volatility too low")
-
-            return
+            return None
 
         direction = None
 
-        if bullish_cross and bullish_trend and last["Close"] > last["Open"]:
+        if buy_cross and buy_trend and last["Close"] > last["Open"]:
 
             direction = "BUY"
 
-        elif bearish_cross and bearish_trend and last["Close"] < last["Open"]:
+        elif sell_cross and sell_trend and last["Close"] < last["Open"]:
 
             direction = "SELL"
 
-        if direction is None:
+        if not direction:
 
             print(f"{ticker}: no qualifying setup")
 
-            return
+            return None
 
         signal_id = f"{ticker}_{direction}_{candle_time.isoformat()}"
 
         if signal_id in state["sent"]:
 
-            print(f"{ticker}: this candle's signal was already sent")
+            print(f"{ticker}: duplicate signal skipped")
 
-            return
+            return None
 
         distance = atr * ATR_MULTIPLIER
 
         if direction == "BUY":
 
-            stop_loss = price - distance
+            sl = price - distance
 
-            take_profit = price + (distance * RISK_REWARD)
+            tp = price + distance * RISK_REWARD
 
         else:
 
-            stop_loss = price + distance
+            sl = price + distance
 
-            take_profit = price - (distance * RISK_REWARD)
+            tp = price - distance * RISK_REWARD
+
+        pair = ticker.replace("=X", "")
+
+        pair = pair[:3] + "/" + pair[3:]
 
         message = (
 
             "FOREX SETUP - 5m\n"
 
-            f"Pair: {pair_name(ticker)}\n"
+            f"Pair: {pair}\n"
 
             f"Direction: {direction}\n"
 
             f"Entry reference: {price:.5f}\n"
 
-            f"Stop-loss: {stop_loss:.5f}\n"
+            f"Stop-loss: {sl:.5f}\n"
 
-            f"Take-profit: {take_profit:.5f}\n"
+            f"Take-profit: {tp:.5f}\n"
 
-            f"Planned risk/reward: 1: {RISK_REWARD:.2f}\n"
+            f"Planned risk/reward: 1:{RISK_REWARD:.2f}\n"
 
             "5m trigger: closed-candle EMA 9/21 crossover\n"
 
@@ -374,53 +326,85 @@ def analyse_pair(ticker, state):
 
             "1h confirmation: EMA 20/50 aligned\n"
 
-            f"Closed candle: {candle_time.isoformat()}\n"
+            f"Candle time (UTC): {candle_time.isoformat()}\n"
 
-            "Data source: Yahoo Finance; verify with your broker\n"
+            "Data: Yahoo Finance; verify price with your broker.\n"
 
-            "Note: Entry is a reference, not a guaranteed fill."
+            "Entry is a reference, not a guaranteed fill."
 
         )
 
-        if send_telegram(message):
+        send_telegram(message)
 
-            state["sent"].append(signal_id)
+        state["sent"].append(signal_id)
 
-            state["sent"] = state["sent"][-500:]
+        state["sent"] = state["sent"][-500:]
 
-            save_state(state)
+        save_state(state)
 
-            print(f"{ticker}: signal sent")
+        print(f"{ticker}: signal sent")
 
-        else:
-
-            print(f"{ticker}: signal not sent")
+        return direction
 
     except Exception as error:
 
-        print(f"{ticker}: analysis error: {error}")
+        print(f"{ticker}: ERROR: {error}")
 
-# ================= MAIN =================
+        return None
 
 def main():
 
-    print("Forex alert bot starting...")
-
-    print("Scanning 5-minute setups with 15m and 1h confirmation.")
+    print("Forex alert bot starting.")
 
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
 
-        raise RuntimeError("Telegram secrets are missing in GitHub Actions.")
+        raise RuntimeError("Telegram secrets are missing.")
 
     state = load_state()
 
+    signals = []
+
+    errors = 0
+
     for ticker in PAIRS:
 
-        analyse_pair(ticker, state)
+        result = analyse(ticker, state)
+
+        if result:
+
+            signals.append(f"{ticker.replace('=X', '')}: {result}")
 
         time.sleep(1)
 
-    print("Scan finished.")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    if signals:
+
+        summary = (
+
+            f"Forex scan complete - {now}\n"
+
+            f"Qualifying signals sent: {len(signals)}\n"
+
+            + "\n".join(signals)
+
+        )
+
+    else:
+
+        summary = (
+
+            f"Forex scan complete - {now}\n"
+
+            "No qualifying setups found this scan.\n"
+
+            "No trade signal was issued. Waiting for better conditions."
+
+        )
+
+    send_telegram(summary)
+
+    print(summary)
 
 if __name__ == "__main__":
 
