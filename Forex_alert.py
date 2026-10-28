@@ -4,15 +4,21 @@ import os
 
 import time
 
-import json
-
-from datetime import datetime, timezone
-
 import requests
+
+import pandas as pd
 
 import yfinance as yf
 
-import pandas as pd
+from datetime import datetime, timezone, timedelta
+
+# ================= SETTINGS =================
+
+MAX_CANDLE_AGE_MINUTES = 10
+
+MIN_RISK_REWARD = 1.5
+
+ATR_MULTIPLIER = 1.5
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
@@ -20,79 +26,151 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 PAIRS = [
 
-    "EURUSD=X", "GBPUSD=X", "USDJPY=X", "USDCHF=X",
+    "EURUSD", "GBPUSD", "USDJPY", "USDCHF",
 
-    "USDCAD=X", "AUDUSD=X", "NZDUSD=X",
+    "USDCAD", "AUDUSD", "NZDUSD",
 
-    "EURGBP=X", "EURJPY=X", "EURCHF=X", "EURCAD=X",
+    "EURGBP", "EURJPY", "EURCHF", "EURCAD",
 
-    "EURAUD=X", "EURNZD=X", "GBPJPY=X", "GBPCHF=X",
+    "EURAUD", "EURNZD", "GBPJPY", "GBPCHF",
 
-    "GBPCAD=X", "GBPAUD=X", "GBPNZD=X", "AUDJPY=X",
+    "GBPCAD", "GBPAUD", "GBPNZD", "AUDJPY",
 
-    "AUDCHF=X", "AUDCAD=X", "AUDNZD=X", "NZDJPY=X",
+    "AUDCHF", "AUDCAD", "AUDNZD", "NZDJPY",
 
-    "NZDCHF=X", "NZDCAD=X", "CADJPY=X", "CADCHF=X",
-
-    "CHFJPY=X"
+    "NZDCHF", "NZDCAD", "CADJPY", "CADCHF",
 
 ]
 
-STATE_FILE = "signal_state.json"
-
-RISK_REWARD = 1.5
-
-ATR_MULTIPLIER = 1.5
-
-def send_telegram(message):
+def telegram(message):
 
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
 
-        raise RuntimeError("Telegram secrets are missing.")
+        print("ERROR: Telegram secrets are missing.")
 
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        return
 
-    response = requests.post(
+    url = (
 
-        url,
+        f"https://api.telegram.org/bot"
 
-        data={"chat_id": TELEGRAM_CHAT_ID, "text": message},
-
-        timeout=15
+        f"{TELEGRAM_TOKEN}/sendMessage"
 
     )
 
-    response.raise_for_status()
+    try:
 
-    result = response.json()
+        response = requests.post(
 
-    if not result.get("ok"):
+            url,
 
-        raise RuntimeError("Telegram rejected the message.")
+            data={
 
-    return True
+                "chat_id": TELEGRAM_CHAT_ID,
 
-def load_state():
+                "text": message
+
+            },
+
+            timeout=15
+
+        )
+
+        response.raise_for_status()
+
+        result = response.json()
+
+        if not result.get("ok"):
+
+            print("Telegram rejected message:", result)
+
+    except Exception as exc:
+
+        print("Telegram error:", exc)
+
+def get_candles(pair, interval, period):
+
+    ticker = pair + "=X"
 
     try:
 
-        with open(STATE_FILE, "r") as file:
+        df = yf.download(
 
-            return json.load(file)
+            ticker,
 
-    except (FileNotFoundError, json.JSONDecodeError):
+            period=period,
 
-        return {"sent": []}
+            interval=interval,
 
-def save_state(state):
+            auto_adjust=False,
 
-    with open(STATE_FILE, "w") as file:
+            progress=False,
 
-        json.dump(state, file)
+            threads=False
 
-def indicators(df):
+        )
 
-    df = df.copy().dropna()
+        if df is None or df.empty:
+
+            print(f"{pair} {interval}: no data")
+
+            return None
+
+        if isinstance(df.columns, pd.MultiIndex):
+
+            df.columns = df.columns.get_level_values(0)
+
+        df = df[~df.index.duplicated(keep="last")].copy()
+
+        df = df.dropna(subset=["Open", "High", "Low", "Close"])
+
+        df = df.sort_index()
+
+        # Make candle timestamps timezone-aware in UTC.
+
+        idx = pd.DatetimeIndex(df.index)
+
+        if idx.tz is None:
+
+            idx = idx.tz_localize("UTC")
+
+        else:
+
+            idx = idx.tz_convert("UTC")
+
+        df.index = idx
+
+        # Exclude candles that have not yet closed.
+
+        minutes = int(interval.replace("m", "").replace("h", "")) 
+
+        if interval.endswith("h"):
+
+            minutes *= 60
+
+        now = pd.Timestamp.now(tz="UTC")
+
+        candle_end = df.index + pd.Timedelta(minutes=minutes)
+
+        df = df.loc[candle_end <= now].copy()
+
+        if df.empty:
+
+            print(f"{pair} {interval}: no completed candles")
+
+            return None
+
+        return df
+
+    except Exception as exc:
+
+        print(f"{pair} {interval} data error: {exc}")
+
+        return None
+
+def add_indicators(df):
+
+    df = df.copy()
 
     df["ema9"] = df["Close"].ewm(span=9, adjust=False).mean()
 
@@ -104,7 +182,15 @@ def indicators(df):
 
     previous_close = df["Close"].shift(1)
 
-    true_ranges = pd.concat([
+    previous_ema = df["Close"].ewm(
+
+        span=14, adjust=False
+
+    ).mean().shift(1)
+
+    # ATR from true range.
+
+    tr = pd.concat([
 
         df["High"] - df["Low"],
 
@@ -112,297 +198,247 @@ def indicators(df):
 
         (df["Low"] - previous_close).abs()
 
-    ], axis=1)
+    ], axis=1).max(axis=1)
 
-    df["atr"] = true_ranges.max(axis=1).rolling(14).mean()
+    df["atr"] = tr.ewm(span=14, adjust=False).mean()
 
-    return df.dropna()
+    return df
 
-def resample(df, period):
+def scan_pair(pair):
 
-    return df.resample(period).agg({
+    m5 = get_candles(pair, "5m", "2d")
 
-        "Open": "first",
+    m15 = get_candles(pair, "15m", "5d")
 
-        "High": "max",
+    h1 = get_candles(pair, "1h", "10d")
 
-        "Low": "min",
-
-        "Close": "last",
-
-        "Volume": "sum"
-
-    }).dropna(subset=["Open", "High", "Low", "Close"])
-
-def analyse(ticker, state):
-
-    try:
-
-        raw = yf.download(
-
-            ticker,
-
-            period="10d",
-
-            interval="5m",
-
-            progress=False,
-
-            auto_adjust=False,
-
-            threads=False
-
-        )
-
-        if raw is None or raw.empty:
-
-            print(f"{ticker}: no data")
-
-            return None
-
-        if isinstance(raw.columns, pd.MultiIndex):
-
-            raw.columns = raw.columns.get_level_values(0)
-
-        required = ["Open", "High", "Low", "Close", "Volume"]
-
-        if not all(c in raw.columns for c in required):
-
-            print(f"{ticker}: missing columns")
-
-            return None
-
-        raw = raw[required].dropna()
-
-        raw.index = pd.to_datetime(raw.index)
-
-        if len(raw) < 100:
-
-            print(f"{ticker}: insufficient data")
-
-            return None
-
-        # Never use the newest possibly unfinished 5m candle.
-
-        five = indicators(raw.iloc[:-1].copy())
-
-        fifteen = indicators(resample(raw, "15min").iloc[:-1].copy())
-
-        hourly = indicators(resample(raw, "1h").iloc[:-1].copy())
-
-        if min(len(five), len(fifteen), len(hourly)) < 50:
-
-            print(f"{ticker}: insufficient timeframe history")
-
-            return None
-
-        last = five.iloc[-1]
-
-        prev = five.iloc[-2]
-
-        t15 = fifteen.iloc[-1]
-
-        t1h = hourly.iloc[-1]
-
-        candle_time = five.index[-1]
-
-        if candle_time.tzinfo is None:
-
-            candle_time = candle_time.tz_localize("UTC")
-
-        age = (
-
-            datetime.now(timezone.utc) - candle_time.to_pydatetime()
-
-        ).total_seconds() / 60
-
-        if age < 0 or age > 20:
-
-            print(f"{ticker}: stale candle data ({age:.1f}m)")
-
-            return None
-
-        buy_cross = (
-
-            prev["ema9"] <= prev["ema21"]
-
-            and last["ema9"] > last["ema21"]
-
-        )
-
-        sell_cross = (
-
-            prev["ema9"] >= prev["ema21"]
-
-            and last["ema9"] < last["ema21"]
-
-        )
-
-        buy_trend = (
-
-            t15["ema20"] > t15["ema50"]
-
-            and t1h["ema20"] > t1h["ema50"]
-
-        )
-
-        sell_trend = (
-
-            t15["ema20"] < t15["ema50"]
-
-            and t1h["ema20"] < t1h["ema50"]
-
-        )
-
-        price = float(last["Close"])
-
-        atr = float(last["atr"])
-
-        if price <= 0 or atr <= 0:
-
-            return None
-
-        direction = None
-
-        if buy_cross and buy_trend and last["Close"] > last["Open"]:
-
-            direction = "BUY"
-
-        elif sell_cross and sell_trend and last["Close"] < last["Open"]:
-
-            direction = "SELL"
-
-        if not direction:
-
-            print(f"{ticker}: no qualifying setup")
-
-            return None
-
-        signal_id = f"{ticker}_{direction}_{candle_time.isoformat()}"
-
-        if signal_id in state["sent"]:
-
-            print(f"{ticker}: duplicate signal skipped")
-
-            return None
-
-        distance = atr * ATR_MULTIPLIER
-
-        if direction == "BUY":
-
-            sl = price - distance
-
-            tp = price + distance * RISK_REWARD
-
-        else:
-
-            sl = price + distance
-
-            tp = price - distance * RISK_REWARD
-
-        pair = ticker.replace("=X", "")
-
-        pair = pair[:3] + "/" + pair[3:]
-
-        message = (
-
-            "FOREX SETUP - 5m\n"
-
-            f"Pair: {pair}\n"
-
-            f"Direction: {direction}\n"
-
-            f"Entry reference: {price:.5f}\n"
-
-            f"Stop-loss: {sl:.5f}\n"
-
-            f"Take-profit: {tp:.5f}\n"
-
-            f"Planned risk/reward: 1:{RISK_REWARD:.2f}\n"
-
-            "5m trigger: closed-candle EMA 9/21 crossover\n"
-
-            "15m confirmation: EMA 20/50 aligned\n"
-
-            "1h confirmation: EMA 20/50 aligned\n"
-
-            f"Candle time (UTC): {candle_time.isoformat()}\n"
-
-            "Data: Yahoo Finance; verify price with your broker.\n"
-
-            "Entry is a reference, not a guaranteed fill."
-
-        )
-
-        send_telegram(message)
-
-        state["sent"].append(signal_id)
-
-        state["sent"] = state["sent"][-500:]
-
-        save_state(state)
-
-        print(f"{ticker}: signal sent")
-
-        return direction
-
-    except Exception as error:
-
-        print(f"{ticker}: ERROR: {error}")
+    if any(x is None for x in (m5, m15, h1)):
 
         return None
 
-def main():
+    if len(m5) < 60 or len(m15) < 60 or len(h1) < 60:
 
-    print("Forex alert bot starting.")
+        print(f"{pair}: insufficient candles")
 
-    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        return None
 
-        raise RuntimeError("Telegram secrets are missing.")
+    # Reject stale 5-minute data.
 
-    state = load_state()
+    latest_start = m5.index[-1]
 
-    signals = []
+    latest_close_time = latest_start + pd.Timedelta(minutes=5)
 
-    errors = 0
+    now = pd.Timestamp.now(tz="UTC")
 
-    for ticker in PAIRS:
+    age_minutes = (now - latest_close_time).total_seconds() / 60
 
-        result = analyse(ticker, state)
+    if age_minutes < 0 or age_minutes > MAX_CANDLE_AGE_MINUTES:
 
-        if result:
+        print(
 
-            signals.append(f"{ticker.replace('=X', '')}: {result}")
+            f"{pair}: REJECTED stale M5 data "
 
-        time.sleep(1)
-
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-
-    if signals:
-
-        summary = (
-
-            f"Forex scan complete - {now}\n"
-
-            f"Qualifying signals sent: {len(signals)}\n"
-
-            + "\n".join(signals)
+            f"({age_minutes:.1f} minutes old)"
 
         )
+
+        return None
+
+    m5 = add_indicators(m5)
+
+    m15 = add_indicators(m15)
+
+    h1 = add_indicators(h1)
+
+    last = m5.iloc[-1]
+
+    prev = m5.iloc[-2]
+
+    trend15 = m15.iloc[-1]
+
+    trend1h = h1.iloc[-1]
+
+    if pd.isna(last["atr"]) or last["atr"] <= 0:
+
+        return None
+
+    # Only a fresh, completed-candle EMA crossover is eligible.
+
+    bullish_cross = (
+
+        prev["ema9"] <= prev["ema21"]
+
+        and last["ema9"] > last["ema21"]
+
+    )
+
+    bearish_cross = (
+
+        prev["ema9"] >= prev["ema21"]
+
+        and last["ema9"] < last["ema21"]
+
+    )
+
+    direction = None
+
+    if (
+
+        bullish_cross
+
+        and trend15["ema20"] > trend15["ema50"]
+
+        and trend1h["ema20"] > trend1h["ema50"]
+
+    ):
+
+        direction = "BUY"
+
+    elif (
+
+        bearish_cross
+
+        and trend15["ema20"] < trend15["ema50"]
+
+        and trend1h["ema20"] < trend1h["ema50"]
+
+    ):
+
+        direction = "SELL"
+
+    if direction is None:
+
+        return None
+
+    entry = float(last["Close"])
+
+    risk = float(last["atr"]) * ATR_MULTIPLIER
+
+    if direction == "BUY":
+
+        sl = entry - risk
+
+        tp = entry + risk * MIN_RISK_REWARD
 
     else:
 
-        summary = (
+        sl = entry + risk
 
-            f"Forex scan complete - {now}\n"
+        tp = entry - risk * MIN_RISK_REWARD
 
-            "No qualifying setups found this scan.\n"
+    # Final safety check immediately before creating the alert.
 
-            "No trade signal was issued. Waiting for better conditions."
+    now = pd.Timestamp.now(tz="UTC")
 
-        )
+    age_minutes = (
 
-    send_telegram(summary)
+        now - (m5.index[-1] + pd.Timedelta(minutes=5))
+
+    ).total_seconds() / 60
+
+    if age_minutes < 0 or age_minutes > MAX_CANDLE_AGE_MINUTES:
+
+        print(f"{pair}: rejected at final freshness check")
+
+        return None
+
+    timestamp = m5.index[-1].strftime("%Y-%m-%d %H:%M UTC")
+
+    message = (
+
+        "FOREX SETUP - 5m\n"
+
+        f"Pair: {pair}\n"
+
+        f"Direction: {direction}\n"
+
+        f"Entry reference: {entry:.5f}\n"
+
+        f"Stop-loss: {sl:.5f}\n"
+
+        f"Take-profit: {tp:.5f}\n"
+
+        "Planned risk/reward: 1:1.50\n"
+
+        "5m trigger: fresh closed-candle EMA 9/21 crossover\n"
+
+        "15m confirmation: EMA 20/50 aligned\n"
+
+        "1h confirmation: EMA 20/50 aligned\n"
+
+        f"Closed candle: {timestamp}\n"
+
+        "Data source: Yahoo Finance; verify with your broker\n"
+
+        "Note: Entry is a reference, not a guaranteed fill."
+
+    )
+
+    return message
+
+def main():
+
+    print("Forex bot starting...")
+
+    print("Checking data freshness before considering signals.")
+
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+
+        print("ERROR: Configure Telegram GitHub Actions secrets.")
+
+        raise SystemExit(1)
+
+    alerts = []
+
+    rejected_or_empty = 0
+
+    for pair in PAIRS:
+
+        try:
+
+            signal = scan_pair(pair)
+
+            if signal:
+
+                alerts.append(signal)
+
+            else:
+
+                rejected_or_empty += 1
+
+        except Exception as exc:
+
+            print(f"{pair}: scan error: {exc}")
+
+        time.sleep(0.5)
+
+    for alert in alerts:
+
+        telegram(alert)
+
+        time.sleep(1)
+
+    summary = (
+
+        "Forex scan complete.\n"
+
+        f"Pairs checked: {len(PAIRS)}\n"
+
+        f"Signals found: {len(alerts)}\n"
+
+        f"No signal / rejected data: {rejected_or_empty}\n"
+
+        f"Scan time: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}\n"
+
+        f"Stale M5 candles older than {MAX_CANDLE_AGE_MINUTES} "
+
+        "minutes are rejected.\n"
+
+        "Yahoo Finance data is not a guaranteed live broker feed."
+
+    )
+
+    telegram(summary)
 
     print(summary)
 
