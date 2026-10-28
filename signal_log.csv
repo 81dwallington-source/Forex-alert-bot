@@ -1,3 +1,3 @@
 timestamp_utc,pair,direction,entry_reference,stop_loss,take_profit,planned_rr,rsi,score,candle_time,data_source,outcome
-2026-10-28T18:46:13.920204+00:00,EUR/CHF,BUY,0.92436,0.92358,0.92553,1.5,57.8,6,2026-10-28 18:40:00+00:00,Yahoo Finance (not broker-verified),UNVERIFIED
-2026-10-28T18:46:20.627829+00:00,AUD/JPY,BUY,111.424,111.353,111.531,1.5,64.8,6,2026-10-28 18:40:00+00:00,Yahoo Finance (not broker-verified),UNVERIFIED
+2026-10-28T18:46:13.920204+00:00,EUR/CHF,BUY,0.92436,0.92358,0.92553,1.5,57.8,6,2026-10-28 18:40:00+00:00,Yahoo Finance (not broker-verified),UNVERIFIED_PENDING
+2026-10-28T18:46:20.627829+00:00,AUD/JPY,BUY,111.424,111.353,111.531,1.5,64.8,6,2026-10-28 18:40:00+00:00,Yahoo Finance (not broker-verified),UNVERIFIED_PENDING
