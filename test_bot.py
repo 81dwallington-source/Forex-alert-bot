@@ -19,6 +19,12 @@ class ForexBotRegressionTests(unittest.TestCase):
         self.assertEqual(bot.MAX_ALERTS_PER_UTC_DAY, 3)
         self.assertTrue(bot.MAX_ONE_ALERT_PER_PAIR_PER_UTC_DAY)
 
+    def test_stop_loss_has_more_volatility_room_and_structure_buffer(self):
+        self.assertEqual(bot.ATR_STOP_MULTIPLIER, 1.5)
+        self.assertEqual(bot.STRUCTURE_LOOKBACK_CANDLES, 6)
+        self.assertEqual(bot.STRUCTURE_STOP_BUFFER_ATR, 0.15)
+        self.assertEqual(bot.MAX_STOP_DISTANCE_ATR, 3.0)
+
     def test_trend_direction_buy_sell_and_unclear(self):
         self.assertEqual(
             bot.trend_direction(pd.DataFrame([{"EMA20": 1.2, "EMA50": 1.1}])),
