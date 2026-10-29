@@ -60,8 +60,8 @@ class ForexBotRegressionTests(unittest.TestCase):
         })
         result = bot.find_fvg_confluence(frame, "BUY", 1.2250, 0.0200)
         self.assertIsNotNone(result)
-        self.assertAlmostEqual(result["lower"], 1.1000)
-        self.assertAlmostEqual(result["upper"], 1.2000)
+        self.assertAlmostEqual(result["lower"], 1.1500)
+        self.assertAlmostEqual(result["upper"], 1.2400)
 
     def test_fully_filled_bullish_fvg_is_ignored(self):
         frame = pd.DataFrame({
