@@ -16,7 +16,7 @@ class ForexBotRegressionTests(unittest.TestCase):
         self.assertEqual(bot.TIMEFRAME, "5m")
 
     def test_conservative_daily_alert_limits_are_enabled(self):
-        self.assertEqual(bot.MAX_ALERTS_PER_UTC_DAY, 4)
+        self.assertEqual(bot.MAX_ALERTS_PER_UTC_DAY, 5)
         self.assertTrue(bot.MAX_ONE_ALERT_PER_PAIR_PER_UTC_DAY)
 
     def test_stop_loss_has_more_volatility_room_and_structure_buffer(self):
