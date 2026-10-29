@@ -856,6 +856,16 @@ def main():
 
                 continue
 
+            if signal["fvg_confluence"]:
+                fvg = signal["fvg_confluence"]
+                fvg_text = (
+                    f"{fvg['lower']:.5f}-{fvg['upper']:.5f}; "
+                    f"{fvg['age_bars']} bars old; "
+                    f"{fvg['distance_atr']:.2f} ATR away"
+                )
+            else:
+                fvg_text = "none nearby (not a rejection by itself)"
+
             message = (
 
                 f"FOREX SETUP — M5\n"
@@ -876,11 +886,7 @@ def main():
 
                 f"Quality filter score: {signal['score']}/7 (filter, not win probability)\\n"
 
-                f"FVG confluence: "
-                + (f"{signal['fvg_confluence']['lower']:.5f}-{signal['fvg_confluence']['upper']:.5f}; "
-                   f"{signal['fvg_confluence']['age_bars']} bars old; "
-                   f"{signal['fvg_confluence']['distance_atr']:.2f} ATR away\\n"
-                   if signal["fvg_confluence"] else "none nearby (not a rejection by itself)\\n")
+                f"FVG confluence: {fvg_text}\\n"
 
                 f"M5 EMA9/EMA21: {signal['m5_ema9']} / {signal['m5_ema21']}\n"
 
