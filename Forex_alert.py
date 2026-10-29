@@ -340,6 +340,42 @@ def trend_direction(data):
 
     return "NONE"
 
+def find_fvg_confluence(data, direction, current_price, atr, lookback=12):
+    """Find a recent, direction-aligned three-candle FVG near price.
+
+    Bullish: candle C low is above candle A high.
+    Bearish: candle C high is below candle A low.
+    A gap is considered filled if later price reaches its far edge.
+    This is optional confluence, never a standalone entry trigger.
+    """
+    if len(data) < 5 or atr <= 0:
+        return None
+    start = max(2, len(data) - lookback)
+    candidates = []
+    for i in range(start, len(data)):
+        candle_a = data.iloc[i - 2]
+        candle_c = data.iloc[i]
+        later = data.iloc[i + 1:]
+        if direction == "BUY":
+            lower, upper = float(candle_a["High"]), float(candle_c["Low"])
+            if upper <= lower or (not later.empty and float(later["Low"].min()) <= lower):
+                continue
+        else:
+            lower, upper = float(candle_c["High"]), float(candle_a["Low"])
+            if upper <= lower or (not later.empty and float(later["High"].max()) >= upper):
+                continue
+        distance = 0.0 if lower <= current_price <= upper else min(
+            abs(current_price - lower), abs(current_price - upper)
+        )
+        if distance <= atr * 0.5:
+            candidates.append({
+                "lower": lower, "upper": upper,
+                "age_bars": len(data) - 1 - i,
+                "distance_atr": distance / atr,
+            })
+    return min(candidates, key=lambda item: item["distance_atr"]) if candidates else None
+
+
 def analyse_pair(ticker):
 
     m5 = indicators(download_data(ticker, "5m", "5d"))
@@ -476,8 +512,10 @@ def analyse_pair(ticker):
 
             return None, "price not holding below EMA21"
 
-    # Simple quality score. A high score is a filter, not
+    # FVG is optional confluence, never a standalone entry trigger.
+    fvg = find_fvg_confluence(m5, direction, close, atr)
 
+    # Simple quality score. A high score is a filter, not
     # proof that the trade has a high probability of winning.
 
     score = 0
@@ -506,8 +544,10 @@ def analyse_pair(ticker):
 
         score += 1
 
-    if score < MIN_SCORE:
+    if fvg is not None:
+        score += 1
 
+    if score < MIN_SCORE:
         return None, "quality score too low"
 
     # ATR-based stop and 1:1.5 minimum reward-to-risk.
@@ -552,6 +592,8 @@ def analyse_pair(ticker):
 
         "score": score,
 
+        "fvg_confluence": fvg,
+
         "candle_time": str(m5.index[-1]),
 
         "atr": round(atr, decimals),
@@ -583,7 +625,11 @@ def analyse_pair(ticker):
         "evidence_note": (
             "Completed M5 EMA9/21 crossover; M15 and H1 EMA20/50 trends aligned; "
             f"RSI={rsi:.1f}; ATR={atr:.{decimals}f}; ATR%={atr_percent:.4f}; "
-            f"quality filter score={score}/6. Rule-based evidence, not a win-probability estimate."
+            f"quality filter score={score}/7; "
+            + (f"aligned unfilled M5 FVG {fvg['lower']:.{decimals}f}-{fvg['upper']:.{decimals}f}, "
+               f"{fvg['age_bars']} bars old, {fvg['distance_atr']:.2f} ATR away."
+               if fvg else "no nearby aligned unfilled M5 FVG confluence.")
+            + " Rule-based evidence, not a win-probability estimate."
         ),
 
     }, "qualifies"
@@ -828,7 +874,13 @@ def main():
 
                 f"RSI: {signal['rsi']}\n"
 
-                f"Quality filter score: {signal['score']}/6 (filter, not win probability)\n"
+                f"Quality filter score: {signal['score']}/7 (filter, not win probability)\\n"
+
+                f"FVG confluence: "
+                + (f"{signal['fvg_confluence']['lower']:.5f}-{signal['fvg_confluence']['upper']:.5f}; "
+                   f"{signal['fvg_confluence']['age_bars']} bars old; "
+                   f"{signal['fvg_confluence']['distance_atr']:.2f} ATR away\\n"
+                   if signal["fvg_confluence"] else "none nearby (not a rejection by itself)\\n")
 
                 f"M5 EMA9/EMA21: {signal['m5_ema9']} / {signal['m5_ema21']}\n"
 
