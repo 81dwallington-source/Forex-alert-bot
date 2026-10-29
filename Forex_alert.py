@@ -348,7 +348,7 @@ def analyse_pair(ticker):
 
     h1 = indicators(download_data(ticker, "1h", "1mo"))
 
-    fresh, age = candle_is_fresh(m5, 12)
+    fresh, age = candle_is_fresh(m5, MAX_SIGNAL_AGE_MINUTES)
 
     if not fresh:
 
