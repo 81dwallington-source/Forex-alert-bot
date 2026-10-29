@@ -78,7 +78,7 @@ MAX_STOP_DISTANCE_ATR = 3.0
 MIN_SCORE = 5
 
 # Conservative alert-only controls; these do not control broker execution.
-MAX_ALERTS_PER_UTC_DAY = 4
+MAX_ALERTS_PER_UTC_DAY = 5
 MAX_ONE_ALERT_PER_PAIR_PER_UTC_DAY = True
 
 # Manual-execution safety only: this bot cannot read MT4 equity, spread,
