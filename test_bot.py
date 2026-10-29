@@ -59,6 +59,29 @@ class ForexBotRegressionTests(unittest.TestCase):
         self.assertFalse(fresh)
         self.assertGreater(age, 12)
 
+    def test_m5_freshness_measures_from_candle_close_not_open(self):
+        # An M5 candle stamped 11 minutes ago closed 6 minutes ago.
+        candle_open = datetime.now(timezone.utc) - pd.Timedelta(minutes=11)
+        frame = pd.DataFrame(
+            {"Close": [1.0]},
+            index=pd.DatetimeIndex([candle_open]),
+        )
+        fresh, age = bot.candle_is_fresh(frame, 10, candle_duration_minutes=5)
+        self.assertTrue(fresh)
+        self.assertGreaterEqual(age, 5)
+        self.assertLessEqual(age, 7)
+
+    def test_m5_freshness_still_rejects_candle_closed_too_long_ago(self):
+        # An M5 candle stamped 16 minutes ago closed 11 minutes ago.
+        candle_open = datetime.now(timezone.utc) - pd.Timedelta(minutes=16)
+        frame = pd.DataFrame(
+            {"Close": [1.0]},
+            index=pd.DatetimeIndex([candle_open]),
+        )
+        fresh, age = bot.candle_is_fresh(frame, 10, candle_duration_minutes=5)
+        self.assertFalse(fresh)
+        self.assertGreater(age, 10)
+
     def test_indicators_produce_finite_recent_values(self):
         index = pd.date_range(
             end=pd.Timestamp.now(tz="UTC"),
