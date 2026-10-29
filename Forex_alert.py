@@ -76,6 +76,12 @@ MIN_SCORE = 5
 MAX_ALERTS_PER_UTC_DAY = 3
 MAX_ONE_ALERT_PER_PAIR_PER_UTC_DAY = True
 
+# Manual-execution safety only: this bot cannot read MT4 equity, spread,
+# broker pip values, or enforce position size.
+MAX_ENTRY_DRIFT_ATR = 0.20
+MAX_SIGNAL_AGE_MINUTES = 10
+RECOMMENDED_MAX_RISK_PERCENT = 0.25
+
 STATE_FILE = Path("signals_state.json")
 
 LOG_FILE = Path("signal_log.csv")
@@ -840,11 +846,17 @@ def main():
 
                 f"Data: {DATA_SOURCE}\n\n"
 
-                f"Alert only — verify price and spread with your broker "
-
-                f"before considering any trade. Entry is a reference, "
-
-                f"not a guaranteed fill. Risk is not guaranteed."
+                f"ENTRY SAFETY: only consider entry if your broker price is within "
+                f"{MAX_ENTRY_DRIFT_ATR:.2f} ATR of the entry reference and the signal "
+                f"is no older than {MAX_SIGNAL_AGE_MINUTES} minutes. Otherwise skip it.\\n"
+ 
+                f"RISK SAFETY: this alert cannot read MT4 equity or calculate broker-specific "
+                f"lot size. Never use a fixed 20-lot size. Keep planned risk at or below "
+                f"{RECOMMENDED_MAX_RISK_PERCENT:.2f}% of current equity and calculate volume "
+                f"using your broker's contract/pip value. If uncertain, do not enter.\\n\\n"
+ 
+                f"Alert only — verify live price, spread, stop and target with your broker. "
+                f"Entry is a reference, not a guaranteed fill. Risk is not guaranteed."
 
             )
 
