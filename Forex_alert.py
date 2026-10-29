@@ -672,6 +672,7 @@ def update_signal_outcomes():
                         signal_time = signal_time.tz_localize("UTC")
                     else:
                         signal_time = signal_time.tz_convert("UTC")
+                    entry = float(row["entry_reference"])
                     stop = float(row["stop_loss"])
                     target = float(row["take_profit"])
                     direction = row["direction"]
@@ -679,13 +680,14 @@ def update_signal_outcomes():
                     continue
 
                 later = candles[candles.index > signal_time]
+                entry_hit = False
                 for outcome_time, candle in later.iterrows():
                     high = float(candle["High"])
                     low = float(candle["Low"])
                     evidence_time = outcome_time.isoformat()
                     evidence_detail = (
                         f"Yahoo M5 candle {evidence_time}: high={high}, low={low}; "
-                        f"entry reference={row.get('entry_reference')}, SL={stop}, TP={target}. "
+                        f"entry reference={entry}, SL={stop}, TP={target}. "
                         "Not broker-verified."
                     )
                     if direction == "BUY":
@@ -696,6 +698,28 @@ def update_signal_outcomes():
                         target_hit = low <= target
                     else:
                         break
+
+                    # Do not score an alert until its entry reference was actually
+                    # touched in a later candle. If entry and either exit level are
+                    # touched in that same OHLC candle, their order is unknowable.
+                    if not entry_hit:
+                        if not (low <= entry <= high):
+                            continue
+                        entry_hit = True
+                        if stop_hit or target_hit:
+                            row["outcome"] = "AMBIGUOUS_ENTRY_EXIT_SAME_CANDLE"
+                            row["outcome_candle_time"] = evidence_time
+                            row["outcome_evidence"] = (
+                                evidence_detail + " Entry and an exit level were touched "
+                                "in the same M5 candle; intrabar order cannot be verified."
+                            )
+                            changed = True
+                            log(f"Outcome ambiguous for {row['pair']}: entry and exit level touched in same M5 candle")
+                            resolved_notifications.append(
+                                f"{row['pair']} {direction}: AMBIGUOUS — entry and SL/TP level touched in one Yahoo M5 candle at {evidence_time}. Not broker-verified."
+                            )
+                            break
+                        continue
 
                     if stop_hit and target_hit:
                         row["outcome"] = "AMBIGUOUS_BOTH_HIT_YAHOO"
