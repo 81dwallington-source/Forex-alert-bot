@@ -653,6 +653,7 @@ def update_signal_outcomes():
         return
 
     changed = False
+    resolved_notifications = []
     checked_at = datetime.now(timezone.utc).isoformat()
 
     for ticker, pending_rows in pending_by_pair.items():
@@ -702,6 +703,9 @@ def update_signal_outcomes():
                         row["outcome_evidence"] = evidence_detail
                         changed = True
                         log(f"Outcome ambiguous for {row['pair']}: stop and target touched in same M5 candle")
+                        resolved_notifications.append(
+                            f"{row['pair']} {direction}: AMBIGUOUS — SL and TP both touched in one Yahoo M5 candle at {evidence_time}. Not broker-verified."
+                        )
                         break
                     if target_hit:
                         row["outcome"] = "TP_HIT_YAHOO_UNVERIFIED"
@@ -709,6 +713,9 @@ def update_signal_outcomes():
                         row["outcome_evidence"] = evidence_detail
                         changed = True
                         log(f"Target touched in Yahoo M5 data for {row['pair']} (not broker-verified)")
+                        resolved_notifications.append(
+                            f"{row['pair']} {direction}: TP touched at {evidence_time} — Yahoo M5 estimate, NOT broker-verified."
+                        )
                         break
                     if stop_hit:
                         row["outcome"] = "SL_HIT_YAHOO_UNVERIFIED"
@@ -716,6 +723,9 @@ def update_signal_outcomes():
                         row["outcome_evidence"] = evidence_detail
                         changed = True
                         log(f"Stop touched in Yahoo M5 data for {row['pair']} (not broker-verified)")
+                        resolved_notifications.append(
+                            f"{row['pair']} {direction}: SL touched at {evidence_time} — Yahoo M5 estimate, NOT broker-verified."
+                        )
                         break
                 else:
                     # Keep unresolved alerts pending; no outcome is invented.
@@ -734,6 +744,9 @@ def update_signal_outcomes():
                 writer.writerows(rows)
             temp_file.replace(LOG_FILE)
             log(f"Updated signal outcomes at {checked_at}; Yahoo-based results remain unverified.")
+            if resolved_notifications:
+                summary = "FOREX ALERT OUTCOME CHECK (Yahoo M5; not broker-verified)\\n\\n" + "\\n".join(resolved_notifications)
+                telegram_send(summary)
         except Exception as exc:
             log(f"Could not save updated signal outcomes: {exc}")
             if temp_file.exists():
