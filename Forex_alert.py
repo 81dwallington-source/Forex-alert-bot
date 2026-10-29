@@ -884,9 +884,9 @@ def main():
 
                 f"RSI: {signal['rsi']}\n"
 
-                f"Quality filter score: {signal['score']}/7 (filter, not win probability)\\n"
+                f"Quality filter score: {signal['score']}/7 (filter, not win probability)\n"
 
-                f"FVG confluence: {fvg_text}\\n"
+                f"FVG confluence: {fvg_text}\n"
 
                 f"M5 EMA9/EMA21: {signal['m5_ema9']} / {signal['m5_ema21']}\n"
 
