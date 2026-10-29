@@ -259,8 +259,11 @@ def download_data(ticker, interval, period):
 
     return data
 
-def candle_is_fresh(data, max_age_minutes):
+def candle_is_fresh(data, max_age_minutes, candle_duration_minutes=0):
 
+    # Yahoo timestamps candles at their opening time. Freshness must be
+    # measured from the candle close, otherwise a completed M5 bar appears
+    # five minutes older than it really is.
     last_time = data.index[-1]
 
     if last_time.tzinfo is None:
@@ -271,9 +274,11 @@ def candle_is_fresh(data, max_age_minutes):
 
         last_time = last_time.tz_convert("UTC")
 
+    candle_close_time = last_time + pd.Timedelta(minutes=candle_duration_minutes)
+
     age_minutes = (
 
-        datetime.now(timezone.utc) - last_time.to_pydatetime()
+        datetime.now(timezone.utc) - candle_close_time.to_pydatetime()
 
     ).total_seconds() / 60
 
@@ -353,15 +358,15 @@ def analyse_pair(ticker):
 
     h1 = indicators(download_data(ticker, "1h", "1mo"))
 
-    fresh, age = candle_is_fresh(m5, MAX_SIGNAL_AGE_MINUTES)
+    fresh, age = candle_is_fresh(m5, MAX_SIGNAL_AGE_MINUTES, candle_duration_minutes=5)
 
     if not fresh:
 
         return None, f"stale M5 data ({age:.1f} minutes old)"
 
-    fresh15, age15 = candle_is_fresh(m15, 40)
+    fresh15, age15 = candle_is_fresh(m15, 40, candle_duration_minutes=15)
 
-    fresh1h, age1h = candle_is_fresh(h1, 150)
+    fresh1h, age1h = candle_is_fresh(h1, 150, candle_duration_minutes=60)
 
     if not fresh15 or not fresh1h:
 
