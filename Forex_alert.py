@@ -848,12 +848,12 @@ def main():
 
                 f"ENTRY SAFETY: only consider entry if your broker price is within "
                 f"{MAX_ENTRY_DRIFT_ATR:.2f} ATR of the entry reference and the signal "
-                f"is no older than {MAX_SIGNAL_AGE_MINUTES} minutes. Otherwise skip it.\\n"
+                f"is no older than {MAX_SIGNAL_AGE_MINUTES} minutes. Otherwise skip it.\n"
  
                 f"RISK SAFETY: this alert cannot read MT4 equity or calculate broker-specific "
                 f"lot size. Never use a fixed 20-lot size. Keep planned risk at or below "
                 f"{RECOMMENDED_MAX_RISK_PERCENT:.2f}% of current equity and calculate volume "
-                f"using your broker's contract/pip value. If uncertain, do not enter.\\n\\n"
+                f"using your broker's contract/pip value. If uncertain, do not enter.\n\n"
  
                 f"Alert only — verify live price, spread, stop and target with your broker. "
                 f"Entry is a reference, not a guaranteed fill. Risk is not guaranteed."
