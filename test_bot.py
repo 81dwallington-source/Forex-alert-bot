@@ -53,6 +53,24 @@ class ForexBotRegressionTests(unittest.TestCase):
         self.assertFalse(fresh)
         self.assertGreater(age, 12)
 
+    def test_bullish_fvg_detected_as_optional_confluence(self):
+        frame = pd.DataFrame({
+            "High": [1.1000, 1.1500, 1.2500, 1.2800, 1.2900],
+            "Low":  [1.0800, 1.1200, 1.2000, 1.2400, 1.2600],
+        })
+        result = bot.find_fvg_confluence(frame, "BUY", 1.2250, 0.0200)
+        self.assertIsNotNone(result)
+        self.assertAlmostEqual(result["lower"], 1.1500)
+        self.assertAlmostEqual(result["upper"], 1.2400)
+
+    def test_fully_filled_bullish_fvg_is_ignored(self):
+        frame = pd.DataFrame({
+            "High": [1.1000, 1.1500, 1.2500, 1.2800, 1.2900],
+            "Low":  [1.0800, 1.1200, 1.2000, 1.2400, 1.0900],
+        })
+        result = bot.find_fvg_confluence(frame, "BUY", 1.2250, 0.0200)
+        self.assertIsNone(result)
+
     def test_indicators_produce_finite_recent_values(self):
         index = pd.date_range(
             end=pd.Timestamp.now(tz="UTC"),
