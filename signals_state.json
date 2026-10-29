@@ -15,5 +15,7 @@
   "NZDUSD=X|SELL|2026-10-29 13:15:00+00:00": true,
   "daily_pair|2026-10-29|NZDUSD=X": true,
   "NZDCHF=X|SELL|2026-10-29 13:45:00+00:00": true,
-  "daily_pair|2026-10-29|NZDCHF=X": true
+  "daily_pair|2026-10-29|NZDCHF=X": true,
+  "EURAUD=X|BUY|2026-10-29 21:55:00+00:00": true,
+  "daily_pair|2026-10-29|EURAUD=X": true
 }
