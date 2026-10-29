@@ -544,10 +544,14 @@ def analyse_pair(ticker):
 
         score += 1
 
+    base_score = score
+
     if fvg is not None:
         score += 1
 
-    if score < MIN_SCORE:
+    # Keep the original minimum-quality threshold: an FVG bonus must not
+    # rescue a setup that failed the existing filters.
+    if base_score < MIN_SCORE:
         return None, "quality score too low"
 
     # ATR-based stop and 1:1.5 minimum reward-to-risk.
