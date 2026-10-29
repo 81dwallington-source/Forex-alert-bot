@@ -62,13 +62,18 @@ PAIRS = [
 
 MIN_RR = 1.5
 
-ATR_STOP_MULTIPLIER = 1.2
+ATR_STOP_MULTIPLIER = 1.5
 
 MIN_ATR_PERCENT = 0.015
 
 MAX_ATR_PERCENT = 0.60
 
 MAX_CANDLE_ATR = 1.8
+
+# Give M5 stops room beyond recent structure, with a volatility buffer.
+STRUCTURE_LOOKBACK_CANDLES = 6
+STRUCTURE_STOP_BUFFER_ATR = 0.15
+MAX_STOP_DISTANCE_ATR = 3.0
 
 MIN_SCORE = 5
 
@@ -510,20 +515,27 @@ def analyse_pair(ticker):
 
         return None, "quality score too low"
 
-    # ATR-based stop and 1:1.5 minimum reward-to-risk.
-
-    stop_distance = atr * ATR_STOP_MULTIPLIER
+    # Wider volatility-aware stop, placed beyond recent M5 structure.
+    # Use the last completed candles (including the signal candle), then add
+    # an ATR buffer. Never force a stop so wide that the setup is unsuitable.
+    structure = m5.iloc[-STRUCTURE_LOOKBACK_CANDLES:]
+    buffer = atr * STRUCTURE_STOP_BUFFER_ATR
+    minimum_distance = atr * ATR_STOP_MULTIPLIER
 
     if direction == "BUY":
-
-        stop = close - stop_distance
-
+        structure_stop = float(structure["Low"].min()) - buffer
+        stop = min(close - minimum_distance, structure_stop)
+        stop_distance = close - stop
+        if stop_distance <= 0 or stop_distance > atr * MAX_STOP_DISTANCE_ATR:
+            return None, "structure stop too wide for M5 setup"
         target = close + stop_distance * MIN_RR
 
     else:
-
-        stop = close + stop_distance
-
+        structure_stop = float(structure["High"].max()) + buffer
+        stop = max(close + minimum_distance, structure_stop)
+        stop_distance = stop - close
+        if stop_distance <= 0 or stop_distance > atr * MAX_STOP_DISTANCE_ATR:
+            return None, "structure stop too wide for M5 setup"
         target = close - stop_distance * MIN_RR
 
     # Forex quote precision: JPY pairs usually use 3 decimals.
