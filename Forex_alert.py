@@ -22,7 +22,7 @@ import pandas as pd
 
 # Alerts only. No automatic trading.
 
-# Data source: Yahoo Finance, NOT broker-verified.
+# Data source: OANDA v20 midpoint candles; not execution-fill verification.
 
 # =========================================================
 
@@ -260,7 +260,7 @@ def download_data(ticker, interval, period):
 
 def candle_is_fresh(data, max_age_minutes, candle_duration_minutes=0):
 
-    # Yahoo timestamps candles at their opening time. Freshness must be
+     # OANDA timestamps candles at their opening time. Freshness must be
     # measured from the candle close, otherwise a completed M5 bar appears
     # five minutes older than it really is.
     last_time = data.index[-1]
@@ -838,7 +838,7 @@ def update_signal_outcomes():
                     evidence_detail = (
                         f"OANDA M5 midpoint candle {evidence_time}: high={high}, low={low}; "
                         f"entry reference={entry}, SL={stop}, TP={target}. "
-                        "Not broker-verified."
+                        "OANDA midpoint candle evidence; actual execution fills are not verified."
                     )
                     if direction == "BUY":
                         stop_hit = low <= stop
@@ -866,37 +866,37 @@ def update_signal_outcomes():
                             changed = True
                             log(f"Outcome ambiguous for {row['pair']}: entry and exit level touched in same M5 candle")
                             resolved_notifications.append(
-                                f"{row['pair']} {direction}: AMBIGUOUS — entry and SL/TP level touched in one Yahoo M5 candle at {evidence_time}. Not broker-verified."
+                                f"{row['pair']} {direction}: AMBIGUOUS — entry and SL/TP level touched in one OANDA M5 candle at {evidence_time}. Not broker-verified."
                             )
                             break
                         continue
 
                     if stop_hit and target_hit:
-                        row["outcome"] = "AMBIGUOUS_BOTH_HIT_YAHOO"
+                        row["outcome"] = "AMBIGUOUS_BOTH_HIT_OANDA_CANDLES"
                         row["outcome_candle_time"] = evidence_time
                         row["outcome_evidence"] = evidence_detail
                         changed = True
                         log(f"Outcome ambiguous for {row['pair']}: stop and target touched in same M5 candle")
                         resolved_notifications.append(
-                            f"{row['pair']} {direction}: AMBIGUOUS — SL and TP both touched in one Yahoo M5 candle at {evidence_time}. Not broker-verified."
+                            f"{row['pair']} {direction}: AMBIGUOUS — SL and TP both touched in one OANDA M5 candle at {evidence_time}. Not actual fills."
                         )
                         break
                     if target_hit:
-                        row["outcome"] = "TP_HIT_YAHOO_UNVERIFIED"
+                        row["outcome"] = "TP_HIT_OANDA_CANDLE_ESTIMATE"
                         row["outcome_candle_time"] = evidence_time
                         row["outcome_evidence"] = evidence_detail
                         changed = True
-                        log(f"Target touched in Yahoo M5 data for {row['pair']} (not broker-verified)")
+                        log(f"Target touched in OANDA M5 midpoint data for {row['pair']} (not actual fills)")
                         resolved_notifications.append(
                             f"{row['pair']} {direction}: TP touched at {evidence_time} — OANDA candle estimate; not an executed-trade result."
                         )
                         break
                     if stop_hit:
-                        row["outcome"] = "SL_HIT_YAHOO_UNVERIFIED"
+                        row["outcome"] = "SL_HIT_OANDA_CANDLE_ESTIMATE"
                         row["outcome_candle_time"] = evidence_time
                         row["outcome_evidence"] = evidence_detail
                         changed = True
-                        log(f"Stop touched in Yahoo M5 data for {row['pair']} (not broker-verified)")
+                        log(f"Stop touched in OANDA M5 midpoint data for {row['pair']} (not actual fills)")
                         resolved_notifications.append(
                             f"{row['pair']} {direction}: SL touched at {evidence_time} — Yahoo M5 estimate, NOT broker-verified."
                         )
