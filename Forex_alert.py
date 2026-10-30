@@ -171,7 +171,7 @@ def save_state(state):
 def log_signal(row):
     # Expand older CSV schemas in place so no previous signal history is lost.
     fieldnames = [
-        "timestamp_utc", "pair", "direction", "entry_reference", "stop_loss",
+        "timestamp_utc", "pair", "direction", "setup_type", "entry_reference", "stop_loss",
         "take_profit", "planned_rr", "rsi", "score", "candle_time",
         "data_source", "outcome", "m5_ema9", "m5_ema21", "m15_trend", "h1_trend",
         "m15_ema20", "m15_ema50", "h1_ema20", "h1_ema50", "atr", "atr_percent",
@@ -858,7 +858,7 @@ def update_signal_outcomes():
         return
 
     fieldnames = [
-        "timestamp_utc", "pair", "direction", "entry_reference", "stop_loss",
+        "timestamp_utc", "pair", "direction", "setup_type", "entry_reference", "stop_loss",
         "take_profit", "planned_rr", "rsi", "score", "candle_time",
         "data_source", "outcome", "m5_ema9", "m5_ema21", "m15_trend", "h1_trend",
         "m15_ema20", "m15_ema50", "h1_ema20", "h1_ema50", "atr", "atr_percent",
@@ -1179,6 +1179,8 @@ def main():
                     "pair": signal["pair"],
 
                     "direction": signal["direction"],
+
+                    "setup_type": signal["setup_type"],
 
                     "entry_reference": signal["entry"],
 
