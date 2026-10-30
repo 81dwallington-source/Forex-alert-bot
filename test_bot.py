@@ -53,18 +53,48 @@ class ForexBotRegressionTests(unittest.TestCase):
                 row = next(csv.DictReader(file))
             self.assertEqual(row["setup_type"], "PULLBACK CONTINUATION")
 
-    def test_public_feed_is_explicitly_not_broker_verified(self):
-        self.assertIn("biquote", bot.DATA_SOURCE.lower())
-        self.assertIn("not user-broker verified", bot.DATA_SOURCE.lower())
-        self.assertNotIn("yahoo bootstrap", bot.DATA_SOURCE.lower())
+    def test_market_data_source_is_oanda_not_execution_fills(self):
+        self.assertIn("OANDA", bot.DATA_SOURCE)
+        self.assertIn("not account fills", bot.DATA_SOURCE)
+        self.assertNotIn("biquote", bot.DATA_SOURCE.lower())
 
-    def test_public_feed_mode_uses_biquote_without_oanda_dependency(self):
+    def test_oanda_feed_has_no_public_fallback_and_requires_token(self):
         import inspect
-        source = inspect.getsource(bot.main)
-        self.assertNotIn("OANDA_API_TOKEN", source)
-        self.assertIn("analyse_pair", source)
-        self.assertIn("biquote.io/api/", inspect.getsource(bot.download_data))
-        self.assertNotIn("download_yahoo_data", inspect.getsource(bot.download_data))
+        source = inspect.getsource(bot.download_data)
+        self.assertIn("OANDA_API_TOKEN", source)
+        self.assertIn("api-fxpractice.oanda.com", source)
+        self.assertIn("api-fxtrade.oanda.com", source)
+        self.assertNotIn("biquote.io", source)
+        with patch.dict("os.environ", {"OANDA_API_TOKEN": ""}):
+            with self.assertRaisesRegex(RuntimeError, "OANDA_API_TOKEN"):
+                bot.download_data("EURUSD=X", "5m", "5d")
+
+    def test_oanda_candle_parser_uses_only_completed_midpoint_bars(self):
+        import json
+        stamps = pd.date_range(end=pd.Timestamp.now(tz="UTC"), periods=60, freq="5min")
+        candles = []
+        for stamp in stamps:
+            candles.append({
+                "time": stamp.isoformat(),
+                "complete": True,
+                "mid": {"o": "1.1000", "h": "1.1010", "l": "1.0990", "c": "1.1005"},
+            })
+        candles.append({
+            "time": (stamps[-1] + pd.Timedelta(minutes=5)).isoformat(),
+            "complete": False,
+            "mid": {"o": "1.1005", "h": "1.1020", "l": "1.1000", "c": "1.1015"},
+        })
+        response = unittest.mock.Mock()
+        response.json.return_value = {"candles": candles}
+        response.raise_for_status.return_value = None
+        with patch.dict("os.environ", {"OANDA_API_TOKEN": "unit-test-token", "OANDA_ENVIRONMENT": "practice"}):
+            with patch.object(bot.requests, "get", return_value=response) as get:
+                frame = bot.download_data("EURUSD=X", "5m", "5d")
+        self.assertEqual(len(frame), 60)
+        self.assertEqual(float(frame.iloc[-1]["Close"]), 1.1005)
+        self.assertEqual(get.call_args.args[0], "https://api-fxpractice.oanda.com/v3/instruments/EUR_USD/candles")
+        self.assertEqual(get.call_args.kwargs["params"]["granularity"], "M5")
+        self.assertEqual(get.call_args.kwargs["headers"]["Authorization"], "Bearer unit-test-token")
 
     def test_detects_bullish_breakout_retest_and_confirmation(self):
         rows = [{"Open":1.1000,"High":1.1050,"Low":1.0950,"Close":1.1020,
