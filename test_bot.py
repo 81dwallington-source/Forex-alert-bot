@@ -39,9 +39,9 @@ class ForexBotRegressionTests(unittest.TestCase):
         self.assertTrue(bot.MAX_ONE_ALERT_PER_PAIR_PER_UTC_DAY)
 
     def test_stop_loss_has_more_volatility_room_and_structure_buffer(self):
-        self.assertEqual(bot.ATR_STOP_MULTIPLIER, 1.5)
-        self.assertEqual(bot.STRUCTURE_LOOKBACK_CANDLES, 12)
-        self.assertEqual(bot.STRUCTURE_STOP_BUFFER_ATR, 0.25)
+        self.assertEqual(bot.ATR_STOP_MULTIPLIER, 1.75)
+        self.assertEqual(bot.STRUCTURE_LOOKBACK_CANDLES, 18)
+        self.assertEqual(bot.STRUCTURE_STOP_BUFFER_ATR, 0.35)
         self.assertEqual(bot.MAX_STOP_DISTANCE_ATR, 3.0)
 
     def test_detects_bullish_liquidity_sweep_and_reclaim(self):
