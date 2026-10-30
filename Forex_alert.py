@@ -350,6 +350,26 @@ def trend_direction(data):
 
     return "NONE"
 
+def detect_h1_swing_levels(data, lookback=120, left_bars=2, right_bars=2):
+    """Return latest confirmed H1 pivot high/low using two closed bars either side."""
+    if len(data) < left_bars + right_bars + 5:
+        return {"high": None, "low": None}
+    window = data.iloc[-lookback:].copy()
+    highs, lows = [], []
+    for i in range(left_bars, len(window) - right_bars):
+        high = float(window.iloc[i]["High"])
+        low = float(window.iloc[i]["Low"])
+        prior_highs = window.iloc[i-left_bars:i]["High"]
+        next_highs = window.iloc[i+1:i+right_bars+1]["High"]
+        prior_lows = window.iloc[i-left_bars:i]["Low"]
+        next_lows = window.iloc[i+1:i+right_bars+1]["Low"]
+        if high > float(prior_highs.max()) and high > float(next_highs.max()):
+            highs.append(high)
+        if low < float(prior_lows.min()) and low < float(next_lows.min()):
+            lows.append(low)
+    return {"high": highs[-1] if highs else None, "low": lows[-1] if lows else None}
+
+
 def detect_liquidity_sweep(data, direction, lookback=12, recent_candles=3):
     """Detect a recent stop-run and close back inside the prior swing range.
 
@@ -603,6 +623,11 @@ def analyse_pair(ticker):
         if setup_type == "CONTINUATION" and close >= float(last["EMA21"]):
             return None, "price not holding below EMA21"
 
+    # Confirmed H1 pivots: two completed candles must form on the right.
+    h1_swings = detect_h1_swing_levels(h1)
+    h1_swing_high = h1_swings["high"]
+    h1_swing_low = h1_swings["low"]
+
     # Simple quality score. A high score is a filter, not
 
     # proof that the trade has a high probability of winning.
@@ -674,6 +699,15 @@ def analyse_pair(ticker):
             return None, "structure stop too wide for M5 setup"
         target = close - stop_distance * MIN_RR
 
+    # Reject targets that run into the nearest opposing confirmed H1 swing.
+    h1_clearance = float(h1.iloc[-1]["ATR"]) * 0.15
+    if direction == "BUY" and h1_swing_high is not None and close < h1_swing_high:
+        if h1_swing_high - close <= (target - close) + h1_clearance:
+            return None, "H1 swing-high resistance too close for planned BUY target"
+    if direction == "SELL" and h1_swing_low is not None and close > h1_swing_low:
+        if close - h1_swing_low <= (close - target) + h1_clearance:
+            return None, "H1 swing-low support too close for planned SELL target"
+
     # Forex quote precision: JPY pairs usually use 3 decimals.
 
     pair = ticker.replace("=X", "")
@@ -719,6 +753,8 @@ def analyse_pair(ticker):
         "m15_trend": m15_trend,
 
         "h1_trend": h1_trend,
+        "h1_swing_high": round(h1_swing_high, decimals) if h1_swing_high is not None else None,
+        "h1_swing_low": round(h1_swing_low, decimals) if h1_swing_low is not None else None,
 
         "m15_ema20": round(float(m15.iloc[-1]["EMA20"]), decimals),
 
