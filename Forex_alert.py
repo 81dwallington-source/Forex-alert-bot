@@ -22,7 +22,7 @@ import pandas as pd
 
 # Alerts only. No automatic trading.
 
-# Data source: OANDA v20 midpoint candles; not execution-fill verification.
+# Data source: free public FX chart feed; not broker-verified.
 
 # =========================================================
 
