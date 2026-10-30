@@ -32,14 +32,14 @@ class ForexBotRegressionTests(unittest.TestCase):
             self.assertEqual(row["setup_type"], "PULLBACK CONTINUATION")
 
     def test_public_feed_is_explicitly_not_broker_verified(self):
+        self.assertIn("yahoo finance", bot.DATA_SOURCE.lower())
         self.assertIn("not broker-verified", bot.DATA_SOURCE.lower())
 
-    def test_public_feed_mode_has_no_oanda_startup_dependency(self):
+    def test_public_feed_mode_uses_yahoo_without_oanda_dependency(self):
         import inspect
         source = inspect.getsource(bot.main)
         self.assertNotIn("OANDA_API_TOKEN", source)
         self.assertIn("analyse_pair", source)
-        self.assertIn("download_oanda_data", inspect.getsource(bot.download_data))
         self.assertIn("download_yahoo_data", inspect.getsource(bot.download_data))
 
     def test_entry_timeframe_is_five_minutes(self):
