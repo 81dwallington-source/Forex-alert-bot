@@ -58,7 +58,7 @@ jobs:
               raise SystemExit("Telegram secrets are missing")
           response = requests.post(
               f"https://api.telegram.org/bot{token}/sendMessage",
-              json={"chat_id": chat_id, "text": "✅ GBP/USD — M5 WATCHLIST\n\nFirst pair to investigate for institutional-style buying activity.\n\nLooking for:\n• M15 and H1 bullish confirmation.\n• Pullback towards the M5 EMA21.\n• Strong bullish confirmation candle.\n• Break of the confirmation candle high.\n\nNo chasing price. No entry until the live chart confirms it.\nEntry, SL and TP still need live verification.\n\nWATCH ONLY — NOT A TRADE SIGNAL."},
+              json={"chat_id": chat_id, "text": "👀 ALL FX PAIRS — M5 WATCHLIST\\n\\nScan the full configured forex watchlist: majors and minors (and exotics only if enabled in the bot). Look for institutional-style participation clues, not assumed bank orders.\\n\\nFor any pair, wait for:\\n• M15 and H1 directional confirmation.\\n• M5 pullback towards EMA21.\\n• Strong M5 continuation confirmation candle.\\n• Break of the confirmation candle high for buys, or low for sells.\\n• Fresh live data and acceptable entry distance.\\n\\nNo chasing. No forced trades. No entry, SL or TP until that individual pair has a fully verified setup.\\n\\nWATCHLIST RULES — NOT A TRADE SIGNAL."},
               timeout=20,
           )
           response.raise_for_status()
