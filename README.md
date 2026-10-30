@@ -1,29 +1,25 @@
 # Forex Alert Bot
 
 ## Current behaviour
-- Signal-only Telegram alerts; the bot does not place trades.
+- Signal-only Telegram alerts; no automatic trading.
 - Scans 27 major and cross-currency pairs using completed M5 candles, with M15 and H1 trend confirmation.
-- Uses completed OANDA v20 midpoint candles for M5/M15/H1. Yahoo Finance is not used as a fallback for trade alerts.
-- Requires the `OANDA_API_TOKEN` GitHub Actions secret. If it is missing, the bot sends a pause notice and sends no trade alerts.
-- Rejects stale/incomplete candles and requires a recent completed M5 EMA 9/21 crossover.
-- Detects confirmed H1 swing highs/lows using two closed candles on each side; rejects setups when the planned target is too close to the opposing H1 swing level.
-- Filters for RSI, ATR/volatility, aligned and sufficiently separated higher-timeframe trends, entry extension, and signal-candle direction.
-- Stop-loss uses the wider of 1.75 ATR or the recent 18-candle M5 swing high/low plus a 0.35 ATR buffer; setups needing more than 3 ATR of stop distance are rejected.
-- Minimum planned reward-to-risk is 1:1.5; target distance scales with the calculated stop distance.
-- Limits alerts to **5 per UTC day** and at most **1 alert per pair per UTC day**.
-- Logs alerts and estimates later outcomes from OANDA M5 midpoint candles. These are candle-based estimates, not executed-trade results.
+- Uses a free public Yahoo Finance FX chart feed. This is **not broker-verified** and may be delayed, unavailable, rate-limited, or differ from MT4 broker prices.
+- Rejects stale/incomplete candles and fails closed if the public feed returns missing, malformed, or insufficient candle data.
+- Requires aligned M15/H1 trends, fresh M5 continuation or pullback confirmation, and filters for RSI, ATR/volatility, EMA separation, entry extension, and candle direction.
+- Detects confirmed H1 swing highs/lows and rejects setups when the target is too close to the opposing H1 swing.
+- Uses structure/ATR stops, a minimum planned reward-to-risk of 1:1.5, and limits alerts to 5 per UTC day and at most 1 per pair per UTC day.
+- Logs alerts and estimates later outcomes from public-feed M5 candles. These are candle-based estimates, not executed-trade results.
 
 ## Important limitations and safety
-- OANDA midpoint candles are broker-sourced market data, but are not your executed MT4/FTMO fills. Prices, spreads, slippage, commissions and outcome labels can still differ.
-- An alert is a rule-based candidate, not a prediction or guarantee of a winning trade. A score of 6/6 is a filter score, not a 100% probability or measured win rate.
+- Public-feed prices are not your broker's bid/ask or execution prices. Spreads, slippage, commissions, broker candle differences and feed delays can change whether a setup is tradable.
+- Check every alert against MT4 before entry. Skip it if the broker price has moved more than 0.20 ATR from the reference or the signal is older than 10 minutes.
+- An alert is a rule-based candidate, not a prediction or guarantee. A score of 6/6 is a filter score, not a win probability.
 - If stop and target are both touched in one candle, the result is marked ambiguous rather than guessed.
-- The daily alert cap is not a daily-loss monitor and cannot enforce FTMO drawdown limits; the bot does not know account equity, executed trades, commissions, or live broker P/L.
-- Wider stops require smaller position sizes for the same risk limit. Never keep the same lot size after the stop widens. The alert recommends risk at or below 0.25% of current equity, but cannot calculate broker-specific lot size.
-- Before considering an alert, verify the live broker price and spread. Skip it if the price has moved more than 0.20 ATR from the reference or the signal is older than 10 minutes.
+- The bot cannot read account equity, executed trades, commissions, broker pip values, or enforce position size or drawdown limits.
 - No automatic execution is enabled.
 
 ## GitHub Actions secrets
-Configure `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, and `OANDA_API_TOKEN` under repository Settings → Secrets and variables → Actions. Create an OANDA API personal access token in the OANDA account you intend to use. Set the repository Actions variable `OANDA_ENVIRONMENT` to `live` for a live OANDA account or leave it unset for `practice`. Do not paste the token into chat or commit it to the repository. The bot uses OANDA midpoint candles; it does not verify your MT4 execution price, spread, fills, or commissions.
+Configure `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` under repository Settings → Secrets and variables → Actions. No market-data API key is required for this public feed. Never commit bot credentials.
 
 ## Running and validation
-The workflow runs offline regression tests with `python -m unittest -v test_bot.py`, then runs `python Forex_alert.py` using the OANDA API token. It is scheduled every five minutes on weekdays, and can also be started manually.
+The workflow runs offline regression tests with `python -m unittest -v test_bot.py`, then runs `python Forex_alert.py`. It is scheduled every five minutes on weekdays and can also be started manually.
