@@ -866,7 +866,7 @@ def update_signal_outcomes():
                             changed = True
                             log(f"Outcome ambiguous for {row['pair']}: entry and exit level touched in same M5 candle")
                             resolved_notifications.append(
-                                f"{row['pair']} {direction}: AMBIGUOUS — entry and SL/TP level touched in one OANDA M5 candle at {evidence_time}. Not broker-verified."
+                                f"{row['pair']} {direction}: AMBIGUOUS — entry and SL/TP level touched in one OANDA M5 candle at {evidence_time}. OANDA midpoint candle evidence; actual execution fills are not verified."
                             )
                             break
                         continue
@@ -898,7 +898,7 @@ def update_signal_outcomes():
                         changed = True
                         log(f"Stop touched in OANDA M5 midpoint data for {row['pair']} (not actual fills)")
                         resolved_notifications.append(
-                            f"{row['pair']} {direction}: SL touched at {evidence_time} — Yahoo M5 estimate, NOT broker-verified."
+                            f"{row['pair']} {direction}: SL touched at {evidence_time} — OANDA candle estimate; not an executed-trade result."
                         )
                         break
                 else:
@@ -1192,7 +1192,7 @@ def main():
 
     summary += (
 
-        "\n\nData source: Yahoo Finance; not broker-verified.\n"
+        f"\n\nData source: {DATA_SOURCE}.\n"
 
         "No signal does not mean a trade should be forced."
 
