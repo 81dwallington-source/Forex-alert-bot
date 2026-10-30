@@ -21,8 +21,8 @@ class ForexBotRegressionTests(unittest.TestCase):
 
     def test_stop_loss_has_more_volatility_room_and_structure_buffer(self):
         self.assertEqual(bot.ATR_STOP_MULTIPLIER, 1.5)
-        self.assertEqual(bot.STRUCTURE_LOOKBACK_CANDLES, 6)
-        self.assertEqual(bot.STRUCTURE_STOP_BUFFER_ATR, 0.15)
+        self.assertEqual(bot.STRUCTURE_LOOKBACK_CANDLES, 12)
+        self.assertEqual(bot.STRUCTURE_STOP_BUFFER_ATR, 0.25)
         self.assertEqual(bot.MAX_STOP_DISTANCE_ATR, 3.0)
 
     def test_trend_direction_buy_sell_and_unclear(self):
