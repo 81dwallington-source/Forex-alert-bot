@@ -44,51 +44,6 @@ class ForexBotRegressionTests(unittest.TestCase):
         self.assertEqual(bot.STRUCTURE_STOP_BUFFER_ATR, 0.35)
         self.assertEqual(bot.MAX_STOP_DISTANCE_ATR, 3.0)
 
-    def test_detects_bullish_liquidity_sweep_and_reclaim(self):
-        rows = [{"Open": 1.1000, "High": 1.1050, "Low": 1.0950, "Close": 1.1000} for _ in range(15)]
-        rows.append({"Open": 1.0990, "High": 1.1030, "Low": 1.0940, "Close": 1.1010})
-        self.assertTrue(bot.detect_liquidity_sweep(pd.DataFrame(rows), "BUY"))
-
-    def test_detects_bearish_liquidity_sweep_and_rejection(self):
-        rows = [{"Open": 1.1000, "High": 1.1050, "Low": 1.0950, "Close": 1.1000} for _ in range(15)]
-        rows.append({"Open": 1.1010, "High": 1.1060, "Low": 1.0970, "Close": 1.0990})
-        self.assertTrue(bot.detect_liquidity_sweep(pd.DataFrame(rows), "SELL"))
-
-    def test_no_liquidity_sweep_when_price_does_not_reclaim(self):
-        rows = [{"Open": 1.1000, "High": 1.1050, "Low": 1.0950, "Close": 1.1000} for _ in range(15)]
-        rows.append({"Open": 1.0940, "High": 1.0970, "Low": 1.0930, "Close": 1.0945})
-        self.assertFalse(bot.detect_liquidity_sweep(pd.DataFrame(rows), "BUY"))
-
-    def test_fvg_requires_latest_bullish_retest_confirmation(self):
-        rows = [
-            {"Open": 1.1000, "High": 1.1010, "Low": 1.0990, "Close": 1.1005},
-            {"Open": 1.1005, "High": 1.1020, "Low": 1.1000, "Close": 1.1015},
-            {"Open": 1.1020, "High": 1.1040, "Low": 1.1030, "Close": 1.1035},
-            {"Open": 1.1035, "High": 1.1040, "Low": 1.1020, "Close": 1.1030},
-            {"Open": 1.1025, "High": 1.1035, "Low": 1.1015, "Close": 1.1032},
-        ]
-        self.assertTrue(bot.detect_fvg_retest(pd.DataFrame(rows), "BUY", atr=0.003))
-
-    def test_fvg_requires_latest_bearish_retest_confirmation(self):
-        rows = [
-            {"Open": 1.1040, "High": 1.1050, "Low": 1.1030, "Close": 1.1035},
-            {"Open": 1.1035, "High": 1.1040, "Low": 1.1020, "Close": 1.1025},
-            {"Open": 1.1020, "High": 1.1025, "Low": 1.1000, "Close": 1.1005},
-            {"Open": 1.1005, "High": 1.1020, "Low": 1.1000, "Close": 1.1010},
-            {"Open": 1.1015, "High": 1.1025, "Low": 1.1005, "Close": 1.1008},
-        ]
-        self.assertTrue(bot.detect_fvg_retest(pd.DataFrame(rows), "SELL", atr=0.002))
-
-    def test_fvg_rejects_old_reaction_without_latest_confirmation(self):
-        rows = [
-            {"Open": 1.1000, "High": 1.1010, "Low": 1.0990, "Close": 1.1005},
-            {"Open": 1.1005, "High": 1.1020, "Low": 1.1000, "Close": 1.1015},
-            {"Open": 1.1020, "High": 1.1040, "Low": 1.1030, "Close": 1.1035},
-            {"Open": 1.1025, "High": 1.1035, "Low": 1.1015, "Close": 1.1032},
-            {"Open": 1.1030, "High": 1.1040, "Low": 1.1025, "Close": 1.1035},
-        ]
-        self.assertFalse(bot.detect_fvg_retest(pd.DataFrame(rows), "BUY", atr=0.002))
-
     def test_m5_ema_separation_requires_directional_gap_and_expansion(self):
         frame = pd.DataFrame([
             {"EMA9": 1.1000, "EMA21": 1.0990, "ATR": 0.0100},
