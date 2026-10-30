@@ -28,7 +28,7 @@ import pandas as pd
 
 BOT_NAME = "Forex Alert Bot"
 
-DATA_SOURCE = "Yahoo Finance public FX chart feed (not broker-verified)"
+DATA_SOURCE = "biquote public FX OHLC feed (MT5/tick-aggregated; not user-broker verified)"
 
 TIMEFRAME = "5m"
 
@@ -207,64 +207,57 @@ def log_signal(row):
         writer.writerow({key: row.get(key, "") for key in fieldnames})
 
 def download_data(ticker, interval, period):
-    """Fetch public Yahoo Finance FX candles; never disguise them as broker data."""
-    return download_yahoo_data(ticker, interval, period)
-
-
-def download_yahoo_data(ticker, interval, period):
-    """Fetch completed public Yahoo Finance FX candles; never disguise them as broker data."""
-    interval_map = {"5m": "5m", "15m": "15m", "1h": "60m"}
-    range_map = {"5d": "5d", "1mo": "1mo"}
-    yahoo_interval = interval_map.get(interval)
-    yahoo_range = range_map.get(period)
-    if not yahoo_interval or not yahoo_range:
+    """Fetch completed FX candles from biquote's public MT5/tick-aggregated feed."""
+    interval_map = {"5m": "5m", "15m": "15m", "1h": "1h"}
+    if interval not in interval_map or period not in ("5d", "1mo"):
         raise ValueError(f"Unsupported public-feed request: {interval}, {period}")
-    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+
+    symbol = ticker.replace("=X", "")
+    url = f"https://biquote.io/api/{symbol}/ohlc"
     response = requests.get(
         url,
-        params={"range": yahoo_range, "interval": yahoo_interval, "includePrePost": "true"},
-        headers={"User-Agent": "Mozilla/5.0 ForexAlertBot/1.0"},
-        timeout=15,
+        params={"interval": interval_map[interval], "limit": 1000},
+        headers={"User-Agent": "ForexAlertBot/1.0"},
+        timeout=20,
     )
     response.raise_for_status()
     payload = response.json()
-    chart = payload.get("chart", {})
-    if chart.get("error"):
-        raise RuntimeError(f"Public FX feed error: {chart['error']}")
-    results = chart.get("result") or []
-    if not results:
-        raise ValueError(f"Public FX feed returned no candles for {ticker}")
-    result = results[0]
-    timestamps = result.get("timestamp") or []
-    quote_blocks = result.get("indicators", {}).get("quote") or []
-    if not timestamps or not quote_blocks:
-        raise ValueError(f"Public FX feed returned incomplete candle data for {ticker}")
-    quote = quote_blocks[0]
+    bars = payload.get("bars") or []
+    if not bars:
+        raise ValueError(f"biquote returned no {interval} candles for {symbol}")
+
     rows = []
-    duration = {"5m": 5, "15m": 15, "1h": 60}[interval]
-    now = pd.Timestamp.now(tz="UTC")
-    for i, stamp in enumerate(timestamps):
+    for bar in bars:
+        # The provider prepends a live/open candle. Strategy calculations only
+        # use completed candles, so discard it rather than treating it as closed.
+        if bar.get("isOpen") is True:
+            continue
+        stamp = bar.get("openTime")
+        if not stamp:
+            continue
         try:
-            candle_time = pd.to_datetime(stamp, unit="s", utc=True)
-            if candle_time + pd.Timedelta(minutes=duration) > now:
-                continue
+            candle_time = pd.to_datetime(stamp, utc=True)
             values = {
-                "Open": quote.get("open", [])[i],
-                "High": quote.get("high", [])[i],
-                "Low": quote.get("low", [])[i],
-                "Close": quote.get("close", [])[i],
+                "Open": bar["open"],
+                "High": bar["high"],
+                "Low": bar["low"],
+                "Close": bar["close"],
             }
             if any(value is None for value in values.values()):
                 continue
             rows.append({"time": candle_time, **{k: float(v) for k, v in values.items()}})
-        except (IndexError, TypeError, ValueError):
+        except (KeyError, TypeError, ValueError):
             continue
+
     if len(rows) < 60:
-        raise ValueError(f"Public FX feed returned only {len(rows)} completed {interval} candles")
+        raise ValueError(
+            f"biquote returned only {len(rows)} completed {interval} candles for {symbol}"
+        )
     data = pd.DataFrame(rows).set_index("time").sort_index()
     data = data[~data.index.duplicated(keep="last")]
     if len(data) < 55:
-        raise ValueError("Insufficient completed public FX candle history")
+        raise ValueError("Insufficient completed biquote candle history")
+    data.attrs["data_source"] = "biquote public FX OHLC feed (MT5/tick-aggregated; not user-broker verified)"
     return data
 
 
@@ -1103,7 +1096,7 @@ def main():
 
                     "candle_time": signal["candle_time"],
 
-                    "data_source": DATA_SOURCE,
+                    "data_source": m5.attrs.get("data_source", DATA_SOURCE),
 
                     "outcome": "UNVERIFIED_PENDING",
 
