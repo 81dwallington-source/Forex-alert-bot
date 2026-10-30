@@ -16,8 +16,6 @@ import requests
 
 import pandas as pd
 
-import yfinance as yf
-
 # =========================================================
 
 # FOREX ALERT BOT — M5 ENTRIES, M15 + H1 CONFIRMATION
@@ -30,7 +28,9 @@ import yfinance as yf
 
 BOT_NAME = "Forex Alert Bot"
 
-DATA_SOURCE = "Yahoo Finance (not broker-verified)"
+OANDA_API_TOKEN = os.getenv("OANDA_API_TOKEN", "").strip()
+OANDA_ENVIRONMENT = os.getenv("OANDA_ENVIRONMENT", "practice").strip().lower()
+DATA_SOURCE = "OANDA v20 broker candles (mid-price)"
 
 TIMEFRAME = "5m"
 
@@ -208,58 +208,54 @@ def log_signal(row):
             writer.writeheader()
         writer.writerow({key: row.get(key, "") for key in fieldnames})
 
+def oanda_instrument(ticker):
+    """Convert EURUSD=X to the OANDA instrument EUR_USD."""
+    pair = ticker.replace("=X", "").replace("/", "").upper()
+    if len(pair) != 6 or not pair.isalpha():
+        raise ValueError(f"Unsupported forex ticker: {ticker}")
+    return f"{pair[:3]}_{pair[3:]}"
+
+
 def download_data(ticker, interval, period):
-
-    data = yf.download(
-
-        ticker,
-
-        interval=interval,
-
-        period=period,
-
-        progress=False,
-
-        auto_adjust=False,
-
-        threads=False,
-
+    """Fetch completed midpoint candles from OANDA. Never fall back to Yahoo."""
+    if not OANDA_API_TOKEN:
+        raise RuntimeError(
+            "OANDA_API_TOKEN is missing; broker-verified scan paused. "
+            "Add it as a GitHub Actions repository secret."
+        )
+    if OANDA_ENVIRONMENT not in ("practice", "live"):
+        raise RuntimeError("OANDA_ENVIRONMENT must be 'practice' or 'live'")
+    granularity = {"5m": "M5", "15m": "M15", "1h": "H1"}.get(interval)
+    if not granularity:
+        raise ValueError(f"Unsupported OANDA candle interval: {interval}")
+    host = "https://api-fxpractice.oanda.com" if OANDA_ENVIRONMENT == "practice" else "https://api-fxtrade.oanda.com"
+    url = f"{host}/v3/instruments/{oanda_instrument(ticker)}/candles"
+    response = requests.get(
+        url,
+        headers={"Authorization": f"Bearer {OANDA_API_TOKEN}"},
+        params={"granularity": granularity, "count": 500, "price": "M"},
+        timeout=20,
     )
-
-    if data is None or data.empty:
-
-        raise ValueError("No market data returned")
-
-    if isinstance(data.columns, pd.MultiIndex):
-
-        data.columns = data.columns.get_level_values(0)
-
-    required = ["Open", "High", "Low", "Close"]
-
-    if any(column not in data.columns for column in required):
-
-        raise ValueError("Required OHLC columns missing")
-
-    data = data[required].copy()
-
-    data = data.dropna()
-
+    response.raise_for_status()
+    payload = response.json()
+    rows = []
+    for candle in payload.get("candles", []):
+        if not candle.get("complete") or "mid" not in candle:
+            continue
+        mid = candle["mid"]
+        rows.append({
+            "time": pd.to_datetime(candle["time"], utc=True),
+            "Open": float(mid["o"]),
+            "High": float(mid["h"]),
+            "Low": float(mid["l"]),
+            "Close": float(mid["c"]),
+        })
+    if len(rows) < 60:
+        raise ValueError(f"OANDA returned only {len(rows)} completed {granularity} candles")
+    data = pd.DataFrame(rows).set_index("time").sort_index()
     data = data[~data.index.duplicated(keep="last")]
-
-    data = data.sort_index()
-
-    # Exclude the newest candle to avoid acting on an incomplete bar.
-
-    if len(data) < 60:
-
-        raise ValueError("Insufficient candle history")
-
-    data = data.iloc[:-1].copy()
-
     if len(data) < 55:
-
-        raise ValueError("Insufficient completed candle history")
-
+        raise ValueError("Insufficient completed OANDA candle history")
     return data
 
 def candle_is_fresh(data, max_age_minutes, candle_duration_minutes=0):
@@ -756,7 +752,7 @@ def analyse_pair(ticker):
 
 
 def update_signal_outcomes():
-    """Resolve prior alerts using later Yahoo M5 candles; never imply broker verification."""
+    """Resolve prior alerts using later OANDA midpoint candles; not actual execution fills."""
     if not LOG_FILE.exists():
         return
 
@@ -840,7 +836,7 @@ def update_signal_outcomes():
                     low = float(candle["Low"])
                     evidence_time = outcome_time.isoformat()
                     evidence_detail = (
-                        f"Yahoo M5 candle {evidence_time}: high={high}, low={low}; "
+                        f"OANDA M5 midpoint candle {evidence_time}: high={high}, low={low}; "
                         f"entry reference={entry}, SL={stop}, TP={target}. "
                         "Not broker-verified."
                     )
@@ -892,7 +888,7 @@ def update_signal_outcomes():
                         changed = True
                         log(f"Target touched in Yahoo M5 data for {row['pair']} (not broker-verified)")
                         resolved_notifications.append(
-                            f"{row['pair']} {direction}: TP touched at {evidence_time} — Yahoo M5 estimate, NOT broker-verified."
+                            f"{row['pair']} {direction}: TP touched at {evidence_time} — OANDA candle estimate; not an executed-trade result."
                         )
                         break
                     if stop_hit:
@@ -921,9 +917,9 @@ def update_signal_outcomes():
                 writer.writeheader()
                 writer.writerows(rows)
             temp_file.replace(LOG_FILE)
-            log(f"Updated signal outcomes at {checked_at}; Yahoo-based results remain unverified.")
+            log(f"Updated signal outcomes at {checked_at}; OANDA candle-based estimates; not executed-trade results.")
             if resolved_notifications:
-                summary = "FOREX ALERT OUTCOME CHECK (Yahoo M5; not broker-verified)\\n\\n" + "\\n".join(resolved_notifications)
+                summary = "FOREX ALERT OUTCOME CHECK (OANDA M5 midpoint; not actual fills)\\n\\n" + "\\n".join(resolved_notifications)
                 telegram_send(summary)
         except Exception as exc:
             log(f"Could not save updated signal outcomes: {exc}")
@@ -941,6 +937,15 @@ def main():
             "Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID GitHub secret"
 
         )
+
+    if not OANDA_API_TOKEN:
+        log("OANDA_API_TOKEN missing; refusing to use Yahoo Finance for trade alerts.")
+        telegram_send(
+            "FOREX BOT PAUSED — broker data is not configured.\n"
+            "Yahoo Finance has been disabled for trade alerts. Add the OANDA_API_TOKEN "
+            "GitHub Actions secret, then the bot will resume using OANDA completed M5/M15/H1 candles."
+        )
+        return
 
     update_signal_outcomes()
 
