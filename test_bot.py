@@ -114,7 +114,7 @@ class ForexBotRegressionTests(unittest.TestCase):
         rows[-3].update({"Low":1.0998,"Close":1.1002})
         rows[-2].update({"Low":1.0999,"Close":1.1003,"High":1.1010})
         rows[-1].update({"Open":1.1005,"Low":1.1004,"High":1.1020,"Close":1.1015,
-                         "EMA9":1.1012,"EMA21":1.1000})
+                         "EMA9":1.1012,"EMA21":1.1000,"ATR":0.0030})
         ok, reason = bot.detect_pullback_continuation(pd.DataFrame(rows), "BUY")
         self.assertTrue(ok, reason)
 
@@ -126,7 +126,7 @@ class ForexBotRegressionTests(unittest.TestCase):
         rows[-3].update({"High":1.1002,"Close":1.0998})
         rows[-2].update({"High":1.1001,"Close":1.0997,"Low":1.0990})
         rows[-1].update({"Open":1.0995,"High":1.0996,"Low":1.0980,"Close":1.0985,
-                         "EMA9":1.0988,"EMA21":1.1000})
+                         "EMA9":1.0988,"EMA21":1.1000,"ATR":0.0030})
         ok, reason = bot.detect_pullback_continuation(pd.DataFrame(rows), "SELL")
         self.assertTrue(ok, reason)
 
