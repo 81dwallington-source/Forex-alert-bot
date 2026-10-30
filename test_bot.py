@@ -56,7 +56,7 @@ class ForexBotRegressionTests(unittest.TestCase):
         self.assertIn("body too weak", reason)
 
     def test_signal_candle_quality_rejects_close_away_from_extreme(self):
-        candle = {"Open": 1.1000, "High": 1.1020, "Low": 1.0990, "Close": 1.1010}
+        candle = {"Open": 1.0995, "High": 1.1020, "Low": 1.0990, "Close": 1.1010}
         ok, reason = bot.signal_candle_quality_check(candle, "BUY")
         self.assertFalse(ok)
         self.assertIn("directional extreme", reason)
