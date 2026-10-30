@@ -44,6 +44,30 @@ jobs:
       - name: Run offline regression tests
         run: python -m unittest -v test_bot.py
 
+      - name: Verify Telegram delivery once on this push
+        if: github.event_name == 'push'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python - <<'PY'
+          import os, requests
+          token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+          chat_id = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+          if not token or not chat_id:
+              raise SystemExit("Telegram secrets are missing")
+          response = requests.post(
+              f"https://api.telegram.org/bot{token}/sendMessage",
+              json={"chat_id": chat_id, "text": "✅ Forex Alert Bot: Telegram delivery test successful. Signal alerts remain controlled by the normal quality filters."},
+              timeout=20,
+          )
+          response.raise_for_status()
+          result = response.json()
+          if not result.get("ok"):
+              raise SystemExit(f"Telegram rejected test message: {result}")
+          print("Telegram test message accepted by Telegram API")
+          PY
+
       - name: Run forex alert bot
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
