@@ -34,6 +34,12 @@ class ForexBotRegressionTests(unittest.TestCase):
     def test_public_feed_is_explicitly_not_broker_verified(self):
         self.assertIn("not broker-verified", bot.DATA_SOURCE.lower())
 
+    def test_public_feed_mode_has_no_oanda_startup_dependency(self):
+        import inspect
+        source = inspect.getsource(bot.main)
+        self.assertNotIn("OANDA_API_TOKEN", source)
+        self.assertIn("download_data", source)
+
     def test_entry_timeframe_is_five_minutes(self):
         self.assertEqual(bot.TIMEFRAME, "5m")
 
