@@ -12,6 +12,28 @@ import Forex_alert as bot
 
 
 class ForexBotRegressionTests(unittest.TestCase):
+    def test_performance_report_separates_public_estimates_from_verified_trades(self):
+        rows = [
+            {"outcome": "TP_HIT_PUBLIC_CANDLE_ESTIMATE", "planned_rr": "1.5", "outcome_candle_time": "2026-10-30T10:00:00+00:00"},
+            {"outcome": "SL_HIT_PUBLIC_CANDLE_ESTIMATE", "planned_rr": "1.5", "outcome_candle_time": "2026-10-30T10:05:00+00:00"},
+            {"outcome": "UNVERIFIED_PENDING"},
+            {"outcome": "AMBIGUOUS_BOTH_HIT_PUBLIC_CANDLES"},
+            {"outcome": "VERIFIED_WIN"},
+        ]
+        report = bot.build_performance_report(rows)
+        self.assertIn("1 TP / 1 SL", report)
+        self.assertIn("estimated hit rate=50.0%", report)
+        self.assertIn("avg/expectancy=+0.25R", report)
+        self.assertIn("max drawdown=1.00R", report)
+        self.assertIn("pending=1; ambiguous=1", report)
+        self.assertIn("Broker-verified trade records: 1", report)
+        self.assertIn("Not broker fills", report)
+
+    def test_performance_report_does_not_invent_results_when_empty(self):
+        report = bot.build_performance_report([])
+        self.assertIn("no resolved estimates yet", report)
+        self.assertIn("Broker-verified trade records: 0", report)
+
     def test_pair_universe_has_no_duplicates(self):
         self.assertEqual(len(bot.PAIRS), len(set(bot.PAIRS)))
         self.assertGreaterEqual(len(bot.PAIRS), 20)
