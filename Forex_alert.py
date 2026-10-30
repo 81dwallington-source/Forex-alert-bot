@@ -28,7 +28,7 @@ import pandas as pd
 
 BOT_NAME = "Forex Alert Bot"
 
-DATA_SOURCE = "biquote public FX OHLC feed (MT5/tick aggregation with Yahoo bootstrap; not user-broker verified)"
+DATA_SOURCE = "biquote public FX OHLC endpoint; third-party feed, not user-broker verified"
 
 TIMEFRAME = "5m"
 
@@ -257,7 +257,23 @@ def download_data(ticker, interval, period):
     data = data[~data.index.duplicated(keep="last")]
     if len(data) < 55:
         raise ValueError("Insufficient completed biquote candle history")
-    data.attrs["data_source"] = "biquote public FX OHLC feed (MT5/tick-aggregated; not user-broker verified)"
+
+    # Reject malformed provider candles before they can affect indicators or risk levels.
+    numeric = data[["Open", "High", "Low", "Close"]]
+    if not numeric.apply(lambda column: pd.to_numeric(column, errors="coerce").notna().all()).all():
+        raise ValueError("Public feed contains non-numeric OHLC values")
+    if (numeric <= 0).any().any():
+        raise ValueError("Public feed contains non-positive OHLC values")
+    invalid_ohlc = (
+        (data["High"] < data[["Open", "Close", "Low"]].max(axis=1))
+        | (data["Low"] > data[["Open", "Close", "High"]].min(axis=1))
+    )
+    if invalid_ohlc.any():
+        raise ValueError(f"Public feed contains {int(invalid_ohlc.sum())} malformed OHLC candles")
+    now = pd.Timestamp.now(tz="UTC")
+    if data.index[-1] > now + pd.Timedelta(minutes=1):
+        raise ValueError("Public feed returned a future-dated candle")
+    data.attrs["data_source"] = DATA_SOURCE
     return data
 
 
@@ -490,6 +506,33 @@ def detect_pullback_continuation(data, direction):
         return False, "pullback has not produced a confirmed continuation candle"
     return True, "M5 EMA21 pullback + confirmed break of prior candle"
 
+def signal_candle_quality_check(candle, direction, min_body_fraction=0.45, close_edge_fraction=0.25):
+    """Require a decisive candle body and a close near its directional extreme."""
+    if direction not in ("BUY", "SELL"):
+        return False, "invalid direction for signal-candle quality"
+    high = float(candle["High"])
+    low = float(candle["Low"])
+    open_price = float(candle["Open"])
+    close = float(candle["Close"])
+    candle_range = high - low
+    if candle_range <= 0:
+        return False, "zero-range signal candle"
+    body_fraction = abs(close - open_price) / candle_range
+    if body_fraction < min_body_fraction:
+        return False, "signal candle body too weak"
+    if direction == "BUY":
+        if close <= open_price:
+            return False, "signal candle is not bullish"
+        close_location = (high - close) / candle_range
+    else:
+        if close >= open_price:
+            return False, "signal candle is not bearish"
+        close_location = (close - low) / candle_range
+    if close_location > close_edge_fraction:
+        return False, "signal candle did not close near its directional extreme"
+    return True, "decisive signal candle confirmed"
+
+
 def analyse_pair(ticker):
 
     m5 = indicators(download_data(ticker, "5m", "5d"))
@@ -563,10 +606,9 @@ def analyse_pair(ticker):
     # Avoid chasing a move that is already stretched from the trigger EMA.
     if abs(close - float(last["EMA21"])) > atr * 0.8:
         return None, "entry too extended from M5 EMA21"
-    if direction == "BUY" and float(last["Close"]) <= float(last["Open"]):
-        return None, "M5 signal candle did not close bullish"
-    if direction == "SELL" and float(last["Close"]) >= float(last["Open"]):
-        return None, "M5 signal candle did not close bearish"
+    candle_ok, candle_note = signal_candle_quality_check(last, direction)
+    if not candle_ok:
+        return None, candle_note
 
     # Require a meaningful, expanding M5 EMA gap before accepting any setup.
     ema_gap_ok, ema_gap_note = m5_ema_separation_check(m5, direction)
@@ -748,7 +790,7 @@ def analyse_pair(ticker):
         "evidence_note": (
             f"{setup_type}; M5 candle confirmation; M15={m15_trend}, H1={h1_trend}; "
             f"RSI={rsi:.1f}; ATR={atr:.{decimals}f}; ATR%={atr_percent:.4f}; "
-            f"quality filter score={score}/6. Rule-based evidence, not a win-probability estimate."
+            f"quality filter score={score}/6; decisive candle body/close. Rule-based evidence, not a win-probability estimate."
         ),
 
     }, "qualifies"
