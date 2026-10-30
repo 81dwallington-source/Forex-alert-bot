@@ -31,11 +31,8 @@ class ForexBotRegressionTests(unittest.TestCase):
                 row = next(csv.DictReader(file))
             self.assertEqual(row["setup_type"], "PULLBACK CONTINUATION")
 
-    def test_oanda_instrument_mapping(self):
-        self.assertEqual(bot.oanda_instrument("EURUSD=X"), "EUR_USD")
-        self.assertEqual(bot.oanda_instrument("GBPJPY=X"), "GBP_JPY")
-        with self.assertRaises(ValueError):
-            bot.oanda_instrument("BAD=X")
+    def test_public_feed_is_explicitly_not_broker_verified(self):
+        self.assertIn("not broker-verified", bot.DATA_SOURCE.lower())
 
     def test_entry_timeframe_is_five_minutes(self):
         self.assertEqual(bot.TIMEFRAME, "5m")
