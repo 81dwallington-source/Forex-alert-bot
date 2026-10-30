@@ -380,6 +380,57 @@ def detect_liquidity_sweep(data, direction, lookback=12, recent_candles=3):
     return False
 
 
+def entry_location_check(data, direction, atr):
+    """Mandatory M5 entry-location filter: require a fresh EMA21 retest,
+    avoid chasing an extended close, and avoid entering at the wrong edge
+    of the recent 20-candle range.
+    """
+    if direction not in ("BUY", "SELL") or len(data) < 25 or atr <= 0:
+        return False, "insufficient data for entry-location check"
+
+    last = data.iloc[-1]
+    recent = data.iloc[-4:]
+    prior_range = data.iloc[-21:-1]
+    close = float(last["Close"])
+    ema21 = float(last["EMA21"])
+
+    if direction == "BUY":
+        retest = any(
+            float(row["Low"]) <= float(row["EMA21"]) + float(row["ATR"]) * 0.15
+            and float(row["Close"]) > float(row["EMA21"])
+            for _, row in recent.iterrows()
+        )
+        if not retest:
+            return False, "no fresh M5 EMA21 pullback/reclaim"
+        if close - ema21 > atr * 0.45:
+            return False, "buy entry too far above M5 EMA21"
+        range_low = float(prior_range["Low"].min())
+        range_high = float(prior_range["High"].max())
+        position = (close - range_low) / max(range_high - range_low, 1e-12)
+        if position > 0.72:
+            return False, "buy entry too high in recent M5 range"
+        if range_high - close < atr * 1.0:
+            return False, "insufficient room before recent M5 resistance"
+    else:
+        retest = any(
+            float(row["High"]) >= float(row["EMA21"]) - float(row["ATR"]) * 0.15
+            and float(row["Close"]) < float(row["EMA21"])
+            for _, row in recent.iterrows()
+        )
+        if not retest:
+            return False, "no fresh M5 EMA21 pullback/rejection"
+        if ema21 - close > atr * 0.45:
+            return False, "sell entry too far below M5 EMA21"
+        range_low = float(prior_range["Low"].min())
+        range_high = float(prior_range["High"].max())
+        position = (close - range_low) / max(range_high - range_low, 1e-12)
+        if position < 0.28:
+            return False, "sell entry too low in recent M5 range"
+        if close - range_low < atr * 1.0:
+            return False, "insufficient room before recent M5 support"
+
+    return True, "M5 EMA21 pullback confirmed; entry not extended or at the wrong range extreme"
+
 def analyse_pair(ticker):
 
     m5 = indicators(download_data(ticker, "5m", "5d"))
@@ -457,6 +508,11 @@ def analyse_pair(ticker):
         return None, "M5 signal candle did not close bullish"
     if direction == "SELL" and float(last["Close"]) >= float(last["Open"]):
         return None, "M5 signal candle did not close bearish"
+
+    # Mandatory entry location: no late momentum chasing or mid-range entries.
+    location_ok, location_note = entry_location_check(m5, direction, atr)
+    if not location_ok:
+        return None, location_note
 
     # Require a recent M5 EMA crossover, within the last 3
 
@@ -604,6 +660,8 @@ def analyse_pair(ticker):
         "score": score,
 
         "liquidity_sweep": liquidity_sweep,
+
+        "location_note": location_note,
 
         "candle_time": str(m5.index[-1]),
 
@@ -931,6 +989,8 @@ def main():
                 f"Signal candle O/H/L: {signal['signal_candle_open']} / {signal['signal_candle_high']} / {signal['signal_candle_low']}\n"
 
                 f"Trigger: recent completed M5 EMA 9/21 crossover\n"
+
+                f"Entry location: {signal['location_note']}\n"
 
                 f"Candle time: {signal['candle_time']}\n"
 
