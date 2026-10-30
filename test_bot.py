@@ -1,6 +1,10 @@
 """Offline regression tests for the Forex alert bot. These tests never call market APIs or Telegram."""
 import unittest
+import csv
+import tempfile
+from pathlib import Path
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 import pandas as pd
 
@@ -11,6 +15,21 @@ class ForexBotRegressionTests(unittest.TestCase):
     def test_pair_universe_has_no_duplicates(self):
         self.assertEqual(len(bot.PAIRS), len(set(bot.PAIRS)))
         self.assertGreaterEqual(len(bot.PAIRS), 20)
+
+    def test_signal_log_preserves_setup_type(self):
+        with tempfile.TemporaryDirectory() as directory:
+            log_path = Path(directory) / "signal_log.csv"
+            with patch.object(bot, "LOG_FILE", log_path):
+                bot.log_signal({
+                    "timestamp_utc": "2026-10-30T12:00:00+00:00",
+                    "pair": "GBP/USD",
+                    "direction": "BUY",
+                    "setup_type": "PULLBACK CONTINUATION",
+                    "outcome": "UNVERIFIED_PENDING",
+                })
+            with log_path.open("r", newline="", encoding="utf-8") as file:
+                row = next(csv.DictReader(file))
+            self.assertEqual(row["setup_type"], "PULLBACK CONTINUATION")
 
     def test_entry_timeframe_is_five_minutes(self):
         self.assertEqual(bot.TIMEFRAME, "5m")
