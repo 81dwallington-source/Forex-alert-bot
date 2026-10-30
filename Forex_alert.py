@@ -78,6 +78,12 @@ MAX_STOP_DISTANCE_ATR = 3.0
 
 MIN_SCORE = 6
 
+# Keep only the two best-defined, testable M5 entry patterns.
+ALLOWED_SETUP_TYPES = ("PULLBACK CONTINUATION", "BREAKOUT RETEST")
+BUY_RSI_MIN, BUY_RSI_MAX = 52, 65
+SELL_RSI_MIN, SELL_RSI_MAX = 35, 48
+MIN_HTF_EMA_GAP_ATR = 0.12
+
 # Conservative alert-only controls; these do not control broker execution.
 MAX_ALERTS_PER_UTC_DAY = 5
 MAX_ONE_ALERT_PER_PAIR_PER_UTC_DAY = True
@@ -673,21 +679,26 @@ def analyse_pair(ticker):
     location_note = "M5 continuation confirmation"
     pullback_candidate, pullback_note = detect_pullback_continuation(m5, direction)
     breakout_candidate, breakout_note = detect_breakout_retest(m5, direction)
-    rejection_candidate, rejection_note = detect_support_resistance_rejection(m5, direction)
     if pullback_candidate:
         setup_type, location_note = "PULLBACK CONTINUATION", pullback_note
     elif breakout_candidate:
         setup_type, location_note = "BREAKOUT RETEST", breakout_note
-    elif rejection_candidate:
-        setup_type, location_note = "SUPPORT/RESISTANCE REJECTION", rejection_note
 
     # Filter weak/choppy trends using ATR-normalized EMA separation.
     m15_last = m15.iloc[-1]
     h1_last = h1.iloc[-1]
-    if abs(float(m15_last["EMA20"]) - float(m15_last["EMA50"])) < float(m15_last["ATR"]) * 0.08:
+    if abs(float(m15_last["EMA20"]) - float(m15_last["EMA50"])) < float(m15_last["ATR"]) * MIN_HTF_EMA_GAP_ATR:
         return None, "M15 trend too weak / choppy"
-    if abs(float(h1_last["EMA20"]) - float(h1_last["EMA50"])) < float(h1_last["ATR"]) * 0.08:
+    if abs(float(h1_last["EMA20"]) - float(h1_last["EMA50"])) < float(h1_last["ATR"]) * MIN_HTF_EMA_GAP_ATR:
         return None, "H1 trend too weak / choppy"
+
+    if setup_type not in ALLOWED_SETUP_TYPES:
+        return None, "setup type not on approved high-quality list"
+
+    if direction == "BUY" and not BUY_RSI_MIN <= rsi <= BUY_RSI_MAX:
+        return None, "RSI outside approved buy range"
+    if direction == "SELL" and not SELL_RSI_MIN <= rsi <= SELL_RSI_MAX:
+        return None, "RSI outside approved sell range"
 
     # Avoid chasing a move that is already stretched from the trigger EMA.
     if abs(close - float(last["EMA21"])) > atr * 0.8:
@@ -706,10 +717,8 @@ def analyse_pair(ticker):
         location_ok, location_note = detect_pullback_continuation(m5, direction)
     elif setup_type == "BREAKOUT RETEST":
         location_ok, location_note = detect_breakout_retest(m5, direction)
-    elif setup_type == "SUPPORT/RESISTANCE REJECTION":
-        location_ok, location_note = detect_support_resistance_rejection(m5, direction)
     else:
-        location_ok, location_note = entry_location_check(m5, direction, atr)
+        return None, "no approved pullback or breakout-retest trigger"
     if not location_ok:
         return None, location_note
 
@@ -721,31 +730,19 @@ def analyse_pair(ticker):
             (recent["EMA9"].shift(1) <= recent["EMA21"].shift(1))
             & (recent["EMA9"] > recent["EMA21"])
         ).any()
-        if setup_type == "CONTINUATION" and not crossed:
-            return None, "no fresh M5 bullish crossover"
-        if setup_type in ("CONTINUATION", "PULLBACK CONTINUATION") and last["EMA9"] <= previous["EMA9"]:
+        if last["EMA9"] <= previous["EMA9"]:
             return None, "M5 EMA9 momentum not rising"
         if setup_type == "CONTINUATION" and last["EMA9"] <= last["EMA21"]:
             return None, "M5 momentum no longer bullish"
-        if setup_type == "CONTINUATION" and not 50 <= rsi <= 68:
-            return None, "RSI outside buy range"
-        if setup_type == "CONTINUATION" and close <= float(last["EMA21"]):
-            return None, "price not holding above EMA21"
     else:
         crossed = (
             (recent["EMA9"].shift(1) >= recent["EMA21"].shift(1))
             & (recent["EMA9"] < recent["EMA21"])
         ).any()
-        if setup_type == "CONTINUATION" and not crossed:
-            return None, "no fresh M5 bearish crossover"
-        if setup_type in ("CONTINUATION", "PULLBACK CONTINUATION") and last["EMA9"] >= previous["EMA9"]:
+        if last["EMA9"] >= previous["EMA9"]:
             return None, "M5 EMA9 momentum not falling"
         if setup_type == "CONTINUATION" and last["EMA9"] >= last["EMA21"]:
             return None, "M5 momentum no longer bearish"
-        if setup_type == "CONTINUATION" and not 32 <= rsi <= 50:
-            return None, "RSI outside sell range"
-        if setup_type == "CONTINUATION" and close >= float(last["EMA21"]):
-            return None, "price not holding below EMA21"
 
     # Confirmed H1 pivots: two completed candles must form on the right.
     h1_swings = detect_h1_swing_levels(h1)
