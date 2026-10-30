@@ -28,7 +28,7 @@ import pandas as pd
 
 BOT_NAME = "Forex Alert Bot"
 
-DATA_SOURCE = "biquote public FX OHLC endpoint; third-party feed, not user-broker verified"
+DATA_SOURCE = "OANDA v20 practice/live pricing candles; broker-sourced market data, not account fills"
 
 TIMEFRAME = "5m"
 
@@ -213,75 +213,84 @@ def log_signal(row):
         writer.writerow({key: row.get(key, "") for key in fieldnames})
 
 def download_data(ticker, interval, period):
-    """Fetch completed FX candles from the third-party biquote public OHLC endpoint; provider provenance is not independently verified."""
-    interval_map = {"5m": "5m", "15m": "15m", "1h": "1h"}
-    if interval not in interval_map or period not in ("5d", "1mo"):
-        raise ValueError(f"Unsupported public-feed request: {interval}, {period}")
+    """Fetch completed midpoint candles directly from OANDA v20; no third-party fallback."""
+    token = os.getenv("OANDA_API_TOKEN", "").strip()
+    if not token:
+        raise RuntimeError(
+            "OANDA_API_TOKEN GitHub Actions secret is missing; public-feed fallback is disabled."
+        )
 
-    symbol = ticker.replace("=X", "")
-    url = f"https://biquote.io/api/{symbol}/ohlc"
+    environment = os.getenv("OANDA_ENVIRONMENT", "practice").strip().lower()
+    if environment not in ("practice", "live"):
+        raise ValueError("OANDA_ENVIRONMENT must be 'practice' or 'live'")
+    base_url = (
+        "https://api-fxpractice.oanda.com"
+        if environment == "practice"
+        else "https://api-fxtrade.oanda.com"
+    )
+
+    granularity_map = {"5m": "M5", "15m": "M15", "1h": "H1"}
+    if interval not in granularity_map or period not in ("5d", "1mo"):
+        raise ValueError(f"Unsupported OANDA candle request: {interval}, {period}")
+
+    symbol = ticker.replace("=X", "").replace("/", "").upper()
+    if len(symbol) != 6 or not symbol.isalpha():
+        raise ValueError(f"Invalid FX ticker for OANDA: {ticker}")
+    instrument = f"{symbol[:3]}_{symbol[3:]}"
+
     response = requests.get(
-        url,
-        params={"interval": interval_map[interval], "limit": 1000},
-        headers={"User-Agent": "ForexAlertBot/1.0"},
+        f"{base_url}/v3/instruments/{instrument}/candles",
+        params={"granularity": granularity_map[interval], "count": 500, "price": "M"},
+        headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
         timeout=20,
     )
     response.raise_for_status()
     payload = response.json()
-    bars = payload.get("bars") or []
-    if not bars:
-        raise ValueError(f"biquote returned no {interval} candles for {symbol}")
-
+    candles = payload.get("candles") or []
     rows = []
-    for bar in bars:
-        # The provider prepends a live/open candle. Strategy calculations only
-        # use completed candles, so discard it rather than treating it as closed.
-        if bar.get("isOpen") is True:
+    for candle in candles:
+        if candle.get("complete") is not True:
             continue
-        stamp = bar.get("openTime")
+        mid = candle.get("mid") or {}
+        stamp = candle.get("time")
         if not stamp:
             continue
         try:
-            candle_time = pd.to_datetime(stamp, utc=True)
             values = {
-                "Open": bar["open"],
-                "High": bar["high"],
-                "Low": bar["low"],
-                "Close": bar["close"],
+                "Open": float(mid["o"]),
+                "High": float(mid["h"]),
+                "Low": float(mid["l"]),
+                "Close": float(mid["c"]),
             }
-            if any(value is None for value in values.values()):
+            if any(value <= 0 for value in values.values()):
                 continue
-            rows.append({"time": candle_time, **{k: float(v) for k, v in values.items()}})
+            rows.append({"time": pd.to_datetime(stamp, utc=True), **values})
         except (KeyError, TypeError, ValueError):
             continue
 
     if len(rows) < 60:
         raise ValueError(
-            f"biquote returned only {len(rows)} completed {interval} candles for {symbol}"
+            f"OANDA returned only {len(rows)} completed {interval} candles for {instrument}"
         )
     data = pd.DataFrame(rows).set_index("time").sort_index()
     data = data[~data.index.duplicated(keep="last")]
     if len(data) < 55:
-        raise ValueError("Insufficient completed biquote candle history")
+        raise ValueError(f"Insufficient completed OANDA candle history for {instrument}")
 
-    # Reject malformed provider candles before they can affect indicators or risk levels.
     numeric = data[["Open", "High", "Low", "Close"]]
     if not numeric.apply(lambda column: pd.to_numeric(column, errors="coerce").notna().all()).all():
-        raise ValueError("Public feed contains non-numeric OHLC values")
-    if (numeric <= 0).any().any():
-        raise ValueError("Public feed contains non-positive OHLC values")
+        raise ValueError("OANDA returned non-numeric OHLC values")
     invalid_ohlc = (
         (data["High"] < data[["Open", "Close", "Low"]].max(axis=1))
         | (data["Low"] > data[["Open", "Close", "High"]].min(axis=1))
     )
     if invalid_ohlc.any():
-        raise ValueError(f"Public feed contains {int(invalid_ohlc.sum())} malformed OHLC candles")
+        raise ValueError(f"OANDA returned {int(invalid_ohlc.sum())} malformed OHLC candles")
     now = pd.Timestamp.now(tz="UTC")
     if data.index[-1] > now + pd.Timedelta(minutes=1):
-        raise ValueError("Public feed returned a future-dated candle")
+        raise ValueError("OANDA returned a future-dated candle")
     data.attrs["data_source"] = DATA_SOURCE
     return data
-
 
 def candle_is_fresh(data, max_age_minutes, candle_duration_minutes=0):
 
@@ -884,7 +893,7 @@ def analyse_pair(ticker):
 
 
 def update_signal_outcomes():
-    """Resolve prior alerts using later biquote public-feed candles; estimates only, not actual execution fills."""
+    """Resolve prior alerts using later OANDA pricing candles; estimates only, not actual execution fills."""
     if not LOG_FILE.exists():
         return
 
@@ -968,9 +977,9 @@ def update_signal_outcomes():
                     low = float(candle["Low"])
                     evidence_time = outcome_time.isoformat()
                     evidence_detail = (
-                        f"biquote public M5 candle {evidence_time}: high={high}, low={low}; "
+                        f"OANDA M5 candle {evidence_time}: high={high}, low={low}; "
                         f"entry reference={entry}, SL={stop}, TP={target}. "
-                        "biquote public-feed candle evidence; actual execution fills are not verified."
+                        "OANDA pricing-candle evidence; actual execution fills are not verified."
                     )
                     if direction == "BUY":
                         stop_hit = low <= stop
@@ -998,7 +1007,7 @@ def update_signal_outcomes():
                             changed = True
                             log(f"Outcome ambiguous for {row['pair']}: entry and exit level touched in same M5 candle")
                             resolved_notifications.append(
-                                f"{row['pair']} {direction}: AMBIGUOUS — entry and SL/TP level touched in one biquote public-feed M5 candle at {evidence_time}. biquote public-feed candle evidence; actual execution fills are not verified."
+                                f"{row['pair']} {direction}: AMBIGUOUS — entry and SL/TP level touched in one OANDA M5 pricing candle at {evidence_time}. biquote public-feed candle evidence; actual execution fills are not verified."
                             )
                             break
                         continue
