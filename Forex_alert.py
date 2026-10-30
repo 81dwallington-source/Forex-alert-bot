@@ -28,9 +28,7 @@ import pandas as pd
 
 BOT_NAME = "Forex Alert Bot"
 
-DATA_SOURCE = ("OANDA practice candle feed (not execution-price verification)"
-               if os.getenv("OANDA_API_TOKEN", "").strip()
-               else "Yahoo Finance public FX chart feed (not broker-verified; OANDA token not configured)")
+DATA_SOURCE = "Yahoo Finance public FX chart feed (not broker-verified)"
 
 TIMEFRAME = "5m"
 
@@ -208,58 +206,8 @@ def log_signal(row):
             writer.writeheader()
         writer.writerow({key: row.get(key, "") for key in fieldnames})
 
-def download_oanda_data(ticker, interval, period):
-    """Fetch completed midpoint candles from OANDA's practice API."""
-    token = os.getenv("OANDA_API_TOKEN", "").strip()
-    if not token:
-        raise RuntimeError("OANDA_API_TOKEN is not configured")
-    instrument = ticker.replace("=X", "")
-    if len(instrument) != 6 or not instrument.isalpha():
-        raise ValueError(f"Unsupported OANDA FX instrument: {ticker}")
-    instrument = instrument[:3] + "_" + instrument[3:]
-    granularity = {"5m": "M5", "15m": "M15", "1h": "H1"}.get(interval)
-    count = {"5m": 500, "15m": 500, "1h": 500}.get(interval)
-    if not granularity or not count:
-        raise ValueError(f"Unsupported OANDA interval: {interval}")
-    base = os.getenv("OANDA_API_BASE", "https://api-fxpractice.oanda.com").rstrip("/")
-    url = f"{base}/v3/instruments/{instrument}/candles"
-    response = requests.get(
-        url,
-        params={"granularity": granularity, "count": count, "price": "M"},
-        headers={"Authorization": f"Bearer {token}", "Accept-Datetime-Format": "RFC3339"},
-        timeout=15,
-    )
-    response.raise_for_status()
-    candles = response.json().get("candles", [])
-    duration = {"5m": 5, "15m": 15, "1h": 60}[interval]
-    rows = []
-    for candle in candles:
-        if not candle.get("complete"):
-            continue
-        mid = candle.get("mid") or {}
-        try:
-            rows.append({
-                "time": pd.to_datetime(candle["time"], utc=True),
-                "Open": float(mid["o"]),
-                "High": float(mid["h"]),
-                "Low": float(mid["l"]),
-                "Close": float(mid["c"]),
-            })
-        except (KeyError, TypeError, ValueError):
-            continue
-    if len(rows) < 60:
-        raise ValueError(f"OANDA returned only {len(rows)} completed {interval} candles for {instrument}")
-    data = pd.DataFrame(rows).set_index("time").sort_index()
-    data = data[~data.index.duplicated(keep="last")]
-    if len(data) < 55:
-        raise ValueError(f"Insufficient completed OANDA candle history for {instrument}")
-    return data
-
-
 def download_data(ticker, interval, period):
-    """Prefer OANDA practice candles; use Yahoo only when no OANDA token is configured."""
-    if os.getenv("OANDA_API_TOKEN", "").strip():
-        return download_oanda_data(ticker, interval, period)
+    """Fetch public Yahoo Finance FX candles; never disguise them as broker data."""
     return download_yahoo_data(ticker, interval, period)
 
 
