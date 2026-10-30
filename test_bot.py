@@ -208,6 +208,12 @@ class ForexBotRegressionTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("confirmed continuation candle", reason)
 
+    def test_only_pullback_and_breakout_retest_setups_are_approved(self):
+        self.assertEqual(bot.ALLOWED_SETUP_TYPES, ("PULLBACK CONTINUATION", "BREAKOUT RETEST"))
+        self.assertEqual(bot.MIN_HTF_EMA_GAP_ATR, 0.12)
+        self.assertEqual((bot.BUY_RSI_MIN, bot.BUY_RSI_MAX), (52, 65))
+        self.assertEqual((bot.SELL_RSI_MIN, bot.SELL_RSI_MAX), (35, 48))
+
     def test_minimum_quality_score_is_six_of_six(self):
         self.assertEqual(bot.MIN_SCORE, 6)
 
