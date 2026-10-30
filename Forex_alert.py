@@ -500,7 +500,8 @@ def entry_location_check(data, direction, atr):
 
     # Require evidence that price reacted at a meaningful area: a stop-run
     # reclaim or a three-candle imbalance (FVG) retest. Neither is a prediction.
-    # Only a sweep on the latest completed candle validates a fresh entry.\n    sweep = detect_liquidity_sweep(data, direction, lookback=12, recent_candles=1)
+    # Only a sweep on the latest completed candle validates a fresh entry.
+    sweep = detect_liquidity_sweep(data, direction, lookback=12, recent_candles=1)
     fvg_retest = detect_fvg_retest(data, direction, atr, lookback=10)
     if not (sweep or fvg_retest):
         return False, "no recent liquidity sweep/reclaim or FVG retest at entry location"
