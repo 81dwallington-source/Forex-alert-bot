@@ -381,39 +381,33 @@ def detect_liquidity_sweep(data, direction, lookback=12, recent_candles=3):
 
 
 def detect_fvg_retest(data, direction, atr, lookback=10):
-    """Find a recent three-candle imbalance retest with directional rejection."""
+    """Require the latest completed candle to reject a recent three-candle FVG."""
     if direction not in ("BUY", "SELL") or len(data) < 5 or atr <= 0:
         return False
+    latest = data.iloc[-1]
     start = max(2, len(data) - lookback - 1)
-    # The final candle is the confirmation candle; the gap must pre-date it.
     for index in range(start, len(data) - 1):
         first = data.iloc[index - 2]
-        middle = data.iloc[index]
+        third = data.iloc[index]
         if direction == "BUY":
             gap_low = float(first["High"])
-            gap_high = float(middle["Low"])
-            if gap_high <= gap_low:
+            gap_high = float(third["Low"])
+            gap_size = gap_high - gap_low
+            if gap_size < atr * 0.05 or gap_size > atr * 0.80:
                 continue
-            for confirm_index in range(index + 1, len(data)):
-                candle = data.iloc[confirm_index]
-                touched = float(candle["Low"]) <= gap_high and float(candle["High"]) >= gap_low
-                reclaimed = float(candle["Close"]) > gap_high and float(candle["Close"]) > float(candle["Open"])
-                if touched and reclaimed and float(candle["Close"]) - gap_high <= atr * 0.35:
-                    return True
+            touched = float(latest["Low"]) <= gap_high and float(latest["High"]) >= gap_low
+            confirmed = float(latest["Close"]) > gap_high and float(latest["Close"]) > float(latest["Open"])
         else:
-            gap_low = float(middle["High"])
+            gap_low = float(third["High"])
             gap_high = float(first["Low"])
-            if gap_high <= gap_low:
+            gap_size = gap_high - gap_low
+            if gap_size < atr * 0.05 or gap_size > atr * 0.80:
                 continue
-            for confirm_index in range(index + 1, len(data)):
-                candle = data.iloc[confirm_index]
-                touched = float(candle["High"]) >= gap_low and float(candle["Low"]) <= gap_high
-                rejected = float(candle["Close"]) < gap_low and float(candle["Close"]) < float(candle["Open"])
-                if touched and rejected and gap_low - float(candle["Close"]) <= atr * 0.35:
-                    return True
+            touched = float(latest["High"]) >= gap_low and float(latest["Low"]) <= gap_high
+            confirmed = float(latest["Close"]) < gap_low and float(latest["Close"]) < float(latest["Open"])
+        if touched and confirmed:
+            return True
     return False
-
-
 def entry_location_check(data, direction, atr):
     """Demand a real pullback location, not a momentum candle in open space."""
     if direction not in ("BUY", "SELL") or len(data) < 25 or atr <= 0:
@@ -463,7 +457,7 @@ def entry_location_check(data, direction, atr):
 
     # Require evidence that price reacted at a meaningful area: a stop-run
     # reclaim or a three-candle imbalance (FVG) retest. Neither is a prediction.
-    sweep = detect_liquidity_sweep(data, direction, lookback=12, recent_candles=4)
+    # Only a sweep on the latest completed candle validates a fresh entry.\n    sweep = detect_liquidity_sweep(data, direction, lookback=12, recent_candles=1)
     fvg_retest = detect_fvg_retest(data, direction, atr, lookback=10)
     if not (sweep or fvg_retest):
         return False, "no recent liquidity sweep/reclaim or FVG retest at entry location"
