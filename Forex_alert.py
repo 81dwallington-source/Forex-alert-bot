@@ -976,7 +976,9 @@ def main():
 
                 f"RSI: {signal['rsi']}\n"
 
-                f"Quality filter score: {signal['score']}/7 (filter, not win probability)\n"\n                f"Liquidity sweep: {'YES' if signal['liquidity_sweep'] else 'NO'} (bonus only; not required)\n"
+                f"Quality filter score: {signal['score']}/7 (filter, not win probability)\n"
+
+                f"Liquidity sweep: {'YES' if signal['liquidity_sweep'] else 'NO'} (bonus only; not required)\n"
 
                 f"M5 EMA9/EMA21: {signal['m5_ema9']} / {signal['m5_ema21']}\n"
 
