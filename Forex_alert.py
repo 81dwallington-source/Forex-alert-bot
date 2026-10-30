@@ -70,12 +70,15 @@ MAX_ATR_PERCENT = 0.60
 
 MAX_CANDLE_ATR = 1.8
 
+# Require a meaningful and strengthening M5 EMA9/EMA21 gap.
+M5_MIN_EMA_SEPARATION_ATR = 0.04
+
 # Give M5 stops room beyond recent structure, with a volatility buffer.
 STRUCTURE_LOOKBACK_CANDLES = 12
 STRUCTURE_STOP_BUFFER_ATR = 0.25
 MAX_STOP_DISTANCE_ATR = 3.0
 
-MIN_SCORE = 5
+MIN_SCORE = 6
 
 # Conservative alert-only controls; these do not control broker execution.
 MAX_ALERTS_PER_UTC_DAY = 5
@@ -428,6 +431,26 @@ def detect_fvg_retest(data, direction, atr, lookback=10):
         if touched and confirmed:
             return True
     return False
+def m5_ema_separation_check(data, direction, min_atr=M5_MIN_EMA_SEPARATION_ATR):
+    """Reject flat/touching M5 EMAs; require directional gap to be widening."""
+    if direction not in ("BUY", "SELL") or len(data) < 2:
+        return False, "insufficient data for M5 EMA separation check"
+    last = data.iloc[-1]
+    previous = data.iloc[-2]
+    atr = float(last["ATR"])
+    if atr <= 0:
+        return False, "invalid ATR for M5 EMA separation check"
+    current_gap = float(last["EMA9"]) - float(last["EMA21"])
+    previous_gap = float(previous["EMA9"]) - float(previous["EMA21"])
+    directional_gap = current_gap if direction == "BUY" else -current_gap
+    previous_directional_gap = previous_gap if direction == "BUY" else -previous_gap
+    if directional_gap < atr * min_atr:
+        return False, "M5 EMA9/EMA21 separation too small"
+    if directional_gap <= previous_directional_gap:
+        return False, "M5 EMA9/EMA21 separation is not expanding"
+    return True, "M5 EMA separation confirmed"
+
+
 def entry_location_check(data, direction, atr):
     """Demand a real pullback location, not a momentum candle in open space."""
     if direction not in ("BUY", "SELL") or len(data) < 25 or atr <= 0:
@@ -578,6 +601,11 @@ def analyse_pair(ticker):
         return None, "M5 signal candle did not close bullish"
     if direction == "SELL" and float(last["Close"]) >= float(last["Open"]):
         return None, "M5 signal candle did not close bearish"
+
+    # Require a meaningful, expanding M5 EMA gap before accepting any setup.
+    ema_gap_ok, ema_gap_note = m5_ema_separation_check(m5, direction)
+    if not ema_gap_ok:
+        return None, ema_gap_note
 
     # Mandatory entry location: no late momentum chasing or mid-range entries.
     location_ok, location_note = entry_location_check(m5, direction, atr)
