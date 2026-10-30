@@ -1153,7 +1153,7 @@ def main():
 
                 f"Signal candle O/H/L: {signal['signal_candle_open']} / {signal['signal_candle_high']} / {signal['signal_candle_low']}\n"
 
-                f"Trigger: recent completed M5 EMA 9/21 crossover\n"
+                f"Trigger: {'EMA21 pullback + confirmed candle break' if signal['setup_type'] == 'PULLBACK CONTINUATION' else 'M5 EMA crossover or confirmed sweep reversal'}\\n"
 
                 f"Entry location: {signal['location_note']}\n"
 
