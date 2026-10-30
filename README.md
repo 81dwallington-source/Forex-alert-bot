@@ -23,3 +23,9 @@ Configure `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` under repository Settings 
 
 ## Running and validation
 The workflow runs offline regression tests with `python -m unittest -v test_bot.py`, then runs `python Forex_alert.py`. It is scheduled every five minutes on weekdays and can also be started manually.
+
+
+## Performance reporting
+- Each scan reports public-candle estimate TP/SL counts, estimated hit rate, average/expectancy in R, maximum drawdown in R, pending and ambiguous counts.
+- These estimates are not broker fills, verified trade outcomes, or proof of profitability. Ambiguous candles are excluded.
+- Broker-verified records are counted only when explicitly labelled VERIFIED_WIN, VERIFIED_LOSS, or VERIFIED_BREAK_EVEN. The bot does not infer these labels from public candles.
