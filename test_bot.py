@@ -70,6 +70,43 @@ class ForexBotRegressionTests(unittest.TestCase):
         ]
         self.assertFalse(bot.detect_fvg_retest(pd.DataFrame(rows), "BUY", atr=0.002))
 
+    def test_m5_ema_separation_requires_directional_gap_and_expansion(self):
+        frame = pd.DataFrame([
+            {"EMA9": 1.1000, "EMA21": 1.0990, "ATR": 0.0100},
+            {"EMA9": 1.1010, "EMA21": 1.0990, "ATR": 0.0100},
+        ])
+        ok, reason = bot.m5_ema_separation_check(frame, "BUY")
+        self.assertTrue(ok, reason)
+
+    def test_m5_ema_separation_rejects_flat_or_touching_emas(self):
+        frame = pd.DataFrame([
+            {"EMA9": 1.1000, "EMA21": 1.1000, "ATR": 0.0100},
+            {"EMA9": 1.1001, "EMA21": 1.1000, "ATR": 0.0100},
+        ])
+        ok, reason = bot.m5_ema_separation_check(frame, "BUY")
+        self.assertFalse(ok)
+        self.assertIn("separation too small", reason)
+
+    def test_m5_ema_separation_rejects_gap_that_is_shrinking(self):
+        frame = pd.DataFrame([
+            {"EMA9": 1.1020, "EMA21": 1.1000, "ATR": 0.0100},
+            {"EMA9": 1.1015, "EMA21": 1.1000, "ATR": 0.0100},
+        ])
+        ok, reason = bot.m5_ema_separation_check(frame, "BUY")
+        self.assertFalse(ok)
+        self.assertIn("not expanding", reason)
+
+    def test_m5_ema_separation_supports_bearish_direction(self):
+        frame = pd.DataFrame([
+            {"EMA9": 1.1000, "EMA21": 1.1010, "ATR": 0.0100},
+            {"EMA9": 1.0990, "EMA21": 1.1010, "ATR": 0.0100},
+        ])
+        ok, reason = bot.m5_ema_separation_check(frame, "SELL")
+        self.assertTrue(ok, reason)
+
+    def test_minimum_quality_score_is_six_of_seven(self):
+        self.assertEqual(bot.MIN_SCORE, 6)
+
     def test_trend_direction_buy_sell_and_unclear(self):
         self.assertEqual(
             bot.trend_direction(pd.DataFrame([{"EMA20": 1.2, "EMA50": 1.1}])),
