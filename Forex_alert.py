@@ -28,9 +28,7 @@ import pandas as pd
 
 BOT_NAME = "Forex Alert Bot"
 
-OANDA_API_TOKEN = os.getenv("OANDA_API_TOKEN", "").strip()
-OANDA_ENVIRONMENT = os.getenv("OANDA_ENVIRONMENT", "practice").strip().lower()
-DATA_SOURCE = "OANDA v20 broker candles (mid-price)"
+DATA_SOURCE = "Yahoo Finance public FX chart feed (not broker-verified)"
 
 TIMEFRAME = "5m"
 
@@ -208,55 +206,66 @@ def log_signal(row):
             writer.writeheader()
         writer.writerow({key: row.get(key, "") for key in fieldnames})
 
-def oanda_instrument(ticker):
-    """Convert EURUSD=X to the OANDA instrument EUR_USD."""
-    pair = ticker.replace("=X", "").replace("/", "").upper()
-    if len(pair) != 6 or not pair.isalpha():
-        raise ValueError(f"Unsupported forex ticker: {ticker}")
-    return f"{pair[:3]}_{pair[3:]}"
-
-
 def download_data(ticker, interval, period):
-    """Fetch completed midpoint candles from OANDA. Never fall back to Yahoo."""
-    if not OANDA_API_TOKEN:
-        raise RuntimeError(
-            "OANDA_API_TOKEN is missing; broker-verified scan paused. "
-            "Add it as a GitHub Actions repository secret."
-        )
-    if OANDA_ENVIRONMENT not in ("practice", "live"):
-        raise RuntimeError("OANDA_ENVIRONMENT must be 'practice' or 'live'")
-    granularity = {"5m": "M5", "15m": "M15", "1h": "H1"}.get(interval)
-    if not granularity:
-        raise ValueError(f"Unsupported OANDA candle interval: {interval}")
-    host = "https://api-fxpractice.oanda.com" if OANDA_ENVIRONMENT == "practice" else "https://api-fxtrade.oanda.com"
-    url = f"{host}/v3/instruments/{oanda_instrument(ticker)}/candles"
+    """Fetch completed public Yahoo Finance FX candles; never disguise them as broker data."""
+    interval_map = {"5m": "5m", "15m": "15m", "1h": "60m"}
+    range_map = {"5d": "5d", "1mo": "1mo"}
+    yahoo_interval = interval_map.get(interval)
+    yahoo_range = range_map.get(period)
+    if not yahoo_interval or not yahoo_range:
+        raise ValueError(f"Unsupported public-feed request: {interval}, {period}")
+
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
     response = requests.get(
         url,
-        headers={"Authorization": f"Bearer {OANDA_API_TOKEN}"},
-        params={"granularity": granularity, "count": 500, "price": "M"},
+        params={"range": yahoo_range, "interval": yahoo_interval, "includePrePost": "true"},
+        headers={"User-Agent": "Mozilla/5.0 ForexAlertBot/1.0"},
         timeout=20,
     )
     response.raise_for_status()
     payload = response.json()
+    chart = payload.get("chart", {})
+    if chart.get("error"):
+        raise RuntimeError(f"Public FX feed error: {chart['error']}")
+    results = chart.get("result") or []
+    if not results:
+        raise ValueError(f"Public FX feed returned no candles for {ticker}")
+
+    result = results[0]
+    timestamps = result.get("timestamp") or []
+    quote_blocks = result.get("indicators", {}).get("quote") or []
+    if not timestamps or not quote_blocks:
+        raise ValueError(f"Public FX feed returned incomplete candle data for {ticker}")
+    quote = quote_blocks[0]
     rows = []
-    for candle in payload.get("candles", []):
-        if not candle.get("complete") or "mid" not in candle:
+    duration = {"5m": 5, "15m": 15, "1h": 60}[interval]
+    now = pd.Timestamp.now(tz="UTC")
+    for i, stamp in enumerate(timestamps):
+        try:
+            candle_time = pd.to_datetime(stamp, unit="s", utc=True)
+            # Exclude the still-forming candle; only closed bars may drive signals.
+            if candle_time + pd.Timedelta(minutes=duration) > now:
+                continue
+            values = {
+                "Open": quote.get("open", [])[i],
+                "High": quote.get("high", [])[i],
+                "Low": quote.get("low", [])[i],
+                "Close": quote.get("close", [])[i],
+            }
+            if any(value is None for value in values.values()):
+                continue
+            rows.append({"time": candle_time, **{k: float(v) for k, v in values.items()}})
+        except (IndexError, TypeError, ValueError):
             continue
-        mid = candle["mid"]
-        rows.append({
-            "time": pd.to_datetime(candle["time"], utc=True),
-            "Open": float(mid["o"]),
-            "High": float(mid["h"]),
-            "Low": float(mid["l"]),
-            "Close": float(mid["c"]),
-        })
+
     if len(rows) < 60:
-        raise ValueError(f"OANDA returned only {len(rows)} completed {granularity} candles")
+        raise ValueError(f"Public FX feed returned only {len(rows)} completed {interval} candles")
     data = pd.DataFrame(rows).set_index("time").sort_index()
     data = data[~data.index.duplicated(keep="last")]
     if len(data) < 55:
-        raise ValueError("Insufficient completed OANDA candle history")
+        raise ValueError("Insufficient completed public FX candle history")
     return data
+
 
 def candle_is_fresh(data, max_age_minutes, candle_duration_minutes=0):
 
