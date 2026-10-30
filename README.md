@@ -3,12 +3,12 @@
 ## Current behaviour
 - Signal-only Telegram alerts; no automatic trading.
 - Scans 27 major and cross-currency pairs using completed M5 candles, with M15 and H1 trend confirmation.
-- Uses a free public Yahoo Finance FX chart feed. This is **not broker-verified** and may be delayed, unavailable, rate-limited, or differ from MT4 broker prices.
+- Uses a third-party public biquote OHLC endpoint. The provider's underlying market-data provenance is not independently verified; it is **not broker-verified** and may be delayed, unavailable, rate-limited, or differ from MT4 broker prices.
 - Rejects stale/incomplete candles and fails closed if the public feed returns missing, malformed, or insufficient candle data.
 - Requires aligned M15/H1 trends, fresh M5 continuation or pullback confirmation, and filters for RSI, ATR/volatility, EMA separation, entry extension, and candle direction.
 - Detects confirmed H1 swing highs/lows and rejects setups when the target is too close to the opposing H1 swing.
 - Uses structure/ATR stops, a minimum planned reward-to-risk of 1:1.5, and limits alerts to 5 per UTC day and at most 1 per pair per UTC day.
-- Logs alerts and estimates later outcomes from public-feed M5 candles. These are candle-based estimates, not executed-trade results.
+- Logs alerts and estimates later outcomes from biquote public-feed M5 candles. These are candle-based estimates, not executed-trade results.
 
 ## Important limitations and safety
 - Public-feed prices are not your broker's bid/ask or execution prices. Spreads, slippage, commissions, broker candle differences and feed delays can change whether a setup is tradable.
