@@ -611,30 +611,40 @@ def analyse_pair(ticker):
 
     liquidity_sweep = detect_liquidity_sweep(m5, direction)
     if liquidity_sweep:
-        score += 1
+        score += 2 if setup_type == "SWEEP REVERSAL" else 1
 
     if m15_trend == direction:
-
         score += 2
 
     if h1_trend == direction:
-
         score += 2
 
-    if (direction == "BUY" and last["EMA9"] > last["EMA21"]) or (
+    if setup_type == "SWEEP REVERSAL":
+        momentum_confirmed = (
+            direction == "BUY" and last["EMA9"] > previous["EMA9"]
+        ) or (
+            direction == "SELL" and last["EMA9"] < previous["EMA9"]
+        )
+        rsi_confirmed = (
+            direction == "BUY" and 45 <= rsi <= 65
+        ) or (
+            direction == "SELL" and 35 <= rsi <= 55
+        )
+    else:
+        momentum_confirmed = (
+            direction == "BUY" and last["EMA9"] > last["EMA21"]
+        ) or (
+            direction == "SELL" and last["EMA9"] < last["EMA21"]
+        )
+        rsi_confirmed = (
+            direction == "BUY" and 52 <= rsi <= 65
+        ) or (
+            direction == "SELL" and 35 <= rsi <= 48
+        )
 
-        direction == "SELL" and last["EMA9"] < last["EMA21"]
-
-    ):
-
+    if momentum_confirmed:
         score += 1
-
-    if (direction == "BUY" and 52 <= rsi <= 65) or (
-
-        direction == "SELL" and 35 <= rsi <= 48
-
-    ):
-
+    if rsi_confirmed:
         score += 1
 
     if score < MIN_SCORE:
