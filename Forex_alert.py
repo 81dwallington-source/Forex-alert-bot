@@ -380,13 +380,44 @@ def detect_liquidity_sweep(data, direction, lookback=12, recent_candles=3):
     return False
 
 
+def detect_fvg_retest(data, direction, atr, lookback=10):
+    """Find a recent three-candle imbalance retest with directional rejection."""
+    if direction not in ("BUY", "SELL") or len(data) < 5 or atr <= 0:
+        return False
+    start = max(2, len(data) - lookback - 1)
+    # The final candle is the confirmation candle; the gap must pre-date it.
+    for index in range(start, len(data) - 1):
+        first = data.iloc[index - 2]
+        middle = data.iloc[index]
+        if direction == "BUY":
+            gap_low = float(first["High"])
+            gap_high = float(middle["Low"])
+            if gap_high <= gap_low:
+                continue
+            for confirm_index in range(index + 1, len(data)):
+                candle = data.iloc[confirm_index]
+                touched = float(candle["Low"]) <= gap_high and float(candle["High"]) >= gap_low
+                reclaimed = float(candle["Close"]) > gap_high and float(candle["Close"]) > float(candle["Open"])
+                if touched and reclaimed and float(candle["Close"]) - gap_high <= atr * 0.35:
+                    return True
+        else:
+            gap_low = float(middle["High"])
+            gap_high = float(first["Low"])
+            if gap_high <= gap_low:
+                continue
+            for confirm_index in range(index + 1, len(data)):
+                candle = data.iloc[confirm_index]
+                touched = float(candle["High"]) >= gap_low and float(candle["Low"]) <= gap_high
+                rejected = float(candle["Close"]) < gap_low and float(candle["Close"]) < float(candle["Open"])
+                if touched and rejected and gap_low - float(candle["Close"]) <= atr * 0.35:
+                    return True
+    return False
+
+
 def entry_location_check(data, direction, atr):
-    """Mandatory M5 entry-location filter: require a fresh EMA21 retest,
-    avoid chasing an extended close, and avoid entering at the wrong edge
-    of the recent 20-candle range.
-    """
+    """Demand a real pullback location, not a momentum candle in open space."""
     if direction not in ("BUY", "SELL") or len(data) < 25 or atr <= 0:
-        return False, "insufficient data for entry-location check"
+        return False, "insufficient data for structural entry-location check"
 
     last = data.iloc[-1]
     recent = data.iloc[-4:]
@@ -394,42 +425,57 @@ def entry_location_check(data, direction, atr):
     close = float(last["Close"])
     ema21 = float(last["EMA21"])
 
+    # A nearby EMA21 retest is useful, but alone is not proof of a good location.
     if direction == "BUY":
-        retest = any(
+        ema_retest = any(
             float(row["Low"]) <= float(row["EMA21"]) + float(row["ATR"]) * 0.15
             and float(row["Close"]) > float(row["EMA21"])
             for _, row in recent.iterrows()
         )
-        if not retest:
-            return False, "no fresh M5 EMA21 pullback/reclaim"
-        if close - ema21 > atr * 0.45:
-            return False, "buy entry too far above M5 EMA21"
+        if close < ema21 or close - ema21 > atr * 0.45:
+            return False, "buy entry not close enough to a reclaimed M5 EMA21"
         range_low = float(prior_range["Low"].min())
         range_high = float(prior_range["High"].max())
         position = (close - range_low) / max(range_high - range_low, 1e-12)
-        if position > 0.72:
-            return False, "buy entry too high in recent M5 range"
-        if range_high - close < atr * 1.0:
-            return False, "insufficient room before recent M5 resistance"
+        room = range_high - close
     else:
-        retest = any(
+        ema_retest = any(
             float(row["High"]) >= float(row["EMA21"]) - float(row["ATR"]) * 0.15
             and float(row["Close"]) < float(row["EMA21"])
             for _, row in recent.iterrows()
         )
-        if not retest:
-            return False, "no fresh M5 EMA21 pullback/rejection"
-        if ema21 - close > atr * 0.45:
-            return False, "sell entry too far below M5 EMA21"
+        if close > ema21 or ema21 - close > atr * 0.45:
+            return False, "sell entry not close enough to a rejected M5 EMA21"
         range_low = float(prior_range["Low"].min())
         range_high = float(prior_range["High"].max())
         position = (close - range_low) / max(range_high - range_low, 1e-12)
-        if position < 0.28:
-            return False, "sell entry too low in recent M5 range"
-        if close - range_low < atr * 1.0:
-            return False, "insufficient room before recent M5 support"
+        room = close - range_low
 
-    return True, "M5 EMA21 pullback confirmed; entry not extended or at the wrong range extreme"
+    if not ema_retest:
+        return False, "no fresh M5 pullback/retest at the entry area"
+
+    if direction == "BUY" and position > 0.68:
+        return False, "buy entry too high in recent M5 range; poor reward location"
+    if direction == "SELL" and position < 0.32:
+        return False, "sell entry too low in recent M5 range; poor reward location"
+    if room < atr * 1.25:
+        return False, "not enough space to the recent swing boundary"
+
+    # Require evidence that price reacted at a meaningful area: a stop-run
+    # reclaim or a three-candle imbalance (FVG) retest. Neither is a prediction.
+    sweep = detect_liquidity_sweep(data, direction, lookback=12, recent_candles=4)
+    fvg_retest = detect_fvg_retest(data, direction, atr, lookback=10)
+    if not (sweep or fvg_retest):
+        return False, "no recent liquidity sweep/reclaim or FVG retest at entry location"
+
+    evidence = []
+    if ema_retest:
+        evidence.append("EMA21 pullback")
+    if sweep:
+        evidence.append("liquidity sweep/reclaim")
+    if fvg_retest:
+        evidence.append("FVG retest")
+    return True, " + ".join(evidence) + "; range location and target space confirmed"
 
 def analyse_pair(ticker):
 
