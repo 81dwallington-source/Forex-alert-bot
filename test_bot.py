@@ -25,6 +25,21 @@ class ForexBotRegressionTests(unittest.TestCase):
         self.assertEqual(bot.STRUCTURE_STOP_BUFFER_ATR, 0.25)
         self.assertEqual(bot.MAX_STOP_DISTANCE_ATR, 3.0)
 
+    def test_detects_bullish_liquidity_sweep_and_reclaim(self):
+        rows = [{"Open": 1.1000, "High": 1.1050, "Low": 1.0950, "Close": 1.1000} for _ in range(15)]
+        rows.append({"Open": 1.0990, "High": 1.1030, "Low": 1.0940, "Close": 1.1010})
+        self.assertTrue(bot.detect_liquidity_sweep(pd.DataFrame(rows), "BUY"))
+
+    def test_detects_bearish_liquidity_sweep_and_rejection(self):
+        rows = [{"Open": 1.1000, "High": 1.1050, "Low": 1.0950, "Close": 1.1000} for _ in range(15)]
+        rows.append({"Open": 1.1010, "High": 1.1060, "Low": 1.0970, "Close": 1.0990})
+        self.assertTrue(bot.detect_liquidity_sweep(pd.DataFrame(rows), "SELL"))
+
+    def test_no_liquidity_sweep_when_price_does_not_reclaim(self):
+        rows = [{"Open": 1.1000, "High": 1.1050, "Low": 1.0950, "Close": 1.1000} for _ in range(15)]
+        rows.append({"Open": 1.0940, "High": 1.0970, "Low": 1.0930, "Close": 1.0945})
+        self.assertFalse(bot.detect_liquidity_sweep(pd.DataFrame(rows), "BUY"))
+
     def test_trend_direction_buy_sell_and_unclear(self):
         self.assertEqual(
             bot.trend_direction(pd.DataFrame([{"EMA20": 1.2, "EMA50": 1.1}])),
