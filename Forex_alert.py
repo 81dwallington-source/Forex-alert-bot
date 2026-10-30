@@ -514,6 +514,54 @@ def entry_location_check(data, direction, atr):
         evidence.append("FVG retest")
     return True, " + ".join(evidence) + "; range location and target space confirmed"
 
+
+def detect_pullback_continuation(data, direction):
+    """Confirm a shallow pullback into M5 EMA21 followed by a break of the prior candle."""
+    if direction not in ("BUY", "SELL") or len(data) < 30:
+        return False, "insufficient data for pullback continuation"
+
+    last = data.iloc[-1]
+    previous = data.iloc[-2]
+    pullback = data.iloc[-5:-1]
+    atr = float(last["ATR"])
+    if atr <= 0:
+        return False, "invalid ATR for pullback continuation"
+
+    if direction == "BUY":
+        touched_zone = any(
+            float(row["Low"]) <= float(row["EMA21"]) + float(row["ATR"]) * 0.20
+            and float(row["Close"]) >= float(row["EMA21"]) - float(row["ATR"]) * 0.35
+            for _, row in pullback.iterrows()
+        )
+        confirmed = (
+            float(last["Close"]) > float(last["Open"])
+            and float(last["Close"]) > float(previous["High"])
+            and float(last["Close"]) > float(last["EMA21"])
+            and float(last["EMA9"]) > float(previous["EMA9"])
+            and float(last["EMA9"]) > float(last["EMA21"])
+            and float(last["Close"]) - float(last["EMA21"]) <= atr * 0.55
+        )
+    else:
+        touched_zone = any(
+            float(row["High"]) >= float(row["EMA21"]) - float(row["ATR"]) * 0.20
+            and float(row["Close"]) <= float(row["EMA21"]) + float(row["ATR"]) * 0.35
+            for _, row in pullback.iterrows()
+        )
+        confirmed = (
+            float(last["Close"]) < float(last["Open"])
+            and float(last["Close"]) < float(previous["Low"])
+            and float(last["Close"]) < float(last["EMA21"])
+            and float(last["EMA9"]) < float(previous["EMA9"])
+            and float(last["EMA9"]) < float(last["EMA21"])
+            and float(last["EMA21"]) - float(last["Close"]) <= atr * 0.55
+        )
+
+    if not touched_zone:
+        return False, "no recent pullback into the M5 EMA21 area"
+    if not confirmed:
+        return False, "pullback has not produced a confirmed continuation candle"
+    return True, "M5 EMA21 pullback + confirmed break of prior candle"
+
 def analyse_pair(ticker):
 
     m5 = indicators(download_data(ticker, "5m", "5d"))
@@ -577,6 +625,9 @@ def analyse_pair(ticker):
     setup_type = "CONTINUATION"
     if m15_trend != "NONE" and m15_trend == h1_trend:
         direction = m15_trend
+        pullback_candidate, _ = detect_pullback_continuation(m5, direction)
+        if pullback_candidate:
+            setup_type = "PULLBACK CONTINUATION"
     else:
         reversal_direction = "BUY" if sweep_buy else "SELL" if sweep_sell else None
         if reversal_direction is None:
@@ -607,8 +658,12 @@ def analyse_pair(ticker):
     if not ema_gap_ok:
         return None, ema_gap_note
 
-    # Mandatory entry location: no late momentum chasing or mid-range entries.
-    location_ok, location_note = entry_location_check(m5, direction, atr)
+    # Pullback continuations use their own EMA21 retest + candle-break confirmation.
+    # Other setup types retain the stricter sweep/FVG structural location gate.
+    if setup_type == "PULLBACK CONTINUATION":
+        location_ok, location_note = detect_pullback_continuation(m5, direction)
+    else:
+        location_ok, location_note = entry_location_check(m5, direction, atr)
     if not location_ok:
         return None, location_note
 
