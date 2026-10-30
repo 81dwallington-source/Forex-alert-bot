@@ -761,7 +761,7 @@ def analyse_pair(ticker):
 
 
 def update_signal_outcomes():
-    """Resolve prior alerts using later OANDA midpoint candles; not actual execution fills."""
+    """Resolve prior alerts using later Yahoo public-feed candles; estimates only, not actual execution fills."""
     if not LOG_FILE.exists():
         return
 
@@ -845,9 +845,9 @@ def update_signal_outcomes():
                     low = float(candle["Low"])
                     evidence_time = outcome_time.isoformat()
                     evidence_detail = (
-                        f"OANDA M5 midpoint candle {evidence_time}: high={high}, low={low}; "
+                        f"Yahoo Finance public M5 candle {evidence_time}: high={high}, low={low}; "
                         f"entry reference={entry}, SL={stop}, TP={target}. "
-                        "OANDA midpoint candle evidence; actual execution fills are not verified."
+                        "Yahoo public-feed candle evidence; actual execution fills are not verified."
                     )
                     if direction == "BUY":
                         stop_hit = low <= stop
@@ -875,39 +875,39 @@ def update_signal_outcomes():
                             changed = True
                             log(f"Outcome ambiguous for {row['pair']}: entry and exit level touched in same M5 candle")
                             resolved_notifications.append(
-                                f"{row['pair']} {direction}: AMBIGUOUS — entry and SL/TP level touched in one OANDA M5 candle at {evidence_time}. OANDA midpoint candle evidence; actual execution fills are not verified."
+                                f"{row['pair']} {direction}: AMBIGUOUS — entry and SL/TP level touched in one Yahoo public-feed M5 candle at {evidence_time}. OANDA midpoint candle evidence; actual execution fills are not verified."
                             )
                             break
                         continue
 
                     if stop_hit and target_hit:
-                        row["outcome"] = "AMBIGUOUS_BOTH_HIT_OANDA_CANDLES"
+                        row["outcome"] = "AMBIGUOUS_BOTH_HIT_PUBLIC_CANDLES"
                         row["outcome_candle_time"] = evidence_time
                         row["outcome_evidence"] = evidence_detail
                         changed = True
                         log(f"Outcome ambiguous for {row['pair']}: stop and target touched in same M5 candle")
                         resolved_notifications.append(
-                            f"{row['pair']} {direction}: AMBIGUOUS — SL and TP both touched in one OANDA M5 candle at {evidence_time}. Not actual fills."
+                            f"{row['pair']} {direction}: AMBIGUOUS — SL and TP both touched in one Yahoo public-feed M5 candle at {evidence_time}. Not actual fills."
                         )
                         break
                     if target_hit:
-                        row["outcome"] = "TP_HIT_OANDA_CANDLE_ESTIMATE"
+                        row["outcome"] = "TP_HIT_PUBLIC_CANDLE_ESTIMATE"
                         row["outcome_candle_time"] = evidence_time
                         row["outcome_evidence"] = evidence_detail
                         changed = True
-                        log(f"Target touched in OANDA M5 midpoint data for {row['pair']} (not actual fills)")
+                        log(f"Target touched in Yahoo public-feed M5 data for {row['pair']} (not actual fills)")
                         resolved_notifications.append(
-                            f"{row['pair']} {direction}: TP touched at {evidence_time} — OANDA candle estimate; not an executed-trade result."
+                            f"{row['pair']} {direction}: TP touched at {evidence_time} — public-feed candle estimate; not an executed-trade result."
                         )
                         break
                     if stop_hit:
-                        row["outcome"] = "SL_HIT_OANDA_CANDLE_ESTIMATE"
+                        row["outcome"] = "SL_HIT_PUBLIC_CANDLE_ESTIMATE"
                         row["outcome_candle_time"] = evidence_time
                         row["outcome_evidence"] = evidence_detail
                         changed = True
-                        log(f"Stop touched in OANDA M5 midpoint data for {row['pair']} (not actual fills)")
+                        log(f"Stop touched in Yahoo public-feed M5 data for {row['pair']} (not actual fills)")
                         resolved_notifications.append(
-                            f"{row['pair']} {direction}: SL touched at {evidence_time} — OANDA candle estimate; not an executed-trade result."
+                            f"{row['pair']} {direction}: SL touched at {evidence_time} — public-feed candle estimate; not an executed-trade result."
                         )
                         break
                 else:
@@ -926,9 +926,9 @@ def update_signal_outcomes():
                 writer.writeheader()
                 writer.writerows(rows)
             temp_file.replace(LOG_FILE)
-            log(f"Updated signal outcomes at {checked_at}; OANDA candle-based estimates; not executed-trade results.")
+            log(f"Updated signal outcomes at {checked_at}; public-feed candle-based estimates; not executed-trade results.")
             if resolved_notifications:
-                summary = "FOREX ALERT OUTCOME CHECK (OANDA M5 midpoint; not actual fills)\\n\\n" + "\\n".join(resolved_notifications)
+                summary = "FOREX ALERT OUTCOME CHECK (Yahoo public M5 candles; not actual fills)\\n\\n" + "\\n".join(resolved_notifications)
                 telegram_send(summary)
         except Exception as exc:
             log(f"Could not save updated signal outcomes: {exc}")
@@ -946,15 +946,6 @@ def main():
             "Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID GitHub secret"
 
         )
-
-    if not OANDA_API_TOKEN:
-        log("OANDA_API_TOKEN missing; refusing to use Yahoo Finance for trade alerts.")
-        telegram_send(
-            "FOREX BOT PAUSED — broker data is not configured.\n"
-            "Yahoo Finance has been disabled for trade alerts. Add the OANDA_API_TOKEN "
-            "GitHub Actions secret, then the bot will resume using OANDA completed M5/M15/H1 candles."
-        )
-        return
 
     update_signal_outcomes()
 
