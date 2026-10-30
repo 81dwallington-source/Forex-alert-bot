@@ -45,7 +45,7 @@ jobs:
         run: python -m unittest -v test_bot.py
 
       - name: Verify Telegram delivery once on this push
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, '[send-watchlist]')
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -58,7 +58,7 @@ jobs:
               raise SystemExit("Telegram secrets are missing")
           response = requests.post(
               f"https://api.telegram.org/bot{token}/sendMessage",
-              json={"chat_id": chat_id, "text": "✅ Forex Alert Bot: Telegram delivery test successful. Signal alerts remain controlled by the normal quality filters."},
+              json={"chat_id": chat_id, "text": "✅ GBP/USD — M5 WATCHLIST\n\nFirst pair to investigate for institutional-style buying activity.\n\nLooking for:\n• M15 and H1 bullish confirmation.\n• Pullback towards the M5 EMA21.\n• Strong bullish confirmation candle.\n• Break of the confirmation candle high.\n\nNo chasing price. No entry until the live chart confirms it.\nEntry, SL and TP still need live verification.\n\nWATCH ONLY — NOT A TRADE SIGNAL."},
               timeout=20,
           )
           response.raise_for_status()
