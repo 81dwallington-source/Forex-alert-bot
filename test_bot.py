@@ -33,7 +33,7 @@ class ForexBotRegressionTests(unittest.TestCase):
 
     def test_public_feed_is_explicitly_not_broker_verified(self):
         self.assertIn("biquote", bot.DATA_SOURCE.lower())
-        self.assertIn("not broker-verified", bot.DATA_SOURCE.lower())
+        self.assertIn("not user-broker verified", bot.DATA_SOURCE.lower())
 
     def test_public_feed_mode_uses_biquote_without_oanda_dependency(self):
         import inspect
