@@ -373,64 +373,6 @@ def detect_h1_swing_levels(data, lookback=120, left_bars=2, right_bars=2):
     return {"high": highs[-1] if highs else None, "low": lows[-1] if lows else None}
 
 
-def detect_liquidity_sweep(data, direction, lookback=12, recent_candles=3):
-    """Detect a recent stop-run and close back inside the prior swing range.
-
-    BUY: wick takes the prior swing low, then a bullish candle closes back above it.
-    SELL: wick takes the prior swing high, then a bearish candle closes back below it.
-    This is a quality-score bonus, never a mandatory entry condition.
-    """
-    if direction not in ("BUY", "SELL") or len(data) < lookback + 1:
-        return False
-    first = max(lookback, len(data) - recent_candles)
-    for index in range(first, len(data)):
-        candle = data.iloc[index]
-        prior = data.iloc[index - lookback:index]
-        prior_low = float(prior["Low"].min())
-        prior_high = float(prior["High"].max())
-        open_price = float(candle["Open"])
-        high = float(candle["High"])
-        low = float(candle["Low"])
-        close = float(candle["Close"])
-        if direction == "BUY":
-            swept = low < prior_low and close > prior_low
-            rejection = close > open_price
-        else:
-            swept = high > prior_high and close < prior_high
-            rejection = close < open_price
-        if swept and rejection:
-            return True
-    return False
-
-
-def detect_fvg_retest(data, direction, atr, lookback=10):
-    """Require the latest completed candle to reject a recent three-candle FVG."""
-    if direction not in ("BUY", "SELL") or len(data) < 5 or atr <= 0:
-        return False
-    latest = data.iloc[-1]
-    start = max(2, len(data) - lookback - 1)
-    for index in range(start, len(data) - 1):
-        first = data.iloc[index - 2]
-        third = data.iloc[index]
-        if direction == "BUY":
-            gap_low = float(first["High"])
-            gap_high = float(third["Low"])
-            gap_size = gap_high - gap_low
-            if gap_size < atr * 0.05 or gap_size > atr * 0.80:
-                continue
-            touched = float(latest["Low"]) <= gap_high and float(latest["High"]) >= gap_low
-            confirmed = float(latest["Close"]) > gap_high and float(latest["Close"]) > float(latest["Open"])
-        else:
-            gap_low = float(third["High"])
-            gap_high = float(first["Low"])
-            gap_size = gap_high - gap_low
-            if gap_size < atr * 0.05 or gap_size > atr * 0.80:
-                continue
-            touched = float(latest["High"]) >= gap_low and float(latest["Low"]) <= gap_high
-            confirmed = float(latest["Close"]) < gap_low and float(latest["Close"]) < float(latest["Open"])
-        if touched and confirmed:
-            return True
-    return False
 def m5_ema_separation_check(data, direction, min_atr=M5_MIN_EMA_SEPARATION_ATR):
     """Reject flat/touching M5 EMAs; require directional gap to be widening."""
     if direction not in ("BUY", "SELL") or len(data) < 2:
@@ -498,22 +440,8 @@ def entry_location_check(data, direction, atr):
     if room < atr * 1.25:
         return False, "not enough space to the recent swing boundary"
 
-    # Require evidence that price reacted at a meaningful area: a stop-run
-    # reclaim or a three-candle imbalance (FVG) retest. Neither is a prediction.
-    # Only a sweep on the latest completed candle validates a fresh entry.
-    sweep = detect_liquidity_sweep(data, direction, lookback=12, recent_candles=1)
-    fvg_retest = detect_fvg_retest(data, direction, atr, lookback=10)
-    if not (sweep or fvg_retest):
-        return False, "no recent liquidity sweep/reclaim or FVG retest at entry location"
-
-    evidence = []
-    if ema_retest:
-        evidence.append("EMA21 pullback")
-    if sweep:
-        evidence.append("liquidity sweep/reclaim")
-    if fvg_retest:
-        evidence.append("FVG retest")
-    return True, " + ".join(evidence) + "; range location and target space confirmed"
+    # Entry location is confirmed by the EMA21 pullback, range position, and clear target space.
+    return True, "EMA21 pullback; range location and target space confirmed"
 
 
 def detect_pullback_continuation(data, direction):
@@ -615,9 +543,7 @@ def analyse_pair(ticker):
 
     h1_trend = trend_direction(h1)
 
-    # All setups require M15 and H1 trend agreement. A fresh M5
-    # liquidity sweep may add quality evidence, but can never override
-    # a higher-timeframe mismatch or create a countertrend reversal entry.
+    # All setups require M15 and H1 trend agreement.
     if m15_trend == "NONE" or h1_trend == "NONE" or m15_trend != h1_trend:
         return None, "M15/H1 trend mismatch"
 
@@ -648,8 +574,7 @@ def analyse_pair(ticker):
     if not ema_gap_ok:
         return None, ema_gap_note
 
-    # Pullback continuations use their own EMA21 retest + candle-break confirmation.
-    # Other setup types retain the stricter sweep/FVG structural location gate.
+    # Pullback continuations require an EMA21 retest and a confirmed candle break.
     if setup_type == "PULLBACK CONTINUATION":
         location_ok, location_note = detect_pullback_continuation(m5, direction)
     else:
@@ -657,9 +582,8 @@ def analyse_pair(ticker):
     if not location_ok:
         return None, location_note
 
-    # Continuations require a fresh EMA crossover. Sweep reversals do not
-    # wait for that late crossover, but still require a decisive M5 close,
-    # directional EMA9 momentum and a controlled RSI.
+    # Standard continuation entries require a fresh M5 EMA crossover.
+    # Pullback continuations have their own retest + candle-break confirmation.
     recent = m5.iloc[-4:]
     if direction == "BUY":
         crossed = (
@@ -674,8 +598,6 @@ def analyse_pair(ticker):
             return None, "M5 momentum no longer bullish"
         if setup_type == "CONTINUATION" and not 50 <= rsi <= 68:
             return None, "RSI outside buy range"
-        if setup_type == "SWEEP REVERSAL" and not 40 <= rsi <= 68:
-            return None, "reversal RSI outside buy range"
         if setup_type == "CONTINUATION" and close <= float(last["EMA21"]):
             return None, "price not holding above EMA21"
     else:
@@ -691,8 +613,6 @@ def analyse_pair(ticker):
             return None, "M5 momentum no longer bearish"
         if setup_type == "CONTINUATION" and not 32 <= rsi <= 50:
             return None, "RSI outside sell range"
-        if setup_type == "SWEEP REVERSAL" and not 32 <= rsi <= 60:
-            return None, "reversal RSI outside sell range"
         if setup_type == "CONTINUATION" and close >= float(last["EMA21"]):
             return None, "price not holding below EMA21"
 
@@ -707,38 +627,22 @@ def analyse_pair(ticker):
 
     score = 0
 
-    liquidity_sweep = detect_liquidity_sweep(m5, direction)
-    if liquidity_sweep:
-        score += 2 if setup_type == "SWEEP REVERSAL" else 1
-
     if m15_trend == direction:
         score += 2
 
     if h1_trend == direction:
         score += 2
 
-    if setup_type == "SWEEP REVERSAL":
-        momentum_confirmed = (
-            direction == "BUY" and last["EMA9"] > previous["EMA9"]
-        ) or (
-            direction == "SELL" and last["EMA9"] < previous["EMA9"]
-        )
-        rsi_confirmed = (
-            direction == "BUY" and 45 <= rsi <= 65
-        ) or (
-            direction == "SELL" and 35 <= rsi <= 55
-        )
-    else:
-        momentum_confirmed = (
-            direction == "BUY" and last["EMA9"] > last["EMA21"]
-        ) or (
-            direction == "SELL" and last["EMA9"] < last["EMA21"]
-        )
-        rsi_confirmed = (
-            direction == "BUY" and 52 <= rsi <= 65
-        ) or (
-            direction == "SELL" and 35 <= rsi <= 48
-        )
+    momentum_confirmed = (
+        direction == "BUY" and last["EMA9"] > last["EMA21"]
+    ) or (
+        direction == "SELL" and last["EMA9"] < last["EMA21"]
+    )
+    rsi_confirmed = (
+        direction == "BUY" and 52 <= rsi <= 65
+    ) or (
+        direction == "SELL" and 35 <= rsi <= 48
+    )
 
     if momentum_confirmed:
         score += 1
@@ -809,7 +713,6 @@ def analyse_pair(ticker):
 
         "score": score,
 
-        "liquidity_sweep": liquidity_sweep,
 
         "location_note": location_note,
 
@@ -846,7 +749,7 @@ def analyse_pair(ticker):
         "evidence_note": (
             f"{setup_type}; M5 candle confirmation; M15={m15_trend}, H1={h1_trend}; "
             f"RSI={rsi:.1f}; ATR={atr:.{decimals}f}; ATR%={atr_percent:.4f}; "
-            f"quality filter score={score}/7; latest-candle liquidity sweep={'yes' if sweep_buy or sweep_sell else 'no'}. Rule-based evidence, not a win-probability estimate."
+            f"quality filter score={score}/6. Rule-based evidence, not a win-probability estimate."
         ),
 
     }, "qualifies"
@@ -1129,9 +1032,7 @@ def main():
 
                 f"RSI: {signal['rsi']}\n"
 
-                f"Quality filter score: {signal['score']}/7 (filter, not win probability)\n"
-
-                f"Liquidity sweep: {'YES' if signal['liquidity_sweep'] else 'NO'}\n"
+                f"Quality filter score: {signal['score']}/6 (filter, not win probability)\n"
 
                 f"M5 EMA9/EMA21: {signal['m5_ema9']} / {signal['m5_ema21']}\n"
 
@@ -1143,7 +1044,7 @@ def main():
 
                 f"Signal candle O/H/L: {signal['signal_candle_open']} / {signal['signal_candle_high']} / {signal['signal_candle_low']}\n"
 
-                f"Trigger: {'EMA21 pullback + confirmed candle break' if signal['setup_type'] == 'PULLBACK CONTINUATION' else 'M5 EMA crossover or confirmed sweep reversal'}\\n"
+                f"Trigger: {'EMA21 pullback + confirmed candle break' if signal['setup_type'] == 'PULLBACK CONTINUATION' else 'M5 EMA crossover + EMA21 location confirmation'}\n"
 
                 f"Entry location: {signal['location_note']}\n"
 
