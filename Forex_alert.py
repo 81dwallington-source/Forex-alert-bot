@@ -523,15 +523,25 @@ def analyse_pair(ticker):
 
     h1_trend = trend_direction(h1)
 
-    if m15_trend == "NONE" or h1_trend == "NONE":
+    # Standard continuation setups need M15/H1 agreement. A separate,
+    # stricter sweep-reversal route may qualify when exactly one higher
+    # timeframe agrees with the latest completed M5 sweep direction.
+    sweep_buy = detect_liquidity_sweep(m5, "BUY", lookback=12, recent_candles=1)
+    sweep_sell = detect_liquidity_sweep(m5, "SELL", lookback=12, recent_candles=1)
+    if sweep_buy and sweep_sell:
+        return None, "ambiguous M5 sweep in both directions"
 
-        return None, "unclear higher-timeframe trend"
-
-    if m15_trend != h1_trend:
-
-        return None, "M15/H1 trend mismatch"
-
-    direction = m15_trend
+    setup_type = "CONTINUATION"
+    if m15_trend != "NONE" and m15_trend == h1_trend:
+        direction = m15_trend
+    else:
+        reversal_direction = "BUY" if sweep_buy else "SELL" if sweep_sell else None
+        if reversal_direction is None:
+            return None, "M15/H1 mismatch without a fresh M5 liquidity sweep"
+        if reversal_direction not in (m15_trend, h1_trend):
+            return None, "sweep reversal rejected: neither M15 nor H1 confirms direction"
+        direction = reversal_direction
+        setup_type = "SWEEP REVERSAL"
 
     # Filter weak/choppy trends using ATR-normalized EMA separation.
     m15_last = m15.iloc[-1]
@@ -554,62 +564,43 @@ def analyse_pair(ticker):
     if not location_ok:
         return None, location_note
 
-    # Require a recent M5 EMA crossover, within the last 3
-
-    # completed candles, with M15 and H1 trend agreement.
-
+    # Continuations require a fresh EMA crossover. Sweep reversals do not
+    # wait for that late crossover, but still require a decisive M5 close,
+    # directional EMA9 momentum and a controlled RSI.
     recent = m5.iloc[-4:]
-
     if direction == "BUY":
-
         crossed = (
-
             (recent["EMA9"].shift(1) <= recent["EMA21"].shift(1))
-
             & (recent["EMA9"] > recent["EMA21"])
-
         ).any()
-
-        if not crossed:
-
+        if setup_type == "CONTINUATION" and not crossed:
             return None, "no fresh M5 bullish crossover"
-
-        if last["EMA9"] <= last["EMA21"]:
-
+        if last["EMA9"] <= previous["EMA9"]:
+            return None, "M5 EMA9 momentum not rising"
+        if setup_type == "CONTINUATION" and last["EMA9"] <= last["EMA21"]:
             return None, "M5 momentum no longer bullish"
-
-        if not 50 <= rsi <= 68:
-
+        if setup_type == "CONTINUATION" and not 50 <= rsi <= 68:
             return None, "RSI outside buy range"
-
-        if close <= float(last["EMA21"]):
-
+        if setup_type == "SWEEP REVERSAL" and not 40 <= rsi <= 68:
+            return None, "reversal RSI outside buy range"
+        if setup_type == "CONTINUATION" and close <= float(last["EMA21"]):
             return None, "price not holding above EMA21"
-
     else:
-
         crossed = (
-
             (recent["EMA9"].shift(1) >= recent["EMA21"].shift(1))
-
             & (recent["EMA9"] < recent["EMA21"])
-
         ).any()
-
-        if not crossed:
-
+        if setup_type == "CONTINUATION" and not crossed:
             return None, "no fresh M5 bearish crossover"
-
-        if last["EMA9"] >= last["EMA21"]:
-
+        if last["EMA9"] >= previous["EMA9"]:
+            return None, "M5 EMA9 momentum not falling"
+        if setup_type == "CONTINUATION" and last["EMA9"] >= last["EMA21"]:
             return None, "M5 momentum no longer bearish"
-
-        if not 32 <= rsi <= 50:
-
+        if setup_type == "CONTINUATION" and not 32 <= rsi <= 50:
             return None, "RSI outside sell range"
-
-        if close >= float(last["EMA21"]):
-
+        if setup_type == "SWEEP REVERSAL" and not 32 <= rsi <= 60:
+            return None, "reversal RSI outside sell range"
+        if setup_type == "CONTINUATION" and close >= float(last["EMA21"]):
             return None, "price not holding below EMA21"
 
     # Simple quality score. A high score is a filter, not
@@ -687,6 +678,8 @@ def analyse_pair(ticker):
 
         "direction": direction,
 
+        "setup_type": setup_type,
+
         "entry": round(close, decimals),
 
         "stop": round(stop, decimals),
@@ -732,9 +725,9 @@ def analyse_pair(ticker):
         "signal_candle_low": round(float(last["Low"]), decimals),
 
         "evidence_note": (
-            "Completed M5 EMA9/21 crossover; M15 and H1 EMA20/50 trends aligned; "
+            f"{setup_type}; M5 candle confirmation; M15={m15_trend}, H1={h1_trend}; "
             f"RSI={rsi:.1f}; ATR={atr:.{decimals}f}; ATR%={atr_percent:.4f}; "
-            f"quality filter score={score}/7; liquidity sweep={'yes' if liquidity_sweep else 'no'} (bonus only). Rule-based evidence, not a win-probability estimate."
+            f"quality filter score={score}/7; latest-candle liquidity sweep={'yes' if sweep_buy or sweep_sell else 'no'}. Rule-based evidence, not a win-probability estimate."
         ),
 
     }, "qualifies"
@@ -1005,6 +998,7 @@ def main():
                 f"Pair: {signal['pair']}\n"
 
                 f"Direction: {signal['direction']}\n"
+                f"Setup type: {signal['setup_type']}\n"
 
                 f"Entry reference: {signal['entry']}\n"
 
@@ -1018,7 +1012,7 @@ def main():
 
                 f"Quality filter score: {signal['score']}/7 (filter, not win probability)\n"
 
-                f"Liquidity sweep: {'YES' if signal['liquidity_sweep'] else 'NO'} (bonus only; not required)\n"
+                f"Liquidity sweep: {'YES' if signal['liquidity_sweep'] else 'NO'}\n"
 
                 f"M5 EMA9/EMA21: {signal['m5_ema9']} / {signal['m5_ema21']}\n"
 
