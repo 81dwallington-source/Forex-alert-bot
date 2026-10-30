@@ -117,7 +117,7 @@ class ForexBotRegressionTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("confirmed continuation candle", reason)
 
-    def test_minimum_quality_score_is_six_of_seven(self):
+    def test_minimum_quality_score_is_six_of_six(self):
         self.assertEqual(bot.MIN_SCORE, 6)
 
     def test_trend_direction_buy_sell_and_unclear(self):
