@@ -48,7 +48,7 @@ class ForexBotRegressionTests(unittest.TestCase):
             {"Open": 1.1035, "High": 1.1040, "Low": 1.1020, "Close": 1.1030},
             {"Open": 1.1025, "High": 1.1035, "Low": 1.1015, "Close": 1.1032},
         ]
-        self.assertTrue(bot.detect_fvg_retest(pd.DataFrame(rows), "BUY", atr=0.002))
+        self.assertTrue(bot.detect_fvg_retest(pd.DataFrame(rows), "BUY", atr=0.003))
 
     def test_fvg_requires_latest_bearish_retest_confirmation(self):
         rows = [
