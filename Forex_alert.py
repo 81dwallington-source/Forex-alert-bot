@@ -614,28 +614,17 @@ def analyse_pair(ticker):
 
     h1_trend = trend_direction(h1)
 
-    # Standard continuation setups need M15/H1 agreement. A separate,
-    # stricter sweep-reversal route may qualify when exactly one higher
-    # timeframe agrees with the latest completed M5 sweep direction.
-    sweep_buy = detect_liquidity_sweep(m5, "BUY", lookback=12, recent_candles=1)
-    sweep_sell = detect_liquidity_sweep(m5, "SELL", lookback=12, recent_candles=1)
-    if sweep_buy and sweep_sell:
-        return None, "ambiguous M5 sweep in both directions"
+    # All setups require M15 and H1 trend agreement. A fresh M5
+    # liquidity sweep may add quality evidence, but can never override
+    # a higher-timeframe mismatch or create a countertrend reversal entry.
+    if m15_trend == "NONE" or h1_trend == "NONE" or m15_trend != h1_trend:
+        return None, "M15/H1 trend mismatch"
 
+    direction = m15_trend
     setup_type = "CONTINUATION"
-    if m15_trend != "NONE" and m15_trend == h1_trend:
-        direction = m15_trend
-        pullback_candidate, _ = detect_pullback_continuation(m5, direction)
-        if pullback_candidate:
-            setup_type = "PULLBACK CONTINUATION"
-    else:
-        reversal_direction = "BUY" if sweep_buy else "SELL" if sweep_sell else None
-        if reversal_direction is None:
-            return None, "M15/H1 mismatch without a fresh M5 liquidity sweep"
-        if reversal_direction not in (m15_trend, h1_trend):
-            return None, "sweep reversal rejected: neither M15 nor H1 confirms direction"
-        direction = reversal_direction
-        setup_type = "SWEEP REVERSAL"
+    pullback_candidate, _ = detect_pullback_continuation(m5, direction)
+    if pullback_candidate:
+        setup_type = "PULLBACK CONTINUATION"
 
     # Filter weak/choppy trends using ATR-normalized EMA separation.
     m15_last = m15.iloc[-1]
