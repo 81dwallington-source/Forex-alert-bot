@@ -66,6 +66,40 @@ class ForexBotRegressionTests(unittest.TestCase):
         self.assertIn("biquote.io/api/", inspect.getsource(bot.download_data))
         self.assertNotIn("download_yahoo_data", inspect.getsource(bot.download_data))
 
+    def test_detects_bullish_breakout_retest_and_confirmation(self):
+        rows = [{"Open":1.1000,"High":1.1050,"Low":1.0950,"Close":1.1020,
+                 "ATR":0.0020} for _ in range(30)]
+        rows[-6].update({"Close":1.1060})
+        rows[-2].update({"Low":1.1048,"Close":1.1052})
+        rows[-1].update({"Open":1.1055,"High":1.1080,"Low":1.1052,"Close":1.1075})
+        ok, reason = bot.detect_breakout_retest(pd.DataFrame(rows), "BUY")
+        self.assertTrue(ok, reason)
+
+    def test_breakout_retest_rejects_without_retest(self):
+        rows = [{"Open":1.1000,"High":1.1050,"Low":1.0950,"Close":1.1020,
+                 "ATR":0.0020} for _ in range(30)]
+        rows[-6].update({"Close":1.1060})
+        rows[-2].update({"Low":1.1070,"Close":1.1080})
+        rows[-1].update({"Open":1.1080,"High":1.1090,"Low":1.1075,"Close":1.1088})
+        ok, reason = bot.detect_breakout_retest(pd.DataFrame(rows), "BUY")
+        self.assertFalse(ok)
+        self.assertIn("retested", reason)
+
+    def test_detects_bullish_support_rejection(self):
+        rows = [{"Open":1.1000,"High":1.1050,"Low":1.0950,"Close":1.1020,
+                 "ATR":0.0020} for _ in range(25)]
+        rows[-1].update({"Open":1.0950,"High":1.0972,"Low":1.0948,"Close":1.0968})
+        ok, reason = bot.detect_support_resistance_rejection(pd.DataFrame(rows), "BUY")
+        self.assertTrue(ok, reason)
+
+    def test_support_rejection_rejects_weak_bounce(self):
+        rows = [{"Open":1.1000,"High":1.1050,"Low":1.0950,"Close":1.1020,
+                 "ATR":0.0020} for _ in range(25)]
+        rows[-1].update({"Open":1.0950,"High":1.0958,"Low":1.0948,"Close":1.0955})
+        ok, reason = bot.detect_support_resistance_rejection(pd.DataFrame(rows), "BUY")
+        self.assertFalse(ok)
+        self.assertIn("decisive rejection", reason)
+
     def test_signal_candle_quality_requires_strong_bullish_close(self):
         candle = {"Open": 1.1000, "High": 1.1020, "Low": 1.0990, "Close": 1.1018}
         ok, reason = bot.signal_candle_quality_check(candle, "BUY")
