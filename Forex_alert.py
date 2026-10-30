@@ -506,6 +506,85 @@ def detect_pullback_continuation(data, direction):
         return False, "pullback has not produced a confirmed continuation candle"
     return True, "M5 EMA21 pullback + confirmed break of prior candle"
 
+def detect_breakout_retest(data, direction, lookback=20):
+    """Require a prior close beyond a range edge, a retest, then a fresh M5 continuation break."""
+    if direction not in ("BUY", "SELL") or len(data) < lookback + 8:
+        return False, "insufficient data for breakout/retest"
+    atr = float(data.iloc[-1]["ATR"])
+    if atr <= 0:
+        return False, "invalid ATR for breakout/retest"
+    base = data.iloc[-(lookback + 8):-8]
+    breakout_window = data.iloc[-8:-3]
+    retest_window = data.iloc[-3:-1]
+    last, previous = data.iloc[-1], data.iloc[-2]
+    if direction == "BUY":
+        level = float(base["High"].max())
+        broke = (breakout_window["Close"] > level + atr * 0.05).any()
+        retested = (
+            (retest_window["Low"] <= level + atr * 0.25)
+            & (retest_window["Close"] >= level - atr * 0.10)
+        ).any()
+        confirmed = (
+            float(last["Close"]) > level
+            and float(last["Close"]) > float(previous["High"])
+            and float(last["Close"]) > float(last["Open"])
+        )
+    else:
+        level = float(base["Low"].min())
+        broke = (breakout_window["Close"] < level - atr * 0.05).any()
+        retested = (
+            (retest_window["High"] >= level - atr * 0.25)
+            & (retest_window["Close"] <= level + atr * 0.10)
+        ).any()
+        confirmed = (
+            float(last["Close"]) < level
+            and float(last["Close"]) < float(previous["Low"])
+            and float(last["Close"]) < float(last["Open"])
+        )
+    if not broke:
+        return False, "no prior confirmed range breakout"
+    if not retested:
+        return False, "breakout level has not been cleanly retested"
+    if not confirmed:
+        return False, "breakout retest lacks a fresh continuation close"
+    return True, "range breakout + retest + fresh M5 continuation break"
+
+
+def detect_support_resistance_rejection(data, direction, lookback=20):
+    """Require a clean rejection of a recent range extreme in the M15/H1 trend direction."""
+    if direction not in ("BUY", "SELL") or len(data) < lookback + 3:
+        return False, "insufficient data for level rejection"
+    atr = float(data.iloc[-1]["ATR"])
+    if atr <= 0:
+        return False, "invalid ATR for level rejection"
+    prior = data.iloc[-(lookback + 1):-1]
+    last = data.iloc[-1]
+    candle_range = float(last["High"] - last["Low"])
+    if candle_range <= 0:
+        return False, "zero-range rejection candle"
+    if direction == "BUY":
+        level = float(prior["Low"].min())
+        touched = float(last["Low"]) <= level + atr * 0.20
+        rejected = (
+            float(last["Close"]) > float(last["Open"])
+            and float(last["Close"]) - level >= atr * 0.35
+            and (float(last["Close"]) - float(last["Low"])) / candle_range >= 0.65
+        )
+    else:
+        level = float(prior["High"].max())
+        touched = float(last["High"]) >= level - atr * 0.20
+        rejected = (
+            float(last["Close"]) < float(last["Open"])
+            and level - float(last["Close"]) >= atr * 0.35
+            and (float(last["High"]) - float(last["Close"])) / candle_range >= 0.65
+        )
+    if not touched:
+        return False, "price did not test the recent support/resistance level"
+    if not rejected:
+        return False, "support/resistance test lacks decisive rejection"
+    return True, "recent support/resistance rejection confirmed on M5"
+
+
 def signal_candle_quality_check(candle, direction, min_body_fraction=0.45, close_edge_fraction=0.25):
     """Require a decisive candle body and a close near its directional extreme."""
     if direction not in ("BUY", "SELL"):
@@ -591,9 +670,16 @@ def analyse_pair(ticker):
 
     direction = m15_trend
     setup_type = "CONTINUATION"
-    pullback_candidate, _ = detect_pullback_continuation(m5, direction)
+    location_note = "M5 continuation confirmation"
+    pullback_candidate, pullback_note = detect_pullback_continuation(m5, direction)
+    breakout_candidate, breakout_note = detect_breakout_retest(m5, direction)
+    rejection_candidate, rejection_note = detect_support_resistance_rejection(m5, direction)
     if pullback_candidate:
-        setup_type = "PULLBACK CONTINUATION"
+        setup_type, location_note = "PULLBACK CONTINUATION", pullback_note
+    elif breakout_candidate:
+        setup_type, location_note = "BREAKOUT RETEST", breakout_note
+    elif rejection_candidate:
+        setup_type, location_note = "SUPPORT/RESISTANCE REJECTION", rejection_note
 
     # Filter weak/choppy trends using ATR-normalized EMA separation.
     m15_last = m15.iloc[-1]
@@ -615,16 +701,20 @@ def analyse_pair(ticker):
     if not ema_gap_ok:
         return None, ema_gap_note
 
-    # Pullback continuations require an EMA21 retest and a confirmed candle break.
+    # Each setup type has its own independent price-action trigger.
     if setup_type == "PULLBACK CONTINUATION":
         location_ok, location_note = detect_pullback_continuation(m5, direction)
+    elif setup_type == "BREAKOUT RETEST":
+        location_ok, location_note = detect_breakout_retest(m5, direction)
+    elif setup_type == "SUPPORT/RESISTANCE REJECTION":
+        location_ok, location_note = detect_support_resistance_rejection(m5, direction)
     else:
         location_ok, location_note = entry_location_check(m5, direction, atr)
     if not location_ok:
         return None, location_note
 
-    # Standard continuation entries require a fresh M5 EMA crossover.
-    # Pullback continuations have their own retest + candle-break confirmation.
+    # The classic EMA crossover is only required for the original continuation setup.
+    # Other setup types must pass their own retest/rejection trigger above.
     recent = m5.iloc[-4:]
     if direction == "BUY":
         crossed = (
@@ -633,7 +723,7 @@ def analyse_pair(ticker):
         ).any()
         if setup_type == "CONTINUATION" and not crossed:
             return None, "no fresh M5 bullish crossover"
-        if last["EMA9"] <= previous["EMA9"]:
+        if setup_type in ("CONTINUATION", "PULLBACK CONTINUATION") and last["EMA9"] <= previous["EMA9"]:
             return None, "M5 EMA9 momentum not rising"
         if setup_type == "CONTINUATION" and last["EMA9"] <= last["EMA21"]:
             return None, "M5 momentum no longer bullish"
@@ -648,7 +738,7 @@ def analyse_pair(ticker):
         ).any()
         if setup_type == "CONTINUATION" and not crossed:
             return None, "no fresh M5 bearish crossover"
-        if last["EMA9"] >= previous["EMA9"]:
+        if setup_type in ("CONTINUATION", "PULLBACK CONTINUATION") and last["EMA9"] >= previous["EMA9"]:
             return None, "M5 EMA9 momentum not falling"
         if setup_type == "CONTINUATION" and last["EMA9"] >= last["EMA21"]:
             return None, "M5 momentum no longer bearish"
