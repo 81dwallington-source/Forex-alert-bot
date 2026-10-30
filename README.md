@@ -4,6 +4,7 @@
 - Signal-only Telegram alerts; the bot does not place trades.
 - Scans 27 major and cross-currency pairs using completed M5 candles, with M15 and H1 trend confirmation.
 - Uses Yahoo Finance data, rejects stale/incomplete candles, and requires a recent completed M5 EMA 9/21 crossover.
+- Detects confirmed H1 swing highs/lows using two closed candles on each side; rejects setups when the planned target is too close to the opposing H1 swing level.
 - Filters for RSI, ATR/volatility, aligned and sufficiently separated higher-timeframe trends, entry extension, and signal-candle direction.
 - Stop-loss uses the wider of 1.5 ATR or a recent six-candle M5 swing high/low plus a 0.15 ATR buffer; setups needing more than 3 ATR of stop distance are rejected.
 - Minimum planned reward-to-risk is 1:1.5; target distance scales with the calculated stop distance.
