@@ -40,7 +40,8 @@ class ForexBotRegressionTests(unittest.TestCase):
         source = inspect.getsource(bot.main)
         self.assertNotIn("OANDA_API_TOKEN", source)
         self.assertIn("analyse_pair", source)
-        self.assertIn("biquote.io/api/", inspect.getsource(bot.download_data))\n        self.assertNotIn("download_yahoo_data", inspect.getsource(bot.download_data))
+        self.assertIn("biquote.io/api/", inspect.getsource(bot.download_data))
+        self.assertNotIn("download_yahoo_data", inspect.getsource(bot.download_data))
 
     def test_entry_timeframe_is_five_minutes(self):
         self.assertEqual(bot.TIMEFRAME, "5m")
