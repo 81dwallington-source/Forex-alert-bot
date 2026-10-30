@@ -350,6 +350,36 @@ def trend_direction(data):
 
     return "NONE"
 
+def detect_liquidity_sweep(data, direction, lookback=12, recent_candles=3):
+    """Detect a recent stop-run and close back inside the prior swing range.
+
+    BUY: wick takes the prior swing low, then a bullish candle closes back above it.
+    SELL: wick takes the prior swing high, then a bearish candle closes back below it.
+    This is a quality-score bonus, never a mandatory entry condition.
+    """
+    if direction not in ("BUY", "SELL") or len(data) < lookback + 1:
+        return False
+    first = max(lookback, len(data) - recent_candles)
+    for index in range(first, len(data)):
+        candle = data.iloc[index]
+        prior = data.iloc[index - lookback:index]
+        prior_low = float(prior["Low"].min())
+        prior_high = float(prior["High"].max())
+        open_price = float(candle["Open"])
+        high = float(candle["High"])
+        low = float(candle["Low"])
+        close = float(candle["Close"])
+        if direction == "BUY":
+            swept = low < prior_low and close > prior_low
+            rejection = close > open_price
+        else:
+            swept = high > prior_high and close < prior_high
+            rejection = close < open_price
+        if swept and rejection:
+            return True
+    return False
+
+
 def analyse_pair(ticker):
 
     m5 = indicators(download_data(ticker, "5m", "5d"))
@@ -492,6 +522,10 @@ def analyse_pair(ticker):
 
     score = 0
 
+    liquidity_sweep = detect_liquidity_sweep(m5, direction)
+    if liquidity_sweep:
+        score += 1
+
     if m15_trend == direction:
 
         score += 2
@@ -569,6 +603,8 @@ def analyse_pair(ticker):
 
         "score": score,
 
+        "liquidity_sweep": liquidity_sweep,
+
         "candle_time": str(m5.index[-1]),
 
         "atr": round(atr, decimals),
@@ -600,7 +636,7 @@ def analyse_pair(ticker):
         "evidence_note": (
             "Completed M5 EMA9/21 crossover; M15 and H1 EMA20/50 trends aligned; "
             f"RSI={rsi:.1f}; ATR={atr:.{decimals}f}; ATR%={atr_percent:.4f}; "
-            f"quality filter score={score}/6. Rule-based evidence, not a win-probability estimate."
+            f"quality filter score={score}/7; liquidity sweep={'yes' if liquidity_sweep else 'no'} (bonus only). Rule-based evidence, not a win-probability estimate."
         ),
 
     }, "qualifies"
@@ -882,7 +918,7 @@ def main():
 
                 f"RSI: {signal['rsi']}\n"
 
-                f"Quality filter score: {signal['score']}/6 (filter, not win probability)\n"
+                f"Quality filter score: {signal['score']}/7 (filter, not win probability)\n"\n                f"Liquidity sweep: {'YES' if signal['liquidity_sweep'] else 'NO'} (bonus only; not required)\n"
 
                 f"M5 EMA9/EMA21: {signal['m5_ema9']} / {signal['m5_ema21']}\n"
 
