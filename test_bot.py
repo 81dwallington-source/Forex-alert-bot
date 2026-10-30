@@ -34,6 +34,7 @@ class ForexBotRegressionTests(unittest.TestCase):
     def test_public_feed_is_explicitly_not_broker_verified(self):
         self.assertIn("biquote", bot.DATA_SOURCE.lower())
         self.assertIn("not user-broker verified", bot.DATA_SOURCE.lower())
+        self.assertNotIn("yahoo bootstrap", bot.DATA_SOURCE.lower())
 
     def test_public_feed_mode_uses_biquote_without_oanda_dependency(self):
         import inspect
@@ -42,6 +43,28 @@ class ForexBotRegressionTests(unittest.TestCase):
         self.assertIn("analyse_pair", source)
         self.assertIn("biquote.io/api/", inspect.getsource(bot.download_data))
         self.assertNotIn("download_yahoo_data", inspect.getsource(bot.download_data))
+
+    def test_signal_candle_quality_requires_strong_bullish_close(self):
+        candle = {"Open": 1.1000, "High": 1.1020, "Low": 1.0990, "Close": 1.1018}
+        ok, reason = bot.signal_candle_quality_check(candle, "BUY")
+        self.assertTrue(ok, reason)
+
+    def test_signal_candle_quality_rejects_weak_body(self):
+        candle = {"Open": 1.1000, "High": 1.1020, "Low": 1.0990, "Close": 1.1002}
+        ok, reason = bot.signal_candle_quality_check(candle, "BUY")
+        self.assertFalse(ok)
+        self.assertIn("body too weak", reason)
+
+    def test_signal_candle_quality_rejects_close_away_from_extreme(self):
+        candle = {"Open": 1.1000, "High": 1.1020, "Low": 1.0990, "Close": 1.1010}
+        ok, reason = bot.signal_candle_quality_check(candle, "BUY")
+        self.assertFalse(ok)
+        self.assertIn("directional extreme", reason)
+
+    def test_signal_candle_quality_supports_bearish_close(self):
+        candle = {"Open": 1.1020, "High": 1.1030, "Low": 1.0990, "Close": 1.0992}
+        ok, reason = bot.signal_candle_quality_check(candle, "SELL")
+        self.assertTrue(ok, reason)
 
     def test_entry_timeframe_is_five_minutes(self):
         self.assertEqual(bot.TIMEFRAME, "5m")
