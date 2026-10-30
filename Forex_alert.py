@@ -28,7 +28,7 @@ import pandas as pd
 
 BOT_NAME = "Forex Alert Bot"
 
-DATA_SOURCE = "biquote public FX OHLC feed (MT5/tick-aggregated; not user-broker verified)"
+DATA_SOURCE = "biquote public FX OHLC feed (MT5/tick aggregation with Yahoo bootstrap; not user-broker verified)"
 
 TIMEFRAME = "5m"
 
@@ -839,7 +839,7 @@ def update_signal_outcomes():
                     low = float(candle["Low"])
                     evidence_time = outcome_time.isoformat()
                     evidence_detail = (
-                        f"Yahoo Finance public M5 candle {evidence_time}: high={high}, low={low}; "
+                        f"biquote public M5 candle {evidence_time}: high={high}, low={low}; "
                         f"entry reference={entry}, SL={stop}, TP={target}. "
                         "Yahoo public-feed candle evidence; actual execution fills are not verified."
                     )
@@ -869,7 +869,7 @@ def update_signal_outcomes():
                             changed = True
                             log(f"Outcome ambiguous for {row['pair']}: entry and exit level touched in same M5 candle")
                             resolved_notifications.append(
-                                f"{row['pair']} {direction}: AMBIGUOUS — entry and SL/TP level touched in one Yahoo public-feed M5 candle at {evidence_time}. OANDA midpoint candle evidence; actual execution fills are not verified."
+                                f"{row['pair']} {direction}: AMBIGUOUS — entry and SL/TP level touched in one Yahoo public-feed M5 candle at {evidence_time}. biquote public-feed candle evidence; actual execution fills are not verified."
                             )
                             break
                         continue
