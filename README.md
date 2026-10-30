@@ -8,10 +8,10 @@
 - Rejects stale/incomplete candles and requires a recent completed M5 EMA 9/21 crossover.
 - Detects confirmed H1 swing highs/lows using two closed candles on each side; rejects setups when the planned target is too close to the opposing H1 swing level.
 - Filters for RSI, ATR/volatility, aligned and sufficiently separated higher-timeframe trends, entry extension, and signal-candle direction.
-- Stop-loss uses the wider of 1.5 ATR or a recent six-candle M5 swing high/low plus a 0.15 ATR buffer; setups needing more than 3 ATR of stop distance are rejected.
+- Stop-loss uses the wider of 1.75 ATR or the recent 18-candle M5 swing high/low plus a 0.35 ATR buffer; setups needing more than 3 ATR of stop distance are rejected.
 - Minimum planned reward-to-risk is 1:1.5; target distance scales with the calculated stop distance.
 - Limits alerts to **5 per UTC day** and at most **1 alert per pair per UTC day**.
-- Logs alerts and estimates later outcomes from Yahoo Finance M5 candles. These estimates are not broker-verified.
+- Logs alerts and estimates later outcomes from OANDA M5 midpoint candles. These are candle-based estimates, not executed-trade results.
 
 ## Important limitations and safety
 - OANDA midpoint candles are broker-sourced market data, but are not your executed MT4/FTMO fills. Prices, spreads, slippage, commissions and outcome labels can still differ.
