@@ -16,7 +16,7 @@ permissions:
 
 concurrency:
   group: forex-alert-bot
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   run-bot:
