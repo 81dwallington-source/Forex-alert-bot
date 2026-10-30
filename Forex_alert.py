@@ -971,6 +971,63 @@ def update_signal_outcomes():
             if temp_file.exists():
                 temp_file.unlink()
 
+
+def build_performance_report(rows):
+    """Summarise public-candle estimates separately from broker-verified trade records."""
+    wins_status = "TP_HIT_PUBLIC_CANDLE_ESTIMATE"
+    loss_status = "SL_HIT_PUBLIC_CANDLE_ESTIMATE"
+    ambiguous_status = {"AMBIGUOUS_ENTRY_EXIT_SAME_CANDLE", "AMBIGUOUS_BOTH_HIT_PUBLIC_CANDLES"}
+    pending_status = {"UNVERIFIED", "UNVERIFIED_PENDING", ""}
+    closed, verified = [], []
+    pending = ambiguous = 0
+    for row in rows:
+        outcome = (row.get("outcome") or "").strip().upper()
+        if outcome in {wins_status, loss_status}:
+            try:
+                rr = float(row.get("planned_rr") or 0)
+            except (TypeError, ValueError):
+                rr = 0.0
+            closed.append((row, rr if outcome == wins_status else -1.0))
+        elif outcome in ambiguous_status:
+            ambiguous += 1
+        elif outcome in pending_status:
+            pending += 1
+        elif outcome in {"VERIFIED_WIN", "VERIFIED_LOSS", "VERIFIED_BREAK_EVEN"}:
+            verified.append(row)
+    if closed:
+        wins = sum(1 for row, value in closed if row.get("outcome") == wins_status)
+        losses = len(closed) - wins
+        ordered = sorted(closed, key=lambda item: item[0].get("outcome_candle_time") or item[0].get("timestamp_utc") or "")
+        values = [value for row, value in ordered]
+        equity = peak = drawdown = 0.0
+        for value in values:
+            equity += value
+            peak = max(peak, equity)
+            drawdown = max(drawdown, peak - equity)
+        expectancy = sum(values) / len(values)
+        estimate = (
+            f"Public-candle estimates only: {wins} TP / {losses} SL; "
+            f"estimated hit rate={wins / len(closed) * 100:.1f}%; "
+            f"avg/expectancy={expectancy:+.2f}R; max drawdown={drawdown:.2f}R; "
+            f"pending={pending}; ambiguous={ambiguous}. Not broker fills."
+        )
+    else:
+        estimate = f"Public-candle estimate ledger: no resolved estimates yet (pending={pending}, ambiguous={ambiguous})."
+    actual = f"Broker-verified trade records: {len(verified)} (only explicit VERIFIED labels; none inferred from public candles)."
+    return estimate + "\n" + actual
+
+
+def read_performance_report():
+    if not LOG_FILE.exists():
+        return build_performance_report([])
+    try:
+        with LOG_FILE.open("r", newline="", encoding="utf-8") as file:
+            return build_performance_report(list(csv.DictReader(file)))
+    except Exception as exc:
+        log(f"Performance report unavailable: {type(exc).__name__}: {exc}")
+        return "Performance report unavailable; no figures inferred."
+
+
 def main():
 
     log("Starting forex scan")
@@ -1230,7 +1287,9 @@ def main():
 
         f"\n\nData source: {DATA_SOURCE}.\n"
 
-        "No signal does not mean a trade should be forced."
+        "No signal does not mean a trade should be forced.\\n\\n"
+
+        + read_performance_report()
 
     )
 
