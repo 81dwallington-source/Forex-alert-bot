@@ -207,7 +207,7 @@ def log_signal(row):
         writer.writerow({key: row.get(key, "") for key in fieldnames})
 
 def download_data(ticker, interval, period):
-    """Fetch completed FX candles from biquote's public MT5/tick-aggregated feed."""
+    """Fetch completed FX candles from the third-party biquote public OHLC endpoint; provider provenance is not independently verified."""
     interval_map = {"5m": "5m", "15m": "15m", "1h": "1h"}
     if interval not in interval_map or period not in ("5d", "1mo"):
         raise ValueError(f"Unsupported public-feed request: {interval}, {period}")
@@ -797,7 +797,7 @@ def analyse_pair(ticker):
 
 
 def update_signal_outcomes():
-    """Resolve prior alerts using later Yahoo public-feed candles; estimates only, not actual execution fills."""
+    """Resolve prior alerts using later biquote public-feed candles; estimates only, not actual execution fills."""
     if not LOG_FILE.exists():
         return
 
@@ -883,7 +883,7 @@ def update_signal_outcomes():
                     evidence_detail = (
                         f"biquote public M5 candle {evidence_time}: high={high}, low={low}; "
                         f"entry reference={entry}, SL={stop}, TP={target}. "
-                        "Yahoo public-feed candle evidence; actual execution fills are not verified."
+                        "biquote public-feed candle evidence; actual execution fills are not verified."
                     )
                     if direction == "BUY":
                         stop_hit = low <= stop
@@ -911,7 +911,7 @@ def update_signal_outcomes():
                             changed = True
                             log(f"Outcome ambiguous for {row['pair']}: entry and exit level touched in same M5 candle")
                             resolved_notifications.append(
-                                f"{row['pair']} {direction}: AMBIGUOUS — entry and SL/TP level touched in one Yahoo public-feed M5 candle at {evidence_time}. biquote public-feed candle evidence; actual execution fills are not verified."
+                                f"{row['pair']} {direction}: AMBIGUOUS — entry and SL/TP level touched in one biquote public-feed M5 candle at {evidence_time}. biquote public-feed candle evidence; actual execution fills are not verified."
                             )
                             break
                         continue
@@ -923,7 +923,7 @@ def update_signal_outcomes():
                         changed = True
                         log(f"Outcome ambiguous for {row['pair']}: stop and target touched in same M5 candle")
                         resolved_notifications.append(
-                            f"{row['pair']} {direction}: AMBIGUOUS — SL and TP both touched in one Yahoo public-feed M5 candle at {evidence_time}. Not actual fills."
+                            f"{row['pair']} {direction}: AMBIGUOUS — SL and TP both touched in one biquote public-feed M5 candle at {evidence_time}. Not actual fills."
                         )
                         break
                     if target_hit:
