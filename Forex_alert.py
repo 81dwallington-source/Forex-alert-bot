@@ -1380,9 +1380,9 @@ def main():
 
     )
 
+    # Routine scan summaries stay in GitHub Actions logs. Telegram is reserved
+    # for qualifying trade alerts (and separate outcome-tracking notices).
     log(summary)
-
-    telegram_send(summary)
 
 if __name__ == "__main__":
 
