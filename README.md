@@ -1,7 +1,7 @@
 # Forex Alert Bot
 
 ## Current behaviour
-- Signal-only Telegram alerts; no automatic trading.
+- Signal-only Telegram alerts; no automatic trading. Telegram is reserved for qualifying trade alerts and outcome-tracking notices; routine scan summaries remain in GitHub Actions logs, and no watchlist/candidate alerts are sent.
 - Scans 27 major and cross-currency pairs using completed M5 candles, with M15 and H1 trend confirmation.
 - Uses a third-party public biquote OHLC endpoint. The provider's underlying market-data provenance is not independently verified; it is **not broker-verified** and may be delayed, unavailable, rate-limited, or differ from MT4 broker prices.
 - Rejects stale/incomplete candles and fails closed if the public feed returns missing, malformed, or insufficient candle data.
