@@ -1051,8 +1051,7 @@ def update_signal_outcomes():
             temp_file.replace(LOG_FILE)
             log(f"Updated signal outcomes at {checked_at}; public-feed candle-based estimates; not executed-trade results.")
             if resolved_notifications:
-                summary = "FOREX ALERT OUTCOME CHECK (Yahoo public M5 candles; not actual fills)\\n\\n" + "\\n".join(resolved_notifications)
-                telegram_send(summary)
+                log("Outcome updates recorded locally; no Telegram notification sent (trade-entry alerts only).")
         except Exception as exc:
             log(f"Could not save updated signal outcomes: {exc}")
             if temp_file.exists():
@@ -1141,12 +1140,12 @@ def main():
                         alerts_today += 1
         except Exception as exc:
             log(f"Could not read daily alert count; fail-safe is to stop new alerts: {exc}")
-            telegram_send("Forex bot safety stop: unable to read daily alert log. No new signals will be sent until the log is checked.")
+            log("Safety stop recorded in Actions logs only; no Telegram notification sent.")
             return
     if alerts_today >= MAX_ALERTS_PER_UTC_DAY:
         summary = f"Forex scan safety stop: UTC daily alert cap reached ({alerts_today}/{MAX_ALERTS_PER_UTC_DAY}). No more alerts today. Alert-only control; it does not track broker P/L or replace FTMO account limits."
         log(summary)
-        telegram_send(summary)
+        log("Daily alert cap reached; no Telegram notification sent.")
         return
 
     checked = 0
