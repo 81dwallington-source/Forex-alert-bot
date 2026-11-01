@@ -9,6 +9,9 @@ on:
       - "signal_log_legacy*.csv"
   workflow_dispatch:
   schedule:
+    # Sunday forex reopen: cover both UK daylight-saving and standard-time opens.
+    - cron: "*/5 21-23 * * 0"
+    # Regular weekday scans.
     - cron: "*/5 * * * 1-5"
 
 permissions:
