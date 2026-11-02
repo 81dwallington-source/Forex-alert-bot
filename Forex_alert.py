@@ -320,6 +320,8 @@ def indicators(data):
 
     df["EMA50"] = df["Close"].ewm(span=50, adjust=False).mean()
 
+    df["EMA200"] = df["Close"].ewm(span=200, adjust=False).mean()
+
     change = df["Close"].diff()
 
     gain = change.clip(lower=0)
@@ -644,6 +646,22 @@ def analyse_pair(ticker):
 
     previous = m5.iloc[-2]
 
+    # Strict EMA 21/50/200 stacking on both M5 entry and M15 confirmation.
+    # BUY: price > EMA21 > EMA50 > EMA200.
+    # SELL: price < EMA21 < EMA50 < EMA200.
+    # H1 remains the higher-timeframe EMA20/EMA50 trend context.
+    def ema_stack_aligned(frame, side):
+        row = frame.iloc[-1]
+        price = float(row["Close"])
+        ema21 = float(row["EMA21"])
+        ema50 = float(row["EMA50"])
+        ema200 = float(row["EMA200"])
+        if side == "BUY":
+            return price > ema21 > ema50 > ema200
+        if side == "SELL":
+            return price < ema21 < ema50 < ema200
+        return False
+
     close = float(last["Close"])
 
     atr = float(last["ATR"])
@@ -675,6 +693,12 @@ def analyse_pair(ticker):
         return None, "M15/H1 trend mismatch"
 
     direction = m15_trend
+
+    if not ema_stack_aligned(m5, direction):
+        return None, "M5 EMA21/50/200 stack or price alignment not confirmed"
+    if not ema_stack_aligned(m15, direction):
+        return None, "M15 EMA21/50/200 confirmation stack not aligned"
+
     setup_type = "CONTINUATION"
     location_note = "M5 continuation confirmation"
     pullback_candidate, pullback_note = detect_pullback_continuation(m5, direction)
