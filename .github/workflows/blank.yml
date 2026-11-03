@@ -18,9 +18,6 @@ on:
 permissions:
   contents: write
 
-concurrency:
-  group: forex-alert-bot-v2
-  cancel-in-progress: false
 
 jobs:
   run-bot:
