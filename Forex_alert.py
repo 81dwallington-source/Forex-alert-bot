@@ -283,6 +283,37 @@ def download_data(ticker, interval, period):
     return data
 
 
+def latest_feed_price(ticker):
+    """Read the provider's live/open M5 candle for a pre-alert price sanity check."""
+    symbol = ticker.replace("=X", "")
+    url = f"https://biquote.io/api/{symbol}/ohlc"
+    response = requests.get(
+        url,
+        params={"interval": "5m", "limit": 10},
+        headers={"User-Agent": "ForexAlertBot/1.0"},
+        timeout=15,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    bars = payload.get("bars") or []
+    live_bars = [bar for bar in bars if bar.get("isOpen") is True]
+    if not live_bars:
+        return None, None, "provider did not supply a live/open M5 candle"
+
+    bar = max(live_bars, key=lambda item: pd.to_datetime(item.get("openTime"), utc=True))
+    try:
+        stamp = pd.to_datetime(bar["openTime"], utc=True)
+        price = float(bar["close"])
+    except (KeyError, TypeError, ValueError):
+        return None, None, "live M5 candle has invalid timestamp or price"
+    age = (datetime.now(timezone.utc) - stamp.to_pydatetime()).total_seconds() / 60
+    if not 0 <= age <= 6:
+        return None, None, f"live M5 quote is stale ({age:.1f} minutes from candle open)"
+    if not price > 0:
+        return None, None, "live M5 quote is not a positive price"
+    return price, stamp.isoformat(), "live M5 public-feed quote"
+
+
 def candle_is_fresh(data, max_age_minutes, candle_duration_minutes=0):
 
      # OANDA timestamps candles at their opening time. Freshness must be
@@ -1221,6 +1252,38 @@ def main():
 
                 continue
 
+            # Re-check signal age and the latest provider live price immediately
+            # before sending. Fail closed if a fresh live/open quote is unavailable.
+            signal_candle_close = pd.Timestamp(signal["candle_time"])
+            if signal_candle_close.tzinfo is None:
+                signal_candle_close = signal_candle_close.tz_localize("UTC")
+            else:
+                signal_candle_close = signal_candle_close.tz_convert("UTC")
+            signal_age = (
+                datetime.now(timezone.utc)
+                - (signal_candle_close + pd.Timedelta(minutes=5)).to_pydatetime()
+            ).total_seconds() / 60
+            if not -1 <= signal_age <= MAX_SIGNAL_AGE_MINUTES:
+                rejected["signal expired before Telegram send"] = rejected.get("signal expired before Telegram send", 0) + 1
+                log(f"{ticker}: alert suppressed — signal candle age {signal_age:.1f} minutes at send time")
+                continue
+
+            live_price, live_quote_time, live_quote_note = latest_feed_price(ticker)
+            if live_price is None:
+                rejected["no fresh live price for pre-send check"] = rejected.get("no fresh live price for pre-send check", 0) + 1
+                log(f"{ticker}: alert suppressed — {live_quote_note}")
+                continue
+
+            entry_drift = abs(live_price - float(signal["entry"]))
+            max_entry_drift = float(signal["atr"]) * MAX_ENTRY_DRIFT_ATR
+            if entry_drift > max_entry_drift:
+                rejected["entry drift too large at send time"] = rejected.get("entry drift too large at send time", 0) + 1
+                log(
+                    f"{ticker}: alert suppressed — live public-feed price {live_price:.6f} "
+                    f"is {entry_drift:.6f} from entry; max allowed {max_entry_drift:.6f}"
+                )
+                continue
+
             message = (
 
                 f"FOREX SETUP — M5\n"
@@ -1231,6 +1294,9 @@ def main():
                 f"Setup type: {signal['setup_type']}\n"
 
                 f"Entry reference: {signal['entry']}\n"
+
+                f"Pre-send public-feed price: {live_price:.{3 if signal['pair'].endswith('/JPY') else 5}f} "
+                f"(checked {live_quote_time}; drift within limit)\n"
 
                 f"Stop-loss: {signal['stop']}\n"
 
