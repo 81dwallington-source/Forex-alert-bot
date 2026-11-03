@@ -922,14 +922,27 @@ def analyse_pair(ticker):
             return None, "confirmed M5 swing-high stop too wide for M5 setup"
         target = close - stop_distance * MIN_RR
 
-    # Reject targets that run into the nearest opposing confirmed H1 swing.
+    # Reject trades whose planned target runs straight into a confirmed
+    # opposing M5 swing or higher-timeframe H1 structure.
+    m5_clearance = atr * 0.15
     h1_clearance = float(h1.iloc[-1]["ATR"]) * 0.15
-    if direction == "BUY" and h1_swing_high is not None and close < h1_swing_high:
-        if h1_swing_high - close <= (target - close) + h1_clearance:
-            return None, "H1 swing-high resistance too close for planned BUY target"
-    if direction == "SELL" and h1_swing_low is not None and close > h1_swing_low:
-        if close - h1_swing_low <= (close - target) + h1_clearance:
-            return None, "H1 swing-low support too close for planned SELL target"
+
+    if direction == "BUY":
+        m5_resistance = m5_swings["high"]
+        if m5_resistance is not None and m5_resistance > close:
+            if m5_resistance - close <= (target - close) + m5_clearance:
+                return None, "confirmed M5 swing-high resistance too close for planned BUY target"
+        if h1_swing_high is not None and h1_swing_high > close:
+            if h1_swing_high - close <= (target - close) + h1_clearance:
+                return None, "H1 swing-high resistance too close for planned BUY target"
+    else:
+        m5_support = m5_swings["low"]
+        if m5_support is not None and m5_support < close:
+            if close - m5_support <= (close - target) + m5_clearance:
+                return None, "confirmed M5 swing-low support too close for planned SELL target"
+        if h1_swing_low is not None and h1_swing_low < close:
+            if close - h1_swing_low <= (close - target) + h1_clearance:
+                return None, "H1 swing-low support too close for planned SELL target"
 
     # Forex quote precision: JPY pairs usually use 3 decimals.
 
