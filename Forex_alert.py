@@ -69,7 +69,7 @@ MAX_ATR_PERCENT = 0.60
 MAX_CANDLE_ATR = 1.8
 
 # Require a meaningful and strengthening M5 EMA9/EMA21 gap.
-M5_MIN_EMA_SEPARATION_ATR = 0.12
+M5_MIN_EMA_SEPARATION_ATR = 0.08
 
 # Give M5 stops room beyond recent structure, with a volatility buffer.
 STRUCTURE_LOOKBACK_CANDLES = 18
