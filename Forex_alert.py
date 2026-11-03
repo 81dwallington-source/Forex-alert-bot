@@ -1356,6 +1356,7 @@ def main():
                 f"(checked {live_quote_time}; drift within limit)\n"
 
                 f"Stop-loss: {signal['stop']}\n"
+                f"Stop basis: {signal['stop_basis']}\n"
 
                 f"Take-profit: {signal['target']}\n"
 
