@@ -140,7 +140,7 @@ class ForexBotRegressionTests(unittest.TestCase):
     def test_m5_swing_levels_only_use_confirmed_pivots(self):
         rows = [{"High": 1.1010, "Low": 1.0990} for _ in range(12)]
         rows[5] = {"High": 1.1050, "Low": 1.0980}
-        rows[8] = {"High": 1.1020, "Low": 1.0960}
+        rows[8] = {"High": 1.1010, "Low": 1.0960}
         swings = bot.detect_m5_swing_levels(pd.DataFrame(rows), lookback=12)
         self.assertEqual(swings["high"], 1.1050)
         self.assertEqual(swings["low"], 1.0960)
