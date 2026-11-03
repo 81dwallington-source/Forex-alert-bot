@@ -58,7 +58,7 @@ PAIRS = [
 
 ]
 
-MIN_RR = 1.5
+MIN_RR = 1.0
 
 ATR_STOP_MULTIPLIER = 1.75
 
