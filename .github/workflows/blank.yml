@@ -93,13 +93,12 @@ jobs:
             git reset --hard origin/main
             UTC_NOW="$(date -u '+%Y-%m-%d %H:%M:%S')"
             UK_NOW="$(TZ=Europe/London date '+%Y-%m-%d %H:%M:%S %Z')"
-            cat > scan_status.txt <<EOF
-Last workflow scan (UTC): ${UTC_NOW}
-Last workflow scan (UK): ${UK_NOW}
-Run ID: ${GITHUB_RUN_ID}
-Run number: ${GITHUB_RUN_NUMBER}
-Conclusion: ${{ job.status }}
-EOF
+            printf '%s\n' \
+              "Last workflow scan (UTC): ${UTC_NOW}" \
+              "Last workflow scan (UK): ${UK_NOW}" \
+              "Run ID: ${GITHUB_RUN_ID}" \
+              "Run number: ${GITHUB_RUN_NUMBER}" \
+              "Conclusion: ${{ job.status }}" > scan_status.txt
             git add scan_status.txt
             git commit -m "Update scan heartbeat [skip ci]" || exit 0
             if git push origin HEAD:main; then
