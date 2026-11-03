@@ -9,10 +9,10 @@ on:
       - "signal_log_legacy*.csv"
   workflow_dispatch:
   schedule:
-    # Sunday forex reopen: cover both UK daylight-saving and standard-time opens.
-    - cron: "*/5 21-23 * * 0"
-    # Regular weekday scans, staggered away from the top of the hour.
-    - cron: "*/5 * * * 1-5"
+    # Sunday forex reopen: run every 5 minutes, offset to avoid the top-of-hour queue.
+    - cron: "2-59/5 21-23 * * 0"
+    # Weekday scans every 5 minutes, offset to reduce GitHub scheduler congestion.
+    - cron: "2-59/5 * * * 1-5"
 
 permissions:
   contents: write
