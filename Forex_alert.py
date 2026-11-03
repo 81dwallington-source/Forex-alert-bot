@@ -68,8 +68,9 @@ MAX_ATR_PERCENT = 0.60
 
 MAX_CANDLE_ATR = 1.8
 
-# Require a meaningful and strengthening M5 EMA9/EMA21 gap.
-M5_MIN_EMA_SEPARATION_ATR = 0.08
+# Keep a modest directional EMA9/EMA21 gap; the pullback and candle-break
+# provide the main entry confirmation, so avoid rejecting good setups on a tiny gap.
+M5_MIN_EMA_SEPARATION_ATR = 0.05
 
 # Give M5 stops room beyond recent structure, with a volatility buffer.
 STRUCTURE_LOOKBACK_CANDLES = 36
@@ -78,13 +79,14 @@ STRUCTURE_PIVOT_RIGHT_BARS = 2
 STRUCTURE_STOP_BUFFER_ATR = 0.25
 MAX_STOP_DISTANCE_ATR = 4.5
 
-MIN_SCORE = 6
+MIN_SCORE = 5
 
-# Keep only the two best-defined, testable M5 entry patterns.
+# Keep the two actionable M5 patterns; M15 is the primary trend filter.
+# H1 is contextual confirmation rather than a second absolute gate.
 ALLOWED_SETUP_TYPES = ("PULLBACK CONTINUATION", "BREAKOUT RETEST")
 BUY_RSI_MIN, BUY_RSI_MAX = 52, 65
 SELL_RSI_MIN, SELL_RSI_MAX = 35, 48
-MIN_HTF_EMA_GAP_ATR = 0.12
+MIN_HTF_EMA_GAP_ATR = 0.08
 
 # Conservative alert-only controls; these do not control broker execution.
 MAX_ALERTS_PER_UTC_DAY = 5
@@ -474,23 +476,14 @@ def m5_ema_separation_check(data, direction, min_atr=M5_MIN_EMA_SEPARATION_ATR):
     if directional_gap <= previous_directional_gap:
         return False, "M5 EMA9/EMA21 separation is not expanding"
 
-    # A single candle can briefly sit below/above a stacked EMA set during a
-    # counter-trend bounce. Require both medium EMAs to slope in trade direction.
+    # EMA21 must slope in the trade direction. EMA50/EMA200 remain visible
+    # context, not extra hard gates that can reject a valid EMA21 pullback.
     ema21_move = float(last["EMA21"]) - float(earlier["EMA21"])
     if direction == "SELL" and ema21_move >= 0:
         return False, "M5 EMA21 is not falling"
     if direction == "BUY" and ema21_move <= 0:
         return False, "M5 EMA21 is not rising"
-
-    # EMA50 is present in production M5 data. Some focused unit-test frames
-    # contain only EMA9/EMA21; enforce EMA50 slope whenever that column exists.
-    if "EMA50" in data.columns:
-        ema50_move = float(last["EMA50"]) - float(earlier["EMA50"])
-        if direction == "SELL" and ema50_move >= 0:
-            return False, "M5 EMA50 is not falling"
-        if direction == "BUY" and ema50_move <= 0:
-            return False, "M5 EMA50 is not rising"
-    return True, "M5 EMA gap and EMA21/EMA50 slope confirmed"
+    return True, "M5 EMA9/EMA21 gap and EMA21 slope confirmed"
 
 
 def entry_location_check(data, direction, atr):
@@ -723,22 +716,6 @@ def analyse_pair(ticker):
 
     previous = m5.iloc[-2]
 
-    # Strict EMA 21/50/200 stacking on both M5 entry and M15 confirmation.
-    # BUY: price > EMA21 > EMA50 > EMA200.
-    # SELL: price < EMA21 < EMA50 < EMA200.
-    # H1 remains the higher-timeframe EMA20/EMA50 trend context.
-    def ema_stack_aligned(frame, side):
-        row = frame.iloc[-1]
-        price = float(row["Close"])
-        ema21 = float(row["EMA21"])
-        ema50 = float(row["EMA50"])
-        ema200 = float(row["EMA200"])
-        if side == "BUY":
-            return price > ema21 > ema50 > ema200
-        if side == "SELL":
-            return price < ema21 < ema50 < ema200
-        return False
-
     close = float(last["Close"])
 
     atr = float(last["ATR"])
@@ -765,18 +742,26 @@ def analyse_pair(ticker):
 
     h1_trend = trend_direction(h1)
 
-    # All setups require M15 and H1 trend agreement.
-    if m15_trend == "NONE" or h1_trend == "NONE" or m15_trend != h1_trend:
-        return None, "M15/H1 trend mismatch"
+    # M15 sets the trade direction. H1 is retained as context and contributes
+    # to the quality score; it no longer vetoes every otherwise valid M5 setup.
+    if m15_trend == "NONE":
+        return None, "M15 trend unclear"
 
     direction = m15_trend
 
-    if not ema_stack_aligned(m5, direction):
-        return None, "M5 EMA21/50/200 stack or price alignment not confirmed"
-    if not ema_stack_aligned(m15, direction):
-        return None, "M15 EMA21/50/200 confirmation stack not aligned"
-    if not ema_stack_aligned(h1, direction):
-        return None, "H1 EMA21/50/200 structure not aligned"
+    # On M5, require price and EMA21 to be on the correct side of EMA50.
+    # EMA200 is context only; demanding a perfect 21/50/200 stack on all
+    # three timeframes was suppressing too many valid pullback continuations.
+    m5_last = m5.iloc[-1]
+    if direction == "BUY":
+        if float(m5_last["Close"]) <= float(m5_last["EMA21"]) or float(m5_last["EMA21"]) <= float(m5_last["EMA50"]):
+            return None, "M5 price/EMA21 not holding above EMA50"
+    else:
+        if float(m5_last["Close"]) >= float(m5_last["EMA21"]) or float(m5_last["EMA21"]) >= float(m5_last["EMA50"]):
+            return None, "M5 price/EMA21 not holding below EMA50"
+
+    # M15 must show a usable EMA20/EMA50 directional gap; H1 may be neutral
+    # or opposite during a pullback, but that reduces the quality score.
 
     setup_type = "CONTINUATION"
     location_note = "M5 continuation confirmation"
@@ -792,8 +777,6 @@ def analyse_pair(ticker):
     h1_last = h1.iloc[-1]
     if abs(float(m15_last["EMA20"]) - float(m15_last["EMA50"])) < float(m15_last["ATR"]) * MIN_HTF_EMA_GAP_ATR:
         return None, "M15 trend too weak / choppy"
-    if abs(float(h1_last["EMA20"]) - float(h1_last["EMA50"])) < float(h1_last["ATR"]) * MIN_HTF_EMA_GAP_ATR:
-        return None, "H1 trend too weak / choppy"
 
     if setup_type not in ALLOWED_SETUP_TYPES:
         return None, "setup type not on approved high-quality list"
@@ -871,7 +854,7 @@ def analyse_pair(ticker):
         score += 2
 
     if h1_trend == direction:
-        score += 2
+        score += 1
 
     momentum_confirmed = (
         direction == "BUY" and last["EMA9"] > last["EMA21"]
@@ -885,7 +868,7 @@ def analyse_pair(ticker):
     )
 
     if momentum_confirmed:
-        score += 1
+        score += 2
     if rsi_confirmed:
         score += 1
 
