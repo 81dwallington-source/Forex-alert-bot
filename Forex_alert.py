@@ -827,6 +827,13 @@ def analyse_pair(ticker):
     if not location_ok:
         return None, location_note
 
+    # Apply the existing entry-location filter to pullback setups.
+    if setup_type == "PULLBACK CONTINUATION":
+        entry_ok, entry_note = entry_location_check(m5, direction, atr)
+        if not entry_ok:
+            return None, entry_note
+        location_note = location_note + "; " + entry_note
+
     # The classic EMA crossover is only required for the original continuation setup.
     # Other setup types must pass their own retest/rejection trigger above.
     recent = m5.iloc[-4:]
