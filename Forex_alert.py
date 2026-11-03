@@ -775,6 +775,8 @@ def analyse_pair(ticker):
         return None, "M5 EMA21/50/200 stack or price alignment not confirmed"
     if not ema_stack_aligned(m15, direction):
         return None, "M15 EMA21/50/200 confirmation stack not aligned"
+    if not ema_stack_aligned(h1, direction):
+        return None, "H1 EMA21/50/200 structure not aligned"
 
     setup_type = "CONTINUATION"
     location_note = "M5 continuation confirmation"
