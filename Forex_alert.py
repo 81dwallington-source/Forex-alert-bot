@@ -69,7 +69,7 @@ MAX_ATR_PERCENT = 0.60
 MAX_CANDLE_ATR = 1.8
 
 # Require a meaningful and strengthening M5 EMA9/EMA21 gap.
-M5_MIN_EMA_SEPARATION_ATR = 0.04
+M5_MIN_EMA_SEPARATION_ATR = 0.12
 
 # Give M5 stops room beyond recent structure, with a volatility buffer.
 STRUCTURE_LOOKBACK_CANDLES = 18
@@ -428,11 +428,12 @@ def detect_h1_swing_levels(data, lookback=120, left_bars=2, right_bars=2):
 
 
 def m5_ema_separation_check(data, direction, min_atr=M5_MIN_EMA_SEPARATION_ATR):
-    """Reject flat/touching M5 EMAs; require directional gap to be widening."""
-    if direction not in ("BUY", "SELL") or len(data) < 2:
+    """Reject weak EMA alignment; require expanding EMA9/21 gap and falling/rising EMA21/50."""
+    if direction not in ("BUY", "SELL") or len(data) < 4:
         return False, "insufficient data for M5 EMA separation check"
     last = data.iloc[-1]
     previous = data.iloc[-2]
+    earlier = data.iloc[-4]
     atr = float(last["ATR"])
     if atr <= 0:
         return False, "invalid ATR for M5 EMA separation check"
@@ -444,7 +445,16 @@ def m5_ema_separation_check(data, direction, min_atr=M5_MIN_EMA_SEPARATION_ATR):
         return False, "M5 EMA9/EMA21 separation too small"
     if directional_gap <= previous_directional_gap:
         return False, "M5 EMA9/EMA21 separation is not expanding"
-    return True, "M5 EMA separation confirmed"
+
+    # A single candle can briefly sit below/above a stacked EMA set during a
+    # counter-trend bounce. Require both medium EMAs to slope in trade direction.
+    ema21_move = float(last["EMA21"]) - float(earlier["EMA21"])
+    ema50_move = float(last["EMA50"]) - float(earlier["EMA50"])
+    if direction == "SELL" and not (ema21_move < 0 and ema50_move < 0):
+        return False, "M5 EMA21/EMA50 are not both falling"
+    if direction == "BUY" and not (ema21_move > 0 and ema50_move > 0):
+        return False, "M5 EMA21/EMA50 are not both rising"
+    return True, "M5 EMA gap and EMA21/EMA50 slope confirmed"
 
 
 def entry_location_check(data, direction, atr):
@@ -758,7 +768,9 @@ def analyse_pair(ticker):
     # Avoid chasing a move that is already stretched from the trigger EMA.
     if abs(close - float(last["EMA21"])) > atr * 0.8:
         return None, "entry too extended from M5 EMA21"
-    candle_ok, candle_note = signal_candle_quality_check(last, direction)
+    candle_ok, candle_note = signal_candle_quality_check(
+        last, direction, min_body_fraction=0.55, close_edge_fraction=0.18
+    )
     if not candle_ok:
         return None, candle_note
 
