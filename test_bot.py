@@ -227,12 +227,12 @@ class ForexBotRegressionTests(unittest.TestCase):
 
     def test_only_pullback_and_breakout_retest_setups_are_approved(self):
         self.assertEqual(bot.ALLOWED_SETUP_TYPES, ("PULLBACK CONTINUATION", "BREAKOUT RETEST"))
-        self.assertEqual(bot.MIN_HTF_EMA_GAP_ATR, 0.12)
+        self.assertEqual(bot.MIN_HTF_EMA_GAP_ATR, 0.08)
         self.assertEqual((bot.BUY_RSI_MIN, bot.BUY_RSI_MAX), (52, 65))
         self.assertEqual((bot.SELL_RSI_MIN, bot.SELL_RSI_MAX), (35, 48))
 
-    def test_minimum_quality_score_is_six_of_six(self):
-        self.assertEqual(bot.MIN_SCORE, 6)
+    def test_minimum_quality_score_allows_h1_context_without_hard_veto(self):
+        self.assertEqual(bot.MIN_SCORE, 5)
 
     def test_trend_direction_buy_sell_and_unclear(self):
         self.assertEqual(
