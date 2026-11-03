@@ -131,9 +131,26 @@ class ForexBotRegressionTests(unittest.TestCase):
 
     def test_stop_loss_has_more_volatility_room_and_structure_buffer(self):
         self.assertEqual(bot.ATR_STOP_MULTIPLIER, 1.75)
-        self.assertEqual(bot.STRUCTURE_LOOKBACK_CANDLES, 18)
-        self.assertEqual(bot.STRUCTURE_STOP_BUFFER_ATR, 0.35)
-        self.assertEqual(bot.MAX_STOP_DISTANCE_ATR, 3.0)
+        self.assertEqual(bot.STRUCTURE_LOOKBACK_CANDLES, 36)
+        self.assertEqual(bot.STRUCTURE_PIVOT_LEFT_BARS, 2)
+        self.assertEqual(bot.STRUCTURE_PIVOT_RIGHT_BARS, 2)
+        self.assertEqual(bot.STRUCTURE_STOP_BUFFER_ATR, 0.25)
+        self.assertEqual(bot.MAX_STOP_DISTANCE_ATR, 4.5)
+
+    def test_m5_swing_levels_only_use_confirmed_pivots(self):
+        rows = [{"High": 1.1010, "Low": 1.0990} for _ in range(12)]
+        rows[5] = {"High": 1.1050, "Low": 1.0980}
+        rows[8] = {"High": 1.1020, "Low": 1.0960}
+        swings = bot.detect_m5_swing_levels(pd.DataFrame(rows), lookback=12)
+        self.assertEqual(swings["high"], 1.1050)
+        self.assertEqual(swings["low"], 1.0960)
+
+    def test_m5_swing_levels_do_not_treat_unconfirmed_latest_bars_as_pivots(self):
+        rows = [{"High": 1.1010, "Low": 1.0990} for _ in range(8)]
+        rows[-1] = {"High": 1.1100, "Low": 1.0900}
+        swings = bot.detect_m5_swing_levels(pd.DataFrame(rows), lookback=8)
+        self.assertIsNone(swings["high"])
+        self.assertIsNone(swings["low"])
 
     def test_m5_ema_separation_requires_directional_gap_and_expansion(self):
         frame = pd.DataFrame([
