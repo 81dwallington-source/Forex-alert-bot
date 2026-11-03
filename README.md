@@ -22,7 +22,7 @@
 Configure `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` under repository Settings → Secrets and variables → Actions. No market-data API key is required for this public feed. Never commit bot credentials.
 
 ## Running and validation
-The workflow runs offline regression tests with `python -m unittest -v test_bot.py`, then runs `python Forex_alert.py`. It is scheduled every five minutes on weekdays and can also be started manually.
+The workflow runs offline regression tests with `python -m unittest -v test_bot.py`, then runs `python Forex_alert.py`. It is scheduled every five minutes on weekdays and around the Sunday forex reopen (UTC coverage for both UK daylight-saving and standard time), and can also be started manually. GitHub Actions cron is best-effort, so start times can be delayed or skipped during platform load; it is not a guaranteed real-time scheduler.
 
 
 ## Performance reporting
