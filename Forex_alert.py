@@ -72,9 +72,11 @@ MAX_CANDLE_ATR = 1.8
 M5_MIN_EMA_SEPARATION_ATR = 0.08
 
 # Give M5 stops room beyond recent structure, with a volatility buffer.
-STRUCTURE_LOOKBACK_CANDLES = 18
-STRUCTURE_STOP_BUFFER_ATR = 0.35
-MAX_STOP_DISTANCE_ATR = 3.0
+STRUCTURE_LOOKBACK_CANDLES = 36
+STRUCTURE_PIVOT_LEFT_BARS = 2
+STRUCTURE_PIVOT_RIGHT_BARS = 2
+STRUCTURE_STOP_BUFFER_ATR = 0.25
+MAX_STOP_DISTANCE_ATR = 4.5
 
 MIN_SCORE = 6
 
@@ -413,6 +415,30 @@ def detect_h1_swing_levels(data, lookback=120, left_bars=2, right_bars=2):
         return {"high": None, "low": None}
     window = data.iloc[-lookback:].copy()
     highs, lows = [], []
+    for i in range(left_bars, len(window) - right_bars):
+        high = float(window.iloc[i]["High"])
+        low = float(window.iloc[i]["Low"])
+        prior_highs = window.iloc[i-left_bars:i]["High"]
+        next_highs = window.iloc[i+1:i+right_bars+1]["High"]
+        prior_lows = window.iloc[i-left_bars:i]["Low"]
+        next_lows = window.iloc[i+1:i+right_bars+1]["Low"]
+        if high > float(prior_highs.max()) and high > float(next_highs.max()):
+            highs.append(high)
+        if low < float(prior_lows.min()) and low < float(next_lows.min()):
+            lows.append(low)
+    return {"high": highs[-1] if highs else None, "low": lows[-1] if lows else None}
+
+
+def detect_m5_swing_levels(data, lookback=STRUCTURE_LOOKBACK_CANDLES,
+                          left_bars=STRUCTURE_PIVOT_LEFT_BARS,
+                          right_bars=STRUCTURE_PIVOT_RIGHT_BARS):
+    """Find the latest confirmed M5 pivot high and low; right-side bars confirm each pivot."""
+    if len(data) < left_bars + right_bars + 5:
+        return {"high": None, "low": None}
+    window = data.iloc[-lookback:].copy()
+    highs, lows = [], []
+    # The final right_bars candles cannot be pivot centres because they are
+    # needed to confirm that the swing has held.
     for i in range(left_bars, len(window) - right_bars):
         high = float(window.iloc[i]["High"])
         low = float(window.iloc[i]["Low"])
@@ -858,27 +884,33 @@ def analyse_pair(ticker):
 
         return None, "quality score too low"
 
-    # Wider volatility-aware stop, placed beyond recent M5 structure.
-    # Use the last completed candles (including the signal candle), then add
-    # an ATR buffer. Never force a stop so wide that the setup is unsuitable.
-    structure = m5.iloc[-STRUCTURE_LOOKBACK_CANDLES:]
+    # Structural stop: use a confirmed M5 pivot, not the rolling high/low
+    # of an arbitrary candle window. Two completed candles to the right must
+    # confirm the swing before it can be used.
+    m5_swings = detect_m5_swing_levels(m5)
     buffer = atr * STRUCTURE_STOP_BUFFER_ATR
     minimum_distance = atr * ATR_STOP_MULTIPLIER
 
     if direction == "BUY":
-        structure_stop = float(structure["Low"].min()) - buffer
+        swing_low = m5_swings["low"]
+        if swing_low is None or swing_low >= close:
+            return None, "no confirmed M5 swing low below entry for structural BUY stop"
+        structure_stop = swing_low - buffer
         stop = min(close - minimum_distance, structure_stop)
         stop_distance = close - stop
         if stop_distance <= 0 or stop_distance > atr * MAX_STOP_DISTANCE_ATR:
-            return None, "structure stop too wide for M5 setup"
+            return None, "confirmed M5 swing-low stop too wide for M5 setup"
         target = close + stop_distance * MIN_RR
 
     else:
-        structure_stop = float(structure["High"].max()) + buffer
+        swing_high = m5_swings["high"]
+        if swing_high is None or swing_high <= close:
+            return None, "no confirmed M5 swing high above entry for structural SELL stop"
+        structure_stop = swing_high + buffer
         stop = max(close + minimum_distance, structure_stop)
         stop_distance = stop - close
         if stop_distance <= 0 or stop_distance > atr * MAX_STOP_DISTANCE_ATR:
-            return None, "structure stop too wide for M5 setup"
+            return None, "confirmed M5 swing-high stop too wide for M5 setup"
         target = close - stop_distance * MIN_RR
 
     # Reject targets that run into the nearest opposing confirmed H1 swing.
@@ -936,6 +968,9 @@ def analyse_pair(ticker):
         "h1_trend": h1_trend,
         "h1_swing_high": round(h1_swing_high, decimals) if h1_swing_high is not None else None,
         "h1_swing_low": round(h1_swing_low, decimals) if h1_swing_low is not None else None,
+        "m5_swing_high": round(m5_swings["high"], decimals) if m5_swings["high"] is not None else None,
+        "m5_swing_low": round(m5_swings["low"], decimals) if m5_swings["low"] is not None else None,
+        "stop_basis": "confirmed M5 swing high/low + ATR buffer",
 
         "m15_ema20": round(float(m15.iloc[-1]["EMA20"]), decimals),
 
