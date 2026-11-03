@@ -138,7 +138,7 @@ class ForexBotRegressionTests(unittest.TestCase):
     def test_m5_ema_separation_requires_directional_gap_and_expansion(self):
         frame = pd.DataFrame([
             {"EMA9": 1.1000, "EMA21": 1.0990, "ATR": 0.0100},
-            {"EMA9": 1.1010, "EMA21": 1.0990, "ATR": 0.0100},
+            {"EMA9": 1.1010, "EMA21": 1.0991, "ATR": 0.0100},
         ])
         ok, reason = bot.m5_ema_separation_check(frame, "BUY")
         self.assertTrue(ok, reason)
@@ -164,7 +164,7 @@ class ForexBotRegressionTests(unittest.TestCase):
     def test_m5_ema_separation_supports_bearish_direction(self):
         frame = pd.DataFrame([
             {"EMA9": 1.1000, "EMA21": 1.1010, "ATR": 0.0100},
-            {"EMA9": 1.0990, "EMA21": 1.1010, "ATR": 0.0100},
+            {"EMA9": 1.0990, "EMA21": 1.1009, "ATR": 0.0100},
         ])
         ok, reason = bot.m5_ema_separation_check(frame, "SELL")
         self.assertTrue(ok, reason)
