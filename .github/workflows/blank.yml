@@ -15,6 +15,12 @@ on:
     # Weekday scans every 5 minutes, offset to reduce GitHub scheduler congestion.
     - cron: "2-59/5 * * * 1-5"
 
+# Keep only one bot scan active at a time. This protects signal state/history
+# from concurrent writes and prevents overlapping scans from sending duplicates.
+concurrency:
+  group: forex-alert-bot-main
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
@@ -85,9 +91,9 @@ jobs:
           for attempt in 1 2 3 4 5; do
             git fetch origin main
             git reset --hard origin/main
-            printf 'Last workflow scan (UTC): %s\nLast workflow scan (UK): %s\nRun ID: %s\nRun number: %s\nConclusion: %s\n' \
-              "$(date -u '+%Y-%m-%d %H:%M:%S')" \
-              "$(TZ=Europe/London date '+%Y-%m-%d %H:%M:%S %Z')" \
+            printf 'Last workflow scan (UTC): %s\\nLast workflow scan (UK): %s\\nRun ID: %s\\nRun number: %s\\nConclusion: %s\\n' \\
+              "$(date -u '+%Y-%m-%d %H:%M:%S')" \\
+              "$(TZ=Europe/London date '+%Y-%m-%d %H:%M:%S %Z')" \\
               "$GITHUB_RUN_ID" "$GITHUB_RUN_NUMBER" "${{ job.status }}" > scan_status.txt
             git add scan_status.txt
             git commit -m "Update scan heartbeat [skip ci]" || exit 0
