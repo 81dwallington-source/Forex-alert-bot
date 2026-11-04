@@ -23,7 +23,7 @@ MIN_RR = 1.0
 MAX_SIGNAL_AGE_MIN = 10
 MAX_ENTRY_DRIFT_ATR = 0.20
 MAX_STOP_ATR = 4.5
-MAX_ALERTS_PER_DAY = 5
+MAX_ALERTS_PER_DAY = 10
 MAX_ONE_PER_PAIR_DAY = True
 
 def fetch_bars(symbol, interval, limit=300):
