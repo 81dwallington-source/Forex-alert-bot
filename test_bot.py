@@ -235,14 +235,20 @@ class ForexBotRegressionTests(unittest.TestCase):
         self.assertEqual(bot.MIN_SCORE, 5)
 
     def test_ema50_is_context_not_a_hard_entry_veto(self):
-        buy = pd.DataFrame([{"Close": 1.1020, "EMA21": 1.1010, "EMA50": 1.1030}])
-        sell = pd.DataFrame([{"Close": 1.0980, "EMA21": 1.0990, "EMA50": 1.0970}])
+        buy = pd.DataFrame([{"Close": 1.1020, "EMA21": 1.1010, "EMA50": 1.1030, "ATR": 0.0020}])
+        sell = pd.DataFrame([{"Close": 1.0980, "EMA21": 1.0990, "EMA50": 1.0970, "ATR": 0.0020}])
         self.assertEqual(bot.m5_entry_side_check(buy, "BUY")[0], True)
         self.assertEqual(bot.m5_entry_side_check(sell, "SELL")[0], True)
 
-    def test_m5_entry_still_requires_price_on_correct_side_of_ema21(self):
-        buy = pd.DataFrame([{"Close": 1.1000, "EMA21": 1.1010, "EMA50": 1.0990}])
-        sell = pd.DataFrame([{"Close": 1.1000, "EMA21": 1.0990, "EMA50": 1.1010}])
+    def test_m5_entry_allows_a_nearby_ema21_pullback_from_either_side(self):
+        buy_pullback = pd.DataFrame([{"Close": 1.1000, "EMA21": 1.1010, "ATR": 0.0020}])
+        sell_pullback = pd.DataFrame([{"Close": 1.1000, "EMA21": 1.0990, "ATR": 0.0020}])
+        self.assertEqual(bot.m5_entry_side_check(buy_pullback, "BUY")[0], True)
+        self.assertEqual(bot.m5_entry_side_check(sell_pullback, "SELL")[0], True)
+
+    def test_m5_entry_rejects_price_too_far_from_ema21(self):
+        buy = pd.DataFrame([{"Close": 1.0980, "EMA21": 1.1010, "ATR": 0.0020}])
+        sell = pd.DataFrame([{"Close": 1.1020, "EMA21": 1.0990, "ATR": 0.0020}])
         self.assertEqual(bot.m5_entry_side_check(buy, "BUY")[0], False)
         self.assertEqual(bot.m5_entry_side_check(sell, "SELL")[0], False)
 
