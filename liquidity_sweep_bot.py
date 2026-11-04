@@ -78,46 +78,106 @@ def htf_direction(df):
     return "BUY" if e20 > e50 else "SELL" if e20 < e50 else "NONE"
 
 def detect_sweep(m5):
-    """Sweep is a completed M5 candle beyond the prior 12-bar extreme, closing back inside."""
-    if len(m5) < LOOKBACK + 5: return None
-    sweep = m5.iloc[-2]
-    confirm = m5.iloc[-1]
-    prior = m5.iloc[-(LOOKBACK+2):-2]
+    """Require M5 sweep/reclaim, displacement break, then a confirmed EMA21 pullback."""
+    if len(m5) < LOOKBACK + 8:
+        return None
     atr = atr_value(m5.iloc[:-1])
-    if not atr or atr <= 0: return None
-    # Sweep low then bullish close back above the prior range; next closed candle
-    # must confirm by closing above the sweep candle high.
-    low_level = float(prior["Low"].min())
-    high_level = float(prior["High"].max())
-    sweep_range = float(sweep["High"]-sweep["Low"])
-    body = abs(float(sweep["Close"]-sweep["Open"]))
-    if (float(sweep["Low"]) < low_level and float(sweep["Close"]) > low_level
-        and float(sweep["Close"]) > float(sweep["Open"])
-        and body >= 0.20*atr and float(confirm["Close"]) > float(sweep["High"])
-        and float(confirm["Close"]) > float(confirm["Open"])):
-        return {"direction":"BUY","sweep_extreme":float(sweep["Low"]),
-                "entry":float(confirm["Close"]),"atr":atr,
-                "candle_time":m5.index[-1].isoformat(),"swept_level":low_level}
-    # Sweep high then bearish close back below the prior range; next candle
-    # must confirm by closing below the sweep candle low.
-    if (float(sweep["High"]) > high_level and float(sweep["Close"]) < high_level
-        and float(sweep["Close"]) < float(sweep["Open"])
-        and body >= 0.20*atr and float(confirm["Close"]) < float(sweep["Low"])
-        and float(confirm["Close"]) < float(confirm["Open"])):
-        return {"direction":"SELL","sweep_extreme":float(sweep["High"]),
-                "entry":float(confirm["Close"]),"atr":atr,
-                "candle_time":m5.index[-1].isoformat(),"swept_level":high_level}
+    if not atr or atr <= 0:
+        return None
+    ema21 = m5["Close"].ewm(span=21, adjust=False).mean()
+    pullback = m5.iloc[-1]
+    ema_now = float(ema21.iloc[-1])
+    tolerance = 0.15 * atr
+
+    # Sweep must be recent; the latest closed candle must be the pullback confirmation.
+    first_sweep = max(LOOKBACK, len(m5) - 8)
+    last_sweep = len(m5) - 3
+    for sweep_idx in range(last_sweep, first_sweep - 1, -1):
+        sweep = m5.iloc[sweep_idx]
+        prior = m5.iloc[sweep_idx-LOOKBACK:sweep_idx]
+        if len(prior) != LOOKBACK:
+            continue
+        prior_low = float(prior["Low"].min())
+        prior_high = float(prior["High"].max())
+        body = abs(float(sweep["Close"] - sweep["Open"]))
+
+        bullish_sweep = (
+            float(sweep["Low"]) < prior_low
+            and float(sweep["Close"]) > prior_low
+            and float(sweep["Close"]) > float(sweep["Open"])
+            and body >= 0.20 * atr
+        )
+        bearish_sweep = (
+            float(sweep["High"]) > prior_high
+            and float(sweep["Close"]) < prior_high
+            and float(sweep["Close"]) < float(sweep["Open"])
+            and body >= 0.20 * atr
+        )
+        if not bullish_sweep and not bearish_sweep:
+            continue
+
+        break_idx = None
+        for j in range(sweep_idx + 1, len(m5) - 1):
+            candle = m5.iloc[j]
+            if bullish_sweep and float(candle["Close"]) > float(sweep["High"]) and float(candle["Close"]) > float(candle["Open"]):
+                break_idx = j
+                break
+            if bearish_sweep and float(candle["Close"]) < float(sweep["Low"]) and float(candle["Close"]) < float(candle["Open"]):
+                break_idx = j
+                break
+        if break_idx is None:
+            continue
+
+        if bullish_sweep:
+            touched = float(pullback["Low"]) <= ema_now + tolerance
+            confirmed = (
+                touched
+                and float(pullback["Close"]) > ema_now
+                and float(pullback["Close"]) > float(pullback["Open"])
+                and float(pullback["Close"]) > prior_low
+            )
+            if confirmed:
+                return {
+                    "direction": "BUY",
+                    "sweep_extreme": float(sweep["Low"]),
+                    "entry": float(pullback["Close"]),
+                    "atr": atr,
+                    "candle_time": m5.index[-1].isoformat(),
+                    "swept_level": prior_low,
+                    "pullback_level": ema_now,
+                }
+        else:
+            touched = float(pullback["High"]) >= ema_now - tolerance
+            confirmed = (
+                touched
+                and float(pullback["Close"]) < ema_now
+                and float(pullback["Close"]) < float(pullback["Open"])
+                and float(pullback["Close"]) < prior_high
+            )
+            if confirmed:
+                return {
+                    "direction": "SELL",
+                    "sweep_extreme": float(sweep["High"]),
+                    "entry": float(pullback["Close"]),
+                    "atr": atr,
+                    "candle_time": m5.index[-1].isoformat(),
+                    "swept_level": prior_high,
+                    "pullback_level": ema_now,
+                }
     return None
 
 def build_signal(m5,m15,h1):
     setup = detect_sweep(m5)
-    if not setup: return None, "no confirmed sweep/rejection/break"
+    if not setup:
+        return None, "no completed sweep + break + M5 EMA21 pullback"
     direction = setup["direction"]
     fresh_age = (datetime.now(timezone.utc)- (pd.Timestamp(m5.index[-1])+pd.Timedelta(minutes=5)).to_pydatetime()).total_seconds()/60
     if not -1 <= fresh_age <= MAX_SIGNAL_AGE_MIN:
-        return None, f"M5 confirmation candle stale ({fresh_age:.1f} min)"
-    if direction not in (htf_direction(m15), htf_direction(h1)):
-        return None, "neither M15 nor H1 confirms reversal direction"
+        return None, f"M5 pullback confirmation stale ({fresh_age:.1f} min)"
+    m15_dir = htf_direction(m15)
+    h1_dir = htf_direction(h1)
+    if m15_dir != direction or h1_dir != direction:
+        return None, "M15 and H1 must both agree with the M5 setup direction"
     entry = setup["entry"]
     atr = setup["atr"]
     buffer = max(0.10*atr, entry*0.00005)
@@ -132,7 +192,7 @@ def build_signal(m5,m15,h1):
     if risk <= 0 or risk > MAX_STOP_ATR*atr:
         return None, "structure stop too wide or invalid"
     return {**setup,"entry":entry,"sl":sl,"tp":tp,"risk":risk,
-            "rr":MIN_RR,"m15":htf_direction(m15),"h1":htf_direction(h1),
+            "rr":MIN_RR,"m15":m15_dir,"h1":h1_dir,
             "age_min":fresh_age}, "confirmed"
 
 def send_telegram(message):
@@ -180,7 +240,7 @@ def main():
             msg=(f"FOREX LIQUIDITY SWEEP — M5 REVERSAL\n"
                  f"Pair: {pair.replace('=X','').replace('USD','/USD') if False else pair.replace('=X','')}\n"
                  f"Direction: {signal['direction']}\n"
-                 f"Setup: SWEEP + REJECTION + CONFIRMATION BREAK\n"
+                 f"Setup: SWEEP + REJECTION + BREAK + EMA21 PULLBACK\n"
                  f"Entry reference: {fmt(signal['entry'])}\n"
                  f"Stop-loss: {fmt(signal['sl'])}\n"
                  f"Take-profit: {fmt(signal['tp'])}\n"
