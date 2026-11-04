@@ -6,3 +6,4 @@ timestamp_utc,pair,direction,entry,sl,tp,rr,swept_level,sweep_extreme,m15,h1,can
 2026-11-04T17:01:56.000334+00:00,USDCHF=X,BUY,0.817505,0.8164053738012191,0.8186046261987809,1.0,0.816625,0.816455,BUY,SELL,2026-11-04T16:55:00+00:00,"BiQuote public FX OHLC endpoint; third-party feed, not broker-verified",
 2026-11-04T17:12:22.903466+00:00,NZDJPY=X,BUY,89.118,88.9735441,89.26245589999999,1.0,88.991,88.978,BUY,BUY,2026-11-04T17:05:00+00:00,"BiQuote public FX OHLC endpoint; third-party feed, not broker-verified",
 2026-11-04T17:36:55.558592+00:00,USDCAD=X,SELL,1.39616,1.397679808,1.3946401920000002,1.0,1.39747,1.39761,SELL,SELL,2026-11-04T17:30:00+00:00,"BiQuote public FX OHLC endpoint; third-party feed, not broker-verified",
+2026-11-04T18:19:27.379614+00:00,CADJPY=X,BUY,113.386,113.27833070000001,113.49366929999998,1.0,113.285,113.284,BUY,BUY,2026-11-04T18:10:00+00:00,"BiQuote public FX OHLC endpoint; third-party feed, not broker-verified",
