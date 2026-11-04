@@ -1,0 +1,2 @@
+timestamp_utc,pair,direction,entry,sl,tp,rr,swept_level,sweep_extreme,m15,h1,candle_time,data_source,outcome
+2026-11-04T13:46:09.465180+00:00,AUDCHF=X,BUY,0.57221,0.5714155542011559,0.5730044457988441,1.0,0.57147,0.57145,BUY,SELL,2026-11-04T13:40:00+00:00,"BiQuote public FX OHLC endpoint; third-party feed, not broker-verified",
