@@ -1,0 +1,65 @@
+name: Forex Liquidity Sweep Bot
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Sunday reopen window; five-minute scans.
+    - cron: "2-59/5 21-23 * * 0"
+    # Weekday scans every five minutes.
+    - cron: "2-59/5 * * * 1-5"
+
+concurrency:
+  group: forex-liquidity-sweep-bot
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  run-liquidity-sweep-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Offline regression tests
+        run: python -m unittest -v test_liquidity_sweep_bot.py
+      - name: Scan and send confirmed sweep alerts
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python liquidity_sweep_bot.py
+      - name: Save Bot 2 state and history
+        if: always() && github.ref == 'refs/heads/main'
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p /tmp/sweep-snapshot
+          for f in liquidity_sweep_state.json liquidity_sweep_log.csv; do
+            if [ -f "$f" ]; then cp "$f" "/tmp/sweep-snapshot/$f"; fi
+          done
+          for attempt in 1 2 3; do
+            git fetch origin main
+            git reset --hard origin/main
+            for f in liquidity_sweep_state.json liquidity_sweep_log.csv; do
+              if [ -f "/tmp/sweep-snapshot/$f" ]; then cp "/tmp/sweep-snapshot/$f" "$f"; fi
+            done
+            git add -f liquidity_sweep_state.json liquidity_sweep_log.csv 2>/dev/null || true
+            if git diff --cached --quiet; then exit 0; fi
+            git commit -m "Save liquidity sweep bot state"
+            if git push origin HEAD:main; then exit 0; fi
+            git reset --hard origin/main
+          done
+          echo "Could not save Bot 2 state after retries"
+          exit 1
