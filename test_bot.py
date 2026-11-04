@@ -235,20 +235,16 @@ class ForexBotRegressionTests(unittest.TestCase):
         self.assertEqual(bot.MIN_SCORE, 5)
 
     def test_ema50_is_context_not_a_hard_entry_veto(self):
-        # M5 price is on the correct side of EMA21, but EMA21 has not crossed
-        # EMA50 yet. This early continuation context must remain eligible.
         buy = pd.DataFrame([{"Close": 1.1020, "EMA21": 1.1010, "EMA50": 1.1030}])
         sell = pd.DataFrame([{"Close": 1.0980, "EMA21": 1.0990, "EMA50": 1.0970}])
-        self.assertGreater(float(buy.iloc[-1]["Close"]), float(buy.iloc[-1]["EMA21"]))
-        self.assertLess(float(buy.iloc[-1]["EMA21"]), float(buy.iloc[-1]["EMA50"]))
-        self.assertLess(float(sell.iloc[-1]["Close"]), float(sell.iloc[-1]["EMA21"]))
-        self.assertGreater(float(sell.iloc[-1]["EMA21"]), float(sell.iloc[-1]["EMA50"]))
+        self.assertEqual(bot.m5_entry_side_check(buy, "BUY")[0], True)
+        self.assertEqual(bot.m5_entry_side_check(sell, "SELL")[0], True)
 
     def test_m5_entry_still_requires_price_on_correct_side_of_ema21(self):
         buy = pd.DataFrame([{"Close": 1.1000, "EMA21": 1.1010, "EMA50": 1.0990}])
         sell = pd.DataFrame([{"Close": 1.1000, "EMA21": 1.0990, "EMA50": 1.1010}])
-        self.assertLessEqual(float(buy.iloc[-1]["Close"]), float(buy.iloc[-1]["EMA21"]))
-        self.assertGreaterEqual(float(sell.iloc[-1]["Close"]), float(sell.iloc[-1]["EMA21"]))
+        self.assertEqual(bot.m5_entry_side_check(buy, "BUY")[0], False)
+        self.assertEqual(bot.m5_entry_side_check(sell, "SELL")[0], False)
 
     def test_trend_direction_buy_sell_and_unclear(self):
         self.assertEqual(
