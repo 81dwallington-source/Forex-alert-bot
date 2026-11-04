@@ -176,8 +176,11 @@ def build_signal(m5,m15,h1):
         return None, f"M5 pullback confirmation stale ({fresh_age:.1f} min)"
     m15_dir = htf_direction(m15)
     h1_dir = htf_direction(h1)
-    if m15_dir != direction or h1_dir != direction:
-        return None, "M15 and H1 must both agree with the M5 setup direction"
+    # M15 is the primary trend filter. H1 is recorded as context rather
+    # than a hard veto, so a valid M5 sweep/pullback is not discarded solely
+    # because the higher timeframe is still lagging during a trend transition.
+    if m15_dir != direction:
+        return None, f"M15 trend ({m15_dir}) does not agree with the M5 setup"
     entry = setup["entry"]
     atr = setup["atr"]
     buffer = max(0.10*atr, entry*0.00005)
@@ -193,6 +196,7 @@ def build_signal(m5,m15,h1):
         return None, "structure stop too wide or invalid"
     return {**setup,"entry":entry,"sl":sl,"tp":tp,"risk":risk,
             "rr":MIN_RR,"m15":m15_dir,"h1":h1_dir,
+            "h1_agrees":h1_dir == direction,
             "age_min":fresh_age}, "confirmed"
 
 def send_telegram(message):
@@ -222,6 +226,7 @@ def main():
     state=load_state()
     if state.get("date") != today: state={"date":today,"alerts":0,"pairs":[]}
     sent=0
+    rejected={}
     for pair in PAIRS:
         if state["alerts"] >= MAX_ALERTS_PER_DAY: break
         if MAX_ONE_PER_PAIR_DAY and pair in state["pairs"]: continue
@@ -230,7 +235,10 @@ def main():
             m15=fetch_bars(pair,"15m")
             h1=fetch_bars(pair,"1h")
             signal,reason=build_signal(m5,m15,h1)
-            if not signal: continue
+            if not signal:
+                rejected[reason]=rejected.get(reason,0)+1
+                print(f"{pair}: skipped — {reason}", flush=True)
+                continue
             quote,quote_time=live_quote(pair)
             if abs(quote-signal["entry"]) > MAX_ENTRY_DRIFT_ATR*signal["atr"]:
                 print(f"{pair}: skipped; live price moved too far from entry")
@@ -246,7 +254,8 @@ def main():
                  f"Take-profit: {fmt(signal['tp'])}\n"
                  f"Planned risk/reward: 1:1\n"
                  f"Swept level: {fmt(signal['swept_level'])}\n"
-                 f"M15: {signal['m15']} | H1: {signal['h1']}\n"
+                 f"M15 trend: {signal['m15']} | H1 context: {signal['h1']} "
+                 f"({'aligned' if signal['h1_agrees'] else 'not aligned; M15 remains primary'})\n"
                  f"Live public-feed price: {fmt(quote)}\n"
                  f"Data: {DATA_SOURCE}\n"
                  f"Alert only — check spread and execution with your broker.")
@@ -260,6 +269,9 @@ def main():
             print(f"{pair}: scan error: {exc}")
     STATE.write_text(json.dumps(state,indent=2),encoding="utf-8")
     print(f"{BOT_NAME}: scanned {len(PAIRS)} pairs; sent {sent}; daily total {state['alerts']}; source={DATA_SOURCE}")
+    if rejected:
+        top = sorted(rejected.items(), key=lambda item: item[1], reverse=True)[:8]
+        print("Top rejection reasons: " + " | ".join(f"{reason}: {count}" for reason,count in top), flush=True)
 
 if __name__=="__main__":
     main()
