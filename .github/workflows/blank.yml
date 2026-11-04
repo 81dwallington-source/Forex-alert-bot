@@ -194,3 +194,5 @@ jobs:
           done
           echo "Could not save signal history after three attempts"
           exit 1
+
+# Manual maintenance trigger: keep workflow_dispatch available for on-demand scans.
