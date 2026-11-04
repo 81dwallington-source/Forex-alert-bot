@@ -690,6 +690,20 @@ def signal_candle_quality_check(candle, direction, min_body_fraction=0.45, close
     return True, "decisive signal candle confirmed"
 
 
+def m5_entry_side_check(data, direction):
+    """Keep price on the correct side of EMA21; EMA50 remains contextual only."""
+    if direction not in ("BUY", "SELL") or data.empty:
+        return False, "insufficient data for M5 EMA21 entry-side check"
+    last = data.iloc[-1]
+    close = float(last["Close"])
+    ema21 = float(last["EMA21"])
+    if direction == "BUY" and close <= ema21:
+        return False, "M5 price not holding above EMA21"
+    if direction == "SELL" and close >= ema21:
+        return False, "M5 price not holding below EMA21"
+    return True, "M5 price is holding on the correct side of EMA21"
+
+
 def analyse_pair(ticker):
 
     m5 = indicators(download_data(ticker, "5m", "5d"))
@@ -751,11 +765,9 @@ def analyse_pair(ticker):
 
     # M5 EMA21 is the entry-side guide. EMA50 is context, not a hard veto:
     # a valid early continuation can form before the faster EMA21 crosses EMA50.
-    m5_last = m5.iloc[-1]
-    if direction == "BUY" and float(m5_last["Close"]) <= float(m5_last["EMA21"]):
-        return None, "M5 price not holding above EMA21"
-    if direction == "SELL" and float(m5_last["Close"]) >= float(m5_last["EMA21"]):
-        return None, "M5 price not holding below EMA21"
+    entry_side_ok, entry_side_note = m5_entry_side_check(m5, direction)
+    if not entry_side_ok:
+        return None, entry_side_note
 
     # M15 must show a usable EMA20/EMA50 directional gap; H1 may be neutral
     # or opposite during a pullback, but that reduces the quality score.
