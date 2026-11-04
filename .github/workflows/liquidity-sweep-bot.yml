@@ -1,6 +1,12 @@
 name: Forex Liquidity Sweep Bot
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'liquidity_sweep_bot.py'
+      - 'test_liquidity_sweep_bot.py'
+      - '.github/workflows/liquidity-sweep-bot.yml'
   workflow_dispatch:
   schedule:
     # Sunday reopen window; five-minute scans.
