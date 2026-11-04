@@ -690,18 +690,19 @@ def signal_candle_quality_check(candle, direction, min_body_fraction=0.45, close
     return True, "decisive signal candle confirmed"
 
 
-def m5_entry_side_check(data, direction):
-    """Keep price on the correct side of EMA21; EMA50 remains contextual only."""
+def m5_entry_side_check(data, direction, max_distance_atr=0.55):
+    """Allow a genuine EMA21 pullback from either side; price must remain near the entry area."""
     if direction not in ("BUY", "SELL") or data.empty:
-        return False, "insufficient data for M5 EMA21 entry-side check"
+        return False, "insufficient data for M5 EMA21 entry-area check"
     last = data.iloc[-1]
     close = float(last["Close"])
     ema21 = float(last["EMA21"])
-    if direction == "BUY" and close <= ema21:
-        return False, "M5 price not holding above EMA21"
-    if direction == "SELL" and close >= ema21:
-        return False, "M5 price not holding below EMA21"
-    return True, "M5 price is holding on the correct side of EMA21"
+    if "ATR" not in last or float(last["ATR"]) <= 0:
+        return False, "invalid ATR for M5 EMA21 entry-area check"
+    distance = abs(close - ema21)
+    if distance > float(last["ATR"]) * max_distance_atr:
+        return False, "price too far from M5 EMA21 entry area"
+    return True, "price is within the M5 EMA21 pullback/retest area"
 
 
 def analyse_pair(ticker):
@@ -763,11 +764,11 @@ def analyse_pair(ticker):
 
     direction = m15_trend
 
-    # M5 EMA21 is the entry-side guide. EMA50 is context, not a hard veto:
-    # a valid early continuation can form before the faster EMA21 crosses EMA50.
-    entry_side_ok, entry_side_note = m5_entry_side_check(m5, direction)
-    if not entry_side_ok:
-        return None, entry_side_note
+    # EMA21 is an entry area, not a one-sided trend gate. A pullback may briefly
+    # cross it; the later setup-specific reclaim/break confirmation is the real trigger.
+    entry_area_ok, entry_area_note = m5_entry_side_check(m5, direction)
+    if not entry_area_ok:
+        return None, entry_area_note
 
     # M15 must show a usable EMA20/EMA50 directional gap; H1 may be neutral
     # or opposite during a pullback, but that reduces the quality score.
