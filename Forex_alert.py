@@ -749,16 +749,13 @@ def analyse_pair(ticker):
 
     direction = m15_trend
 
-    # On M5, require price and EMA21 to be on the correct side of EMA50.
-    # EMA200 is context only; demanding a perfect 21/50/200 stack on all
-    # three timeframes was suppressing too many valid pullback continuations.
+    # M5 EMA21 is the entry-side guide. EMA50 is context, not a hard veto:
+    # a valid early continuation can form before the faster EMA21 crosses EMA50.
     m5_last = m5.iloc[-1]
-    if direction == "BUY":
-        if float(m5_last["Close"]) <= float(m5_last["EMA21"]) or float(m5_last["EMA21"]) <= float(m5_last["EMA50"]):
-            return None, "M5 price/EMA21 not holding above EMA50"
-    else:
-        if float(m5_last["Close"]) >= float(m5_last["EMA21"]) or float(m5_last["EMA21"]) >= float(m5_last["EMA50"]):
-            return None, "M5 price/EMA21 not holding below EMA50"
+    if direction == "BUY" and float(m5_last["Close"]) <= float(m5_last["EMA21"]):
+        return None, "M5 price not holding above EMA21"
+    if direction == "SELL" and float(m5_last["Close"]) >= float(m5_last["EMA21"]):
+        return None, "M5 price not holding below EMA21"
 
     # M15 must show a usable EMA20/EMA50 directional gap; H1 may be neutral
     # or opposite during a pullback, but that reduces the quality score.
