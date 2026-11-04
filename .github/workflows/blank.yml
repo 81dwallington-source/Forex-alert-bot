@@ -10,10 +10,9 @@ on:
       - "scan_status.txt"
   workflow_dispatch:
   schedule:
-    # Sunday forex reopen: run every 5 minutes, offset to avoid the top-of-hour queue.
-    - cron: "2-59/5 21-23 * * 0"
-    # Weekday scans every 5 minutes, offset to reduce GitHub scheduler congestion.
-    - cron: "2-59/5 * * * 1-5"
+    # Start one hourly worker; it performs twelve scans, five minutes apart.
+    - cron: "3 21-23 * * 0"
+    - cron: "3 * * * 1-5"
 
 # Keep only one bot scan active at a time. This protects signal state/history
 # from concurrent writes and prevents overlapping scans from sending duplicates.
@@ -28,7 +27,7 @@ permissions:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 80
     steps:
       - name: Get bot code
         uses: actions/checkout@v4
@@ -75,11 +74,34 @@ jobs:
           print("Telegram test message accepted by Telegram API")
           PY
 
-      - name: Run forex alert bot
+      - name: Run forex alert bot (five-minute scan cycle)
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python Forex_alert.py
+        run: |
+          failures=0
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
+            cycles=12
+          else
+            cycles=1
+          fi
+          for cycle in $(seq 1 "$cycles"); do
+            started=$(date +%s)
+            echo "Forex Bot 1 scan $cycle/$cycles"
+            if ! python Forex_alert.py; then
+              failures=$((failures + 1))
+              echo "Scan $cycle failed; continuing to the next five-minute cycle"
+            fi
+            if [ "$cycle" -lt "$cycles" ]; then
+              elapsed=$(( $(date +%s) - started ))
+              delay=$((300 - elapsed))
+              if [ "$delay" -gt 0 ]; then sleep "$delay"; fi
+            fi
+          done
+          if [ "$failures" -gt 0 ]; then
+            echo "$failures scan cycle(s) failed"
+            exit 1
+          fi
 
       - name: Publish scan heartbeat
         if: always() && github.ref == 'refs/heads/main'
