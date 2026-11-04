@@ -26,8 +26,10 @@ class LiquiditySweepTests(unittest.TestCase):
         setup = {"direction":"BUY", "entry":1.1000, "sweep_extreme":1.0990,
                  "atr":0.0010, "candle_time":(now - pd.Timedelta(minutes=5)).isoformat(),
                  "swept_level":1.0995, "pullback_level":1.1000}
-        with patch("liquidity_sweep_bot.detect_sweep", return_value=setup), \\
-             patch("liquidity_sweep_bot.htf_direction", side_effect=["BUY", "SELL"]):
+        with (
+            patch("liquidity_sweep_bot.detect_sweep", return_value=setup),
+            patch("liquidity_sweep_bot.htf_direction", side_effect=["BUY", "SELL"]),
+        ):
             signal, reason = build_signal(m5, m15, h1)
         self.assertIsNotNone(signal, reason)
         self.assertEqual(signal["m15"], "BUY")
@@ -43,8 +45,10 @@ class LiquiditySweepTests(unittest.TestCase):
         setup = {"direction":"BUY", "entry":1.1000, "sweep_extreme":1.0990,
                  "atr":0.0010, "candle_time":(now - pd.Timedelta(minutes=5)).isoformat(),
                  "swept_level":1.0995, "pullback_level":1.1000}
-        with patch("liquidity_sweep_bot.detect_sweep", return_value=setup), \\
-             patch("liquidity_sweep_bot.htf_direction", side_effect=["SELL", "BUY"]):
+        with (
+            patch("liquidity_sweep_bot.detect_sweep", return_value=setup),
+            patch("liquidity_sweep_bot.htf_direction", side_effect=["SELL", "BUY"]),
+        ):
             signal, reason = build_signal(m5, m15, h1)
         self.assertIsNone(signal)
         self.assertIn("M15 trend", reason)
