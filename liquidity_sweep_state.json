@@ -1,7 +1,8 @@
 {
   "date": "2026-11-04",
-  "alerts": 1,
+  "alerts": 2,
   "pairs": [
-    "AUDCHF=X"
+    "AUDCHF=X",
+    "GBPCAD=X"
   ]
 }
