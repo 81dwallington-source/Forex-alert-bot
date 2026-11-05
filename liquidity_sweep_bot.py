@@ -2,6 +2,7 @@
 import os, json, csv
 from pathlib import Path
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 import requests
 import pandas as pd
 
@@ -334,6 +335,10 @@ def save_signal(pair,s):
             "data_source":DATA_SOURCE,"outcome":""})
 
 def main():
+    uk_now = datetime.now(ZoneInfo("Europe/London"))
+    if not 5 <= uk_now.hour < 23:
+        print(f"Outside UK scan window (05:00-23:00); current UK time {uk_now:%H:%M}. Skipping scan.", flush=True)
+        return
     today=datetime.now(timezone.utc).date().isoformat()
     state=load_state()
     if state.get("date") != today: state={"date":today,"alerts":0,"pairs":[]}
