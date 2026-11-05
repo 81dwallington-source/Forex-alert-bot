@@ -47,7 +47,7 @@ jobs:
         if: always()
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+users.noreply.github.com"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add bot3_state.json bot3_signal_log.csv 2>/dev/null || true
           if ! git diff --cached --quiet; then
             git commit -m "Save Bot 3 independent signal state [skip ci]"
