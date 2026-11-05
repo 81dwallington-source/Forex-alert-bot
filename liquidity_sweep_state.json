@@ -1,9 +1,11 @@
 {
   "date": "2026-11-05",
-  "alerts": 3,
+  "alerts": 5,
   "pairs": [
     "CHFJPY=X",
-    "USDCAD=X",
-    "USDCHF=X"
+    "AUDNZD=X",
+    "GBPUSD=X",
+    "USDCHF=X",
+    "NZDJPY=X"
   ]
 }
