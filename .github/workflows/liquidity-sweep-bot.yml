@@ -9,10 +9,8 @@ on:
       - '.github/workflows/liquidity-sweep-bot.yml'
   workflow_dispatch:
   schedule:
-    # One hourly worker runs twelve scans, five minutes apart.
-    # Sunday evening covers the weekly market reopen; weekdays run continuously.
-    - cron: "3 21-23 * * 0"
-    - cron: "3 * * * 1-5"
+    # Start an hourly worker; Python enforces the UK-local 05:00-23:00 window (GMT/BST aware).
+    - cron: "0 * * * *"
 
 # Never overlap workers: Bot 2 keeps its daily alert state in the runner
 # during the hour and publishes the state/history before the worker exits.
