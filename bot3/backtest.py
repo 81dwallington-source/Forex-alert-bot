@@ -37,12 +37,22 @@ def resample_ohlc(m5: pd.DataFrame, rule: str) -> pd.DataFrame:
     return out.loc[counts == expected].dropna()
 
 
+def midpoint_stop_to_executable(stop_mid: float, direction: str, half_spread: float) -> float:
+    """Convert a strategy level calculated on midpoint prices to the executable stop side."""
+    if direction == "BUY":
+        return stop_mid - half_spread  # long stops execute against BID
+    if direction == "SELL":
+        return stop_mid + half_spread  # short stops execute against ASK
+    raise ValueError(f"Unsupported direction: {direction}")
+
+
 def backtest_pair(pair: str, m5: pd.DataFrame, spread_pips: float, slippage_pips: float = 0.2) -> list[dict]:
     """Dukascopy input is BID OHLC. Model ASK as BID + full spread; apply adverse slippage on fills."""
     if spread_pips <= 0 or slippage_pips < 0:
         raise ValueError("spread_pips must be positive and slippage_pips cannot be negative")
     pip = 0.01 if "JPY" in pair else 0.0001
     spread = spread_pips * pip
+    half_spread = spread / 2
     slippage = slippage_pips * pip
     m15_all, h1_all = resample_ohlc(m5, "15min"), resample_ohlc(m5, "1h")
     results = []
@@ -76,7 +86,9 @@ def backtest_pair(pair: str, m5: pd.DataFrame, spread_pips: float, slippage_pips
         if abs((next_open + spread / 2) - signal["entry"]) > bot3.MAX_ENTRY_DRIFT_ATR * signal["atr"]:
             i += 1
             continue
-        stop = float(signal["stop"]) if signal["direction"] == "BUY" else float(signal["stop"]) + spread
+        # Strategy levels are calculated from synthetic midpoint candles. Convert the
+        # stop to the executable side using HALF the spread, not the full spread.
+        stop = midpoint_stop_to_executable(float(signal["stop"]), signal["direction"], half_spread)
         risk = fill - stop if signal["direction"] == "BUY" else stop - fill
         if risk <= 0 or risk > bot3.MAX_STOP_ATR * signal["atr"]:
             i += 1
@@ -86,7 +98,8 @@ def backtest_pair(pair: str, m5: pd.DataFrame, spread_pips: float, slippage_pips
         outcome, exit_time, pnl_r = "OPEN", "", None
         for j in range(i + 1, len(m5)):
             bar = m5.iloc[j]
-            # Convert BID OHLC to executable exit-side prices; SELL exits use ASK = BID + spread.
+            # BUY exits execute on BID; SELL exits execute on ASK = BID + full spread.
+            # stop/target are already expressed on the appropriate executable side.
             if signal["direction"] == "BUY":
                 stop_hit = float(bar.Low) <= stop
                 target_hit = float(bar.High) >= target
