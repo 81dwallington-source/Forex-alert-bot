@@ -199,19 +199,29 @@ def scan_once():
     state=load_state(); day=now.astimezone(UK).date().isoformat()
     day_key,pair_key=f"alerts:{day}",f"pairs:{day}"
     count=int(state.get(day_key,0)); sent=set(state.get(pair_key,[]))
+    attempted=data_ok=failures=no_setup=0
     for pair in PAIRS:
         if count>=MAX_ALERTS_PER_UK_DAY: break
         if MAX_ONE_ALERT_PER_PAIR_PER_UK_DAY and pair in sent: continue
+        attempted += 1
         try:
             m5=fetch_candles(pair,"5m"); m15=fetch_candles(pair,"15m"); h1=fetch_candles(pair,"1h")
             price,stamp,bid,ask=fetch_live_quote(pair,now)
+            data_ok += 1
             s=build_signal(pair,m5,m15,h1,price,stamp,bid,ask,now)
             if s:
                 send_telegram(format_alert(s)); log_signal(s)
                 count+=1; sent.add(pair); state[day_key]=count; state[pair_key]=sorted(sent); save_state(state)
                 log.info("Sent %s %s",pair,s["direction"])
-        except Exception: log.exception("Scan failed for %s",pair)
+            else:
+                no_setup += 1
+        except Exception:
+            failures += 1
+            log.exception("Scan failed for %s",pair)
         time.sleep(0.15)
-    log.info("Bot 3 scan complete: %s/%s alerts today",count,MAX_ALERTS_PER_UK_DAY)
+    log.info("Bot 3 scan summary: attempted=%s valid_data=%s failures=%s no_setup=%s alerts_today=%s/%s",
+             attempted,data_ok,failures,no_setup,count,MAX_ALERTS_PER_UK_DAY)
+    if attempted and data_ok == 0:
+        raise RuntimeError("Bot 3 scan rejected: no pair returned fully validated candles and a fresh live quote")
 
 if __name__=="__main__": scan_once()
