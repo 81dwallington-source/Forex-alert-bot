@@ -25,6 +25,10 @@ MAX_ENTRY_DRIFT_ATR = 0.20
 MAX_STOP_ATR = 4.5
 MAX_ALERTS_PER_DAY = 15
 MAX_ONE_PER_PAIR_DAY = True
+EQUAL_LEVEL_TOLERANCE_ATR = 0.12
+MIN_REJECTION_WICK_ATR = 0.35
+MIN_REJECTION_BODY_ATR = 0.12
+MAX_PUBLIC_SPREAD_ATR = 0.08
 
 def fetch_bars(symbol, interval, limit=300):
     pair = symbol.replace("=X", "")
@@ -63,9 +67,16 @@ def live_quote(symbol):
     stamp = pd.to_datetime(b["openTime"], utc=True)
     age = (datetime.now(timezone.utc)-stamp.to_pydatetime()).total_seconds()/60
     price = float(b["close"])
+    bid, ask = b.get("bid"), b.get("ask")
+    spread = None
+    if bid is not None and ask is not None:
+        bid, ask = float(bid), float(ask)
+        if bid <= 0 or ask < bid:
+            raise ValueError("Live bid/ask quote is invalid")
+        spread = ask - bid
     if not 0 <= age <= 6 or price <= 0:
         raise ValueError(f"Live quote stale/invalid ({age:.1f} min)")
-    return price, stamp.isoformat()
+    return price, stamp.isoformat(), spread
 
 def atr_value(df, period=14):
     prev = df["Close"].shift(1)
@@ -142,30 +153,44 @@ def detect_sweep(m5):
         if candle_range <= 0:
             continue
 
-        bearish_levels = [
-            p for p in pivots if p[0] == "HIGH"
-            and sh >= p[2] + penetration
-            and sc <= p[2] - 0.05 * atr
-            and swing_level_is_fresh(closes, p[1], sweep_idx, p[2], "SELL")
-        ]
-        bullish_levels = [
-            p for p in pivots if p[0] == "LOW"
-            and sl <= p[2] - penetration
-            and sc >= p[2] + 0.05 * atr
-            and swing_level_is_fresh(closes, p[1], sweep_idx, p[2], "BUY")
-        ]
+        # Require at least two confirmed swing pivots clustered at the same level.
+        equal_high_clusters, equal_low_clusters = [], []
+        for p in pivots:
+            same_type = [q for q in pivots if q[0] == p[0]
+                         and abs(q[2] - p[2]) <= EQUAL_LEVEL_TOLERANCE_ATR * atr]
+            if len({q[1] for q in same_type}) < 2:
+                continue
+            if p[0] == "HIGH":
+                level = max(q[2] for q in same_type)
+                equal_high_clusters.append((level, same_type))
+            else:
+                level = min(q[2] for q in same_type)
+                equal_low_clusters.append((level, same_type))
+
+        bearish_levels = []
+        for level, cluster in equal_high_clusters:
+            first_idx = min(q[1] for q in cluster)
+            if (sh >= level + penetration and sc <= level - 0.05 * atr
+                    and swing_level_is_fresh(closes, first_idx, sweep_idx, level, "SELL")):
+                bearish_levels.append(("HIGH", max(q[1] for q in cluster), level))
+        bullish_levels = []
+        for level, cluster in equal_low_clusters:
+            first_idx = min(q[1] for q in cluster)
+            if (sl <= level - penetration and sc >= level + 0.05 * atr
+                    and swing_level_is_fresh(closes, first_idx, sweep_idx, level, "BUY")):
+                bullish_levels.append(("LOW", max(q[1] for q in cluster), level))
 
         bearish_rejection = (
             bool(bearish_levels) and sc < so
-            and sh - max(so, sc) >= min_wick
-            and (sc - sl) / candle_range <= 0.55
-            and abs(sc - so) >= min_body
+            and sh - max(so, sc) >= max(min_wick, MIN_REJECTION_WICK_ATR * atr)
+            and (sc - sl) / candle_range <= 0.40
+            and abs(sc - so) >= max(min_body, MIN_REJECTION_BODY_ATR * atr)
         )
         bullish_rejection = (
             bool(bullish_levels) and sc > so
-            and min(so, sc) - sl >= min_wick
-            and (sc - sl) / candle_range >= 0.45
-            and abs(sc - so) >= min_body
+            and min(so, sc) - sl >= max(min_wick, MIN_REJECTION_WICK_ATR * atr)
+            and (sc - sl) / candle_range >= 0.60
+            and abs(sc - so) >= max(min_body, MIN_REJECTION_BODY_ATR * atr)
         )
         if not bearish_rejection and not bullish_rejection:
             continue
@@ -326,7 +351,10 @@ def main():
                 rejected[reason]=rejected.get(reason,0)+1
                 print(f"{pair}: skipped — {reason}", flush=True)
                 continue
-            quote,quote_time=live_quote(pair)
+            quote,quote_time,public_spread=live_quote(pair)
+            if public_spread is not None and public_spread > MAX_PUBLIC_SPREAD_ATR*signal["atr"]:
+                print(f"{pair}: skipped; public-feed spread too wide")
+                continue
             if abs(quote-signal["entry"]) > MAX_ENTRY_DRIFT_ATR*signal["atr"]:
                 print(f"{pair}: skipped; live price moved too far from entry")
                 continue
@@ -345,6 +373,7 @@ def main():
                  f"EMA21 retest: {fmt(signal['retest_level'])} at {signal['retest_candle_time']}\n"
                  f"M15 trend: {signal['m15']} | H1 trend: {signal['h1']} (both aligned)\n"
                  f"Live public-feed price: {fmt(quote)}\n"
+                 f"Public-feed spread: {fmt(public_spread) if public_spread is not None else 'not supplied'}\n"
                  f"Data: {DATA_SOURCE}\n"
                  f"Alert only — check spread and execution with your broker.")
             send_telegram(msg)
