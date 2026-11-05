@@ -82,8 +82,8 @@ MAX_STOP_DISTANCE_ATR = 4.5
 
 MIN_SCORE = 6
 
-# Keep the two actionable M5 patterns; M15 is the primary trend filter.
-# H1 is contextual confirmation rather than a second absolute gate.
+# Keep the two actionable M5 patterns.
+# Both M15 and H1 must agree with the proposed trade direction.
 ALLOWED_SETUP_TYPES = ("PULLBACK CONTINUATION", "BREAKOUT RETEST")
 BUY_RSI_MIN, BUY_RSI_MAX = 52, 65
 SELL_RSI_MIN, SELL_RSI_MAX = 35, 48
@@ -783,8 +783,8 @@ def analyse_pair(ticker):
     if not entry_area_ok:
         return None, entry_area_note
 
-    # M15 must show a usable EMA20/EMA50 directional gap; H1 may be neutral
-    # or opposite during a pullback, but that reduces the quality score.
+    # M15 must show a usable EMA20/EMA50 directional gap. H1 alignment
+    # has already passed as a mandatory hard filter above.
 
     setup_type = "CONTINUATION"
     location_note = "M5 continuation confirmation"
