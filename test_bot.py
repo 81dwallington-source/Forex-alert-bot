@@ -333,5 +333,26 @@ class ForexBotRegressionTests(unittest.TestCase):
         self.assertGreater(float(result.iloc[-1]["ATR"]), 0)
 
 
+    def test_higher_timeframes_must_both_align_with_signal(self):
+        self.assertEqual(
+            bot.higher_timeframe_alignment("BUY", "BUY", "BUY"),
+            (True, "M15 and H1 aligned"),
+        )
+        ok, reason = bot.higher_timeframe_alignment("BUY", "SELL", "BUY")
+        self.assertFalse(ok)
+        self.assertIn("H1 trend (SELL)", reason)
+
+    def test_neutral_higher_timeframe_rejects_signal(self):
+        ok, reason = bot.higher_timeframe_alignment("BUY", "NONE", "BUY")
+        self.assertFalse(ok)
+        self.assertIn("H1 trend (NONE)", reason)
+
+    def test_m15_must_match_proposed_direction(self):
+        ok, reason = bot.higher_timeframe_alignment("SELL", "BUY", "BUY")
+        self.assertFalse(ok)
+        self.assertIn("M15 trend (SELL)", reason)
+
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
