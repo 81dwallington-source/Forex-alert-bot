@@ -143,10 +143,22 @@ def build_signal(pair,m5,m15,h1,live_price=None,live_stamp=None,live_bid=None,li
     spread=ask-bid
     if spread > 0.15*atr: return None
     if abs(mid-entry)>MAX_ENTRY_DRIFT_ATR*atr: return None
+    m15_last = add_indicators(m15).iloc[-1]
+    h1_last = add_indicators(h1).iloc[-1]
+    pullback_atr = float(pullback_candle.ATR)
+    # Diagnostic features only: these are logged for research and do not alter entry rules.
+    features = {
+        "m5_ema21_slope_atr": float((last.EMA21 - df.iloc[-4].EMA21) / atr),
+        "m15_ema20_50_gap_atr": float(abs(m15_last.EMA20 - m15_last.EMA50) / m15_last.ATR),
+        "h1_ema20_50_gap_atr": float(abs(h1_last.EMA20 - h1_last.EMA50) / h1_last.ATR),
+        "confirmation_body_ratio": float(body / rng),
+        "confirmation_close_location": float(location),
+        "pullback_distance_atr": float(abs(pullback_candle.Close - pullback_candle.EMA21) / pullback_atr),
+    }
     return {"pair":pair,"direction":direction,"entry":entry,"stop":stop,"target":target,
         "rr":MIN_RR,"atr":atr,"swing":swing,"candle_time":m5.index[-1].isoformat(),
         "live_price":mid,"live_bid":bid,"live_ask":ask,"spread":spread,
-        "quote_time":live_time.isoformat(),"data_source":DATA_SOURCE}
+        "quote_time":live_time.isoformat(),"data_source":DATA_SOURCE, **features}
 
 def fetch_live_quote(pair, now=None):
     # Use the dedicated tick endpoint, never the close of an unfinished candle as a quote.
