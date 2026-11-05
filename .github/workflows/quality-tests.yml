@@ -11,6 +11,8 @@ on:
       - 'test_bot.py'
       - 'liquidity_sweep_bot.py'
       - 'test_liquidity_sweep_bot.py'
+      - 'execution_backtest.py'
+      - 'test_execution_backtest.py'
       - 'requirements.txt'
       - '.github/workflows/quality-tests.yml'
 
@@ -36,3 +38,5 @@ jobs:
         run: python -m unittest -v test_bot.py
       - name: Run Bot 2 regression tests
         run: python -m unittest -v test_liquidity_sweep_bot.py
+      - name: Run historical execution backtest tests
+        run: python -m unittest -v test_execution_backtest.py
