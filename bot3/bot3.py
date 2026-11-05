@@ -95,7 +95,10 @@ def build_signal(pair,m5,m15,h1,live_price=None,live_stamp=None,now=None):
     now_ts = pd.Timestamp(now)
     now_utc = now_ts.tz_convert("UTC") if now_ts.tzinfo else now_ts.tz_localize("UTC")
     age = (now_utc-(m5.index[-1]+pd.Timedelta(minutes=5))).total_seconds()/60
+    m15_age = (now_utc-(m15.index[-1]+pd.Timedelta(minutes=15))).total_seconds()/60
+    h1_age = (now_utc-(h1.index[-1]+pd.Timedelta(hours=1))).total_seconds()/60
     if age < -1 or age > MAX_M5_AGE_MINUTES: return None
+    if m15_age < -1 or m15_age > 20 or h1_age < -1 or h1_age > 75: return None
     direction = trend_direction(h1)
     if not direction or trend_direction(m15) != direction: return None
     df = add_indicators(m5)
@@ -113,8 +116,9 @@ def build_signal(pair,m5,m15,h1,live_price=None,live_stamp=None,now=None):
     rng=float(last.High-last.Low); body=abs(float(last.Close-last.Open))
     if rng<=0 or body/rng<0.55: return None
     location=(float(last.Close)-float(last.Low))/rng
+    pullback_candle = df.iloc[pullback]
     if direction=="BUY":
-        if not (last.Close>last.Open and last.Close>prev.High and location>=0.75): return None
+        if not (last.Close>last.Open and last.Close>max(float(prev.High),float(pullback_candle.High)) and last.Close>last.EMA21 and location>=0.75): return None
         pivots=confirmed_pivots(df.iloc[:-1],"low",30)
         if not pivots: return None
         swing=pivots[-1][1]; entry=float(last.Close); stop=swing-0.15*atr
@@ -122,7 +126,7 @@ def build_signal(pair,m5,m15,h1,live_price=None,live_stamp=None,now=None):
         if risk<=0 or risk>MAX_STOP_ATR*atr: return None
         target=entry+risk*MIN_RR
     else:
-        if not (last.Close<last.Open and last.Close<prev.Low and location<=0.25): return None
+        if not (last.Close<last.Open and last.Close<min(float(prev.Low),float(pullback_candle.Low)) and last.Close<last.EMA21 and location<=0.25): return None
         pivots=confirmed_pivots(df.iloc[:-1],"high",30)
         if not pivots: return None
         swing=pivots[-1][1]; entry=float(last.Close); stop=swing+0.15*atr
