@@ -174,14 +174,76 @@ def send_telegram(message):
     r.raise_for_status()
     if not r.json().get("ok"): raise RuntimeError("Telegram rejected Bot 3 alert")
 
+OUTCOME_FIELDS = ["timestamp_utc","uk_date","pair","direction","entry","stop","target","rr","swing",
+    "candle_time","live_price","live_bid","live_ask","spread","quote_time","data_source",
+    "outcome","outcome_time_utc","outcome_detail"]
+
 def log_signal(s):
-    fields=["timestamp_utc","uk_date","pair","direction","entry","stop","target","rr","swing","candle_time","live_price","data_source","outcome"]
+    # Explicit field selection prevents extra signal metadata breaking CSV writes.
+    row = {"timestamp_utc":datetime.now(timezone.utc).isoformat(),
+        "uk_date":datetime.now(timezone.utc).astimezone(UK).date().isoformat(),
+        **{k:v for k,v in s.items() if k in OUTCOME_FIELDS}, "outcome":"",
+        "outcome_time_utc":"","outcome_detail":""}
     exists=LOG_FILE.exists()
     with LOG_FILE.open("a",newline="",encoding="utf-8") as f:
-        w=csv.DictWriter(f,fieldnames=fields)
+        w=csv.DictWriter(f,fieldnames=OUTCOME_FIELDS,extrasaction="ignore")
         if not exists: w.writeheader()
-        w.writerow({"timestamp_utc":datetime.now(timezone.utc).isoformat(),
-            "uk_date":datetime.now(timezone.utc).astimezone(UK).date().isoformat(),**s,"outcome":""})
+        w.writerow(row)
+
+def evaluate_trade_outcome(signal, candles):
+    """Return first confirmed TP/SL result from completed M5 candles after signal."""
+    start = pd.to_datetime(signal["candle_time"], utc=True)
+    later = candles.loc[candles.index > start]
+    for stamp, candle in later.iterrows():
+        if signal["direction"] == "BUY":
+            stop_hit = float(candle.Low) <= float(signal["stop"])
+            target_hit = float(candle.High) >= float(signal["target"])
+        else:
+            stop_hit = float(candle.High) >= float(signal["stop"])
+            target_hit = float(candle.Low) <= float(signal["target"])
+        if stop_hit and target_hit:
+            return "AMBIGUOUS", stamp.isoformat(), "Both stop and target inside the same M5 candle; excluded from performance totals"
+        if stop_hit:
+            return "LOSS", stamp.isoformat(), "Stop-loss touched first on completed M5 candle"
+        if target_hit:
+            return "WIN", stamp.isoformat(), "Take-profit touched first on completed M5 candle"
+    return "", "", ""
+
+def update_outcomes():
+    """Update unresolved signals using completed M5 OHLC; never guess ambiguous bars."""
+    if not LOG_FILE.exists():
+        return
+    with LOG_FILE.open("r",newline="",encoding="utf-8") as f:
+        reader=csv.DictReader(f)
+        rows=list(reader)
+        old_fields=reader.fieldnames or []
+    if not rows:
+        return
+    cache={}
+    changed=False
+    for row in rows:
+        if row.get("outcome"):
+            continue
+        pair=row.get("pair","")
+        if not pair:
+            continue
+        try:
+            if pair not in cache:
+                cache[pair]=fetch_candles(pair,"5m")
+            outcome,stamp,detail=evaluate_trade_outcome(row,cache[pair])
+            if outcome:
+                row["outcome"],row["outcome_time_utc"],row["outcome_detail"]=outcome,stamp,detail
+                changed=True
+                log.info("Outcome recorded: %s %s %s",pair,outcome,stamp)
+        except Exception:
+            log.exception("Could not verify outcome for %s",pair)
+    if changed or old_fields != OUTCOME_FIELDS:
+        temp=LOG_FILE.with_suffix(".tmp")
+        with temp.open("w",newline="",encoding="utf-8") as f:
+            writer=csv.DictWriter(f,fieldnames=OUTCOME_FIELDS,extrasaction="ignore")
+            writer.writeheader()
+            writer.writerows(rows)
+        temp.replace(LOG_FILE)
 
 def format_alert(s):
     digits=3 if "JPY" in s["pair"] else 5
@@ -196,6 +258,7 @@ def scan_once():
     now=datetime.now(timezone.utc)
     if not in_session(now):
         log.info("Outside UK 05:00–23:00 session"); return
+    update_outcomes()
     state=load_state(); day=now.astimezone(UK).date().isoformat()
     day_key,pair_key=f"alerts:{day}",f"pairs:{day}"
     count=int(state.get(day_key,0)); sent=set(state.get(pair_key,[]))
