@@ -137,11 +137,27 @@ def detect_sweep(m5):
         chosen = max(bear_levels, key=lambda p:p[1]) if bear else max(bull_levels, key=lambda p:p[1])
         swept_level = chosen[2]
 
-        # Break must close through the short-term structure that preceded the sweep.
-        pre = m5.iloc[max(0,sweep_idx-4):sweep_idx]
-        if len(pre) < 3:
+        # The sweep must be followed by a break of a confirmed protected
+        # swing, not merely the lowest/highest of the last few noisy candles.
+        # This models the sequence in the reference diagram: take the prior
+        # swing liquidity, reject, break the opposing structure, then retest.
+        structure_start = max(2, sweep_idx-16)
+        protected_levels = []
+        for k in range(structure_start, sweep_idx-2):
+            if bear:
+                is_pivot = (float(lows.iloc[k]) < min(float(x) for x in lows.iloc[k-2:k])
+                            and float(lows.iloc[k]) <= min(float(x) for x in lows.iloc[k+1:k+3]))
+                if is_pivot:
+                    protected_levels.append((k, float(lows.iloc[k])))
+            else:
+                is_pivot = (float(highs.iloc[k]) > max(float(x) for x in highs.iloc[k-2:k])
+                            and float(highs.iloc[k]) >= max(float(x) for x in highs.iloc[k+1:k+3]))
+                if is_pivot:
+                    protected_levels.append((k, float(highs.iloc[k])))
+        if not protected_levels:
             continue
-        break_level = float(pre["Low"].min()) if bear else float(pre["High"].max())
+        # Most recent confirmed opposing swing is the structure that must break.
+        break_level = protected_levels[-1][1]
         broke = False
         for j in range(sweep_idx+1, len(m5)-1):
             candle = m5.iloc[j]
