@@ -119,6 +119,12 @@ def backtest_pair(pair: str, m5: pd.DataFrame, spread_pips: float, slippage_pips
             "signal_time_utc": decision_time.isoformat(),
             "fill_time_utc": m5.index[i + 1].isoformat(),
             "entry_fill": fill, "stop": stop, "target": target,
+            "m5_ema21_slope_atr": signal.get("m5_ema21_slope_atr"),
+            "m15_ema20_50_gap_atr": signal.get("m15_ema20_50_gap_atr"),
+            "h1_ema20_50_gap_atr": signal.get("h1_ema20_50_gap_atr"),
+            "confirmation_body_ratio": signal.get("confirmation_body_ratio"),
+            "confirmation_close_location": signal.get("confirmation_close_location"),
+            "pullback_distance_atr": signal.get("pullback_distance_atr"),
             "spread_pips_assumed": spread_pips, "slippage_pips_assumed": slippage_pips, "outcome": outcome,
             "exit_time_utc": exit_time, "result_R": pnl_r,
         })
