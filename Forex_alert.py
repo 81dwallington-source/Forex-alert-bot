@@ -412,6 +412,15 @@ def trend_direction(data):
 
     return "NONE"
 
+def higher_timeframe_alignment(m15_trend, h1_trend, direction):
+    """Require both completed higher timeframes to agree with the proposed trade."""
+    if m15_trend != direction:
+        return False, f"M15 trend ({m15_trend}) does not agree with setup ({direction})"
+    if h1_trend != direction:
+        return False, f"H1 trend ({h1_trend}) does not agree with M15 ({direction})"
+    return True, "M15 and H1 aligned"
+
+
 def detect_h1_swing_levels(data, lookback=120, left_bars=2, right_bars=2):
     """Return latest confirmed H1 pivot high/low using two closed bars either side."""
     if len(data) < left_bars + right_bars + 5:
@@ -764,8 +773,9 @@ def analyse_pair(ticker):
         return None, "M15 trend unclear"
 
     direction = m15_trend
-    if h1_trend != direction:
-        return None, f"H1 trend ({h1_trend}) does not agree with M15 ({direction})"
+    aligned, alignment_reason = higher_timeframe_alignment(m15_trend, h1_trend, direction)
+    if not aligned:
+        return None, alignment_reason
 
     # EMA21 is an entry area, not a one-sided trend gate. A pullback may briefly
     # cross it; the later setup-specific reclaim/break confirmation is the real trigger.
