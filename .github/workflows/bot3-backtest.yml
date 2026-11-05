@@ -59,11 +59,11 @@ jobs:
           s = p.read_text()
           s = s.replace(
               "m15 = m15_all.loc[m15_all.index + pd.Timedelta(minutes=15) <= decision_time]",
-              "m15 = m15_all.loc[m15_all.index + pd.Timedelta(minutes=15) <= decision_time].tail(100)"
+              "m15_end = m15_all.index.searchsorted(decision_time - pd.Timedelta(minutes=15), side='right')\n        m15 = m15_all.iloc[max(0, m15_end - 100):m15_end]"
           )
           s = s.replace(
               "h1 = h1_all.loc[h1_all.index + pd.Timedelta(hours=1) <= decision_time]",
-              "h1 = h1_all.loc[h1_all.index + pd.Timedelta(hours=1) <= decision_time].tail(80)"
+              "h1_end = h1_all.index.searchsorted(decision_time - pd.Timedelta(hours=1), side='right')\n        h1 = h1_all.iloc[max(0, h1_end - 80):h1_end]"
           )
           s = s.replace("history = m5.iloc[:i + 1]", "history = m5.iloc[max(0, i - 299):i + 1]")
           if "history = m5.iloc[max(0, i - 299):i + 1]" not in s:
