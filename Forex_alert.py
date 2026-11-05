@@ -9,6 +9,7 @@ import csv
 import time
 
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from pathlib import Path
 
@@ -1242,6 +1243,11 @@ def read_performance_report():
 
 
 def main():
+
+    uk_now = datetime.now(ZoneInfo("Europe/London"))
+    if not 5 <= uk_now.hour < 23:
+        log(f"Outside UK scan window (05:00-23:00); current UK time {uk_now:%H:%M}. Skipping scan.")
+        return
 
     log("Starting forex scan")
 
