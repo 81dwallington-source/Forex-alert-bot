@@ -17,7 +17,7 @@ class LiquiditySweepTests(unittest.TestCase):
         self.assertIsNone(detect_sweep(df))
 
 
-    def test_m15_is_primary_trend_and_h1_is_context_only(self):
+    def test_h1_opposite_direction_rejects_setup(self):
         now = pd.Timestamp.now(tz="UTC")
         m5 = pd.DataFrame({"Open":[1.0], "High":[1.01], "Low":[0.99], "Close":[1.0]},
                           index=pd.DatetimeIndex([now - pd.Timedelta(minutes=5)]))
@@ -31,10 +31,25 @@ class LiquiditySweepTests(unittest.TestCase):
             patch("liquidity_sweep_bot.htf_direction", side_effect=["BUY", "SELL"]),
         ):
             signal, reason = build_signal(m5, m15, h1)
+        self.assertIsNone(signal)
+        self.assertIn("H1 trend (SELL)", reason)
+
+    def test_both_m15_and_h1_aligned_accept_setup(self):
+        now = pd.Timestamp.now(tz="UTC")
+        m5 = pd.DataFrame({"Open":[1.0], "High":[1.01], "Low":[0.99], "Close":[1.0]},
+                          index=pd.DatetimeIndex([now - pd.Timedelta(minutes=5)]))
+        m15 = pd.DataFrame({"Close":[1.0]})
+        h1 = pd.DataFrame({"Close":[1.0]})
+        setup = {"direction":"BUY", "entry":1.1000, "sweep_extreme":1.0990,
+                 "atr":0.0010, "candle_time":(now - pd.Timedelta(minutes=5)).isoformat(),
+                 "swept_level":1.0995, "pullback_level":1.1000}
+        with (
+            patch("liquidity_sweep_bot.detect_sweep", return_value=setup),
+            patch("liquidity_sweep_bot.htf_direction", side_effect=["BUY", "BUY"]),
+        ):
+            signal, reason = build_signal(m5, m15, h1)
         self.assertIsNotNone(signal, reason)
-        self.assertEqual(signal["m15"], "BUY")
-        self.assertEqual(signal["h1"], "SELL")
-        self.assertFalse(signal["h1_agrees"])
+        self.assertTrue(signal["h1_agrees"])
 
     def test_m15_opposite_direction_still_rejects_setup(self):
         now = pd.Timestamp.now(tz="UTC")
