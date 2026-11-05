@@ -231,8 +231,8 @@ class ForexBotRegressionTests(unittest.TestCase):
         self.assertEqual((bot.BUY_RSI_MIN, bot.BUY_RSI_MAX), (52, 65))
         self.assertEqual((bot.SELL_RSI_MIN, bot.SELL_RSI_MAX), (35, 48))
 
-    def test_minimum_quality_score_allows_h1_context_without_hard_veto(self):
-        self.assertEqual(bot.MIN_SCORE, 5)
+    def test_minimum_quality_score_requires_all_six_quality_checks(self):
+        self.assertEqual(bot.MIN_SCORE, 6)
 
     def test_ema50_is_context_not_a_hard_entry_veto(self):
         buy = pd.DataFrame([{"Close": 1.1020, "EMA21": 1.1010, "EMA50": 1.1030, "ATR": 0.0020}])
