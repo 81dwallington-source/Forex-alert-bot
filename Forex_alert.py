@@ -758,12 +758,14 @@ def analyse_pair(ticker):
 
     h1_trend = trend_direction(h1)
 
-    # M15 sets the trade direction. H1 is retained as context and contributes
-    # to the quality score; it no longer vetoes every otherwise valid M5 setup.
+    # Both higher timeframes must agree with the M5 trade direction.
+    # A conflicting or neutral H1 is a hard rejection, never just a score penalty.
     if m15_trend == "NONE":
         return None, "M15 trend unclear"
 
     direction = m15_trend
+    if h1_trend != direction:
+        return None, f"H1 trend ({h1_trend}) does not agree with M15 ({direction})"
 
     # EMA21 is an entry area, not a one-sided trend gate. A pullback may briefly
     # cross it; the later setup-specific reclaim/break confirmation is the real trigger.
