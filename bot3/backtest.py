@@ -16,7 +16,18 @@ def load_m5(path: Path) -> pd.DataFrame:
     df["time"] = pd.to_datetime(df["time"], utc=True, errors="raise")
     for col in ("Open", "High", "Low", "Close"):
         df[col] = pd.to_numeric(df[col], errors="raise")
-    df = df.drop_duplicates("time", keep="last").set_index("time").sort_index()
+    if df["time"].duplicated().any():
+        raise ValueError(f"{path}: duplicate timestamps found")
+    df = df.set_index("time").sort_index()
+    raw_count = len(df)
+    flat = (df[["Open", "High", "Low", "Close"]].nunique(axis=1) == 1)
+    flat_count = int(flat.sum())
+    # The Dukascopy export contains long runs of zero-range bars despite the
+    # downloader's include-flats=false option. Exclude them from the test.
+    df = df.loc[~flat].copy()
+    df.attrs["raw_rows"] = raw_count
+    df.attrs["flat_rows_removed"] = flat_count
+    df.attrs["gaps_over_5m"] = int((df.index.to_series().diff() > pd.Timedelta(minutes=5)).sum())
     if (df[["Open", "High", "Low", "Close"]] <= 0).any().any():
         raise ValueError(f"{path}: prices must be positive")
     if (df.High < df[["Open", "Close", "Low"]].max(axis=1)).any():
@@ -61,6 +72,10 @@ def backtest_pair(pair: str, m5: pd.DataFrame, spread_pips: float, slippage_pips
         candle_time = m5.index[i]
         decision_time = candle_time + pd.Timedelta(minutes=5)
         if not bot3.in_session(decision_time.to_pydatetime()):
+            i += 1
+            continue
+        # Never enter across a missing/closed M5 interval.
+        if m5.index[i + 1] != candle_time + pd.Timedelta(minutes=5):
             i += 1
             continue
         m15 = m15_all.loc[m15_all.index + pd.Timedelta(minutes=15) <= decision_time]
@@ -168,7 +183,9 @@ def main():
     ambiguous = int((out.outcome == "AMBIGUOUS").sum()) if not out.empty else 0
     total_r = float(closed.result_R.sum()) if not closed.empty else 0.0
     win_rate = 100 * wins / (wins + losses) if wins + losses else 0.0
-    print(f"Pair: {args.pair.upper()} | M5 bars: {len(bars)}")
+    print(f"Pair: {args.pair.upper()} | usable M5 bars: {len(bars)} | raw: {bars.attrs.get('raw_rows', len(bars))}")
+    print(f"Data QA: removed {bars.attrs.get('flat_rows_removed', 0)} zero-range bars; "
+          f"{bars.attrs.get('gaps_over_5m', 0)} gaps longer than 5 minutes")
     print(f"Signals: {len(out)} | Wins: {wins} | Losses: {losses} | Ambiguous: {ambiguous}")
     print(f"Win rate (closed unambiguous): {win_rate:.1f}% | Net R: {total_r:.2f}")
     print(f"Execution model: BID OHLC + {args.spread_pips:.2f} pip full spread + {args.slippage_pips:.2f} pip adverse slippage per fill")
