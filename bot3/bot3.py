@@ -189,7 +189,7 @@ def format_alert(s):
     return (f"🟢 FOREX BOT 3 — TRADE SIGNAL\nPair: {s['pair']}\nDirection: {s['direction']}\n"
         f"Entry reference: {fmt(s['entry'])}\nStop-loss: {fmt(s['stop'])}\n"
         f"Take-profit: {fmt(s['target'])}\nPlanned R:R: 1:{s['rr']:.1f}\n"
-        f"Confirmed M5 swing: {fmt(s['swing'])}\nRisk advisory: max {RISK_ADVISORY_PERCENT:.2f}% (manual sizing required)\n"
+        f"Confirmed M5 swing: {fmt(s['swing'])}\nBid/ask: {fmt(s['live_bid'])} / {fmt(s['live_ask'])} | spread: {fmt(s['spread'])}\nQuote timestamp: {s['quote_time']}\nRisk advisory: max {RISK_ADVISORY_PERCENT:.2f}% (manual sizing required)\n"
         f"Data: {DATA_SOURCE}\nCheck broker price and spread before entry. No automatic trading.")
 
 def scan_once():
