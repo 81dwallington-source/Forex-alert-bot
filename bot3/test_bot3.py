@@ -2,10 +2,28 @@ import unittest
 from datetime import datetime, timezone
 from unittest.mock import patch, Mock
 import pandas as pd
+import tempfile
+from pathlib import Path
 from bot3.bot3 import in_session, trend_direction, confirmed_pivots, fetch_live_quote, evaluate_trade_outcome
-from bot3.backtest import midpoint_stop_to_executable
+from bot3.backtest import midpoint_stop_to_executable, load_m5
 
 class Bot3Tests(unittest.TestCase):
+    def test_backtest_loader_removes_zero_range_stale_bars(self):
+        frame = pd.DataFrame({
+            "time": pd.date_range("2026-01-01", periods=5, freq="5min", tz="UTC").astype(str),
+            "Open": [1.1, 1.1, 1.1, 1.1001, 1.1002],
+            "High": [1.1, 1.1, 1.1, 1.1002, 1.1003],
+            "Low":  [1.1, 1.1, 1.1, 1.1000, 1.1001],
+            "Close":[1.1, 1.1, 1.1, 1.1001, 1.1002],
+        })
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "bars.csv"
+            frame.to_csv(path, index=False)
+            loaded = load_m5(path)
+        self.assertEqual(len(loaded), 2)
+        self.assertEqual(loaded.attrs["raw_rows"], 5)
+        self.assertEqual(loaded.attrs["flat_rows_removed"], 3)
+
     def test_midpoint_stop_converts_to_correct_executable_side(self):
         half_spread = 0.000075
         self.assertAlmostEqual(midpoint_stop_to_executable(1.25000, "BUY", half_spread), 1.249925)
