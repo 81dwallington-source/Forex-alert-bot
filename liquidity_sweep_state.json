@@ -1,5 +1,7 @@
 {
   "date": "2026-11-05",
-  "alerts": 0,
-  "pairs": []
+  "alerts": 1,
+  "pairs": [
+    "CHFJPY=X"
+  ]
 }
