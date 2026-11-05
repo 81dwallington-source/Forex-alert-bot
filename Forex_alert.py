@@ -80,7 +80,7 @@ STRUCTURE_PIVOT_RIGHT_BARS = 2
 STRUCTURE_STOP_BUFFER_ATR = 0.25
 MAX_STOP_DISTANCE_ATR = 4.5
 
-MIN_SCORE = 5
+MIN_SCORE = 6
 
 # Keep the two actionable M5 patterns; M15 is the primary trend filter.
 # H1 is contextual confirmation rather than a second absolute gate.
