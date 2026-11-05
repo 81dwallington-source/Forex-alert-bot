@@ -38,6 +38,18 @@ class LiquiditySweepTests(unittest.TestCase):
                           index=pd.date_range("2026-01-01",periods=n,freq="5min",tz="UTC"))
         self.assertIsNone(detect_sweep(df))
 
+    def test_swing_level_rejected_if_price_already_closed_through(self):
+        from liquidity_sweep_bot import swing_level_is_fresh
+        closes = pd.Series([1.1000, 1.1001, 1.1002, 1.1003, 1.1006, 1.1002])
+        self.assertFalse(swing_level_is_fresh(closes, 0, 5, 1.1005, "SELL"))
+        self.assertTrue(swing_level_is_fresh(closes, 0, 3, 1.1005, "SELL"))
+
+    def test_buy_swing_level_rejected_if_price_already_closed_below(self):
+        from liquidity_sweep_bot import swing_level_is_fresh
+        closes = pd.Series([1.1000, 1.0999, 1.0998, 1.0997, 1.0994, 1.0998])
+        self.assertFalse(swing_level_is_fresh(closes, 0, 5, 1.0995, "BUY"))
+        self.assertTrue(swing_level_is_fresh(closes, 0, 3, 1.0995, "BUY"))
+
     def test_h1_opposite_direction_rejects_setup(self):
         now = pd.Timestamp.now(tz="UTC")
         m5 = pd.DataFrame({"Open":[1.0], "High":[1.01], "Low":[0.99], "Close":[1.0]},
