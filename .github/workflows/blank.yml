@@ -10,9 +10,8 @@ on:
       - "scan_status.txt"
   workflow_dispatch:
   schedule:
-    # Start one hourly worker; it performs twelve scans, five minutes apart.
-    - cron: "3 21-23 * * 0"
-    - cron: "3 * * * 1-5"
+    # Start an hourly worker; Python enforces the UK-local 05:00-23:00 window (GMT/BST aware).
+    - cron: "0 * * * *"
 
 # Keep only one bot scan active at a time. This protects signal state/history
 # from concurrent writes and prevents overlapping scans from sending duplicates.
