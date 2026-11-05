@@ -1,4 +1,4 @@
-name: Bot 3 historical backtest (GBPUSD) — validation run
+name: Bot 3 historical backtest (GBPUSD) — validation v2
 
 on:
   push:
