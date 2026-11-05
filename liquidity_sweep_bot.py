@@ -106,8 +106,22 @@ def detect_sweep(m5):
         rng, body = h-l, abs(c-o)
         if rng <= 0:
             continue
-        bear_levels = [p for p in pivots if p[0]=="HIGH" and h >= p[2]+penetration and c < p[2]]
-        bull_levels = [p for p in pivots if p[0]=="LOW" and l <= p[2]-penetration and c > p[2]]
+        # A valid liquidity level must still be intact immediately before
+        # the sweep. If price previously CLOSED through it, it is no longer
+        # fresh liquidity and cannot be counted as a new sweep.
+        fresh_bear_levels = []
+        fresh_bull_levels = []
+        for p in pivots:
+            kind, pivot_idx, level = p
+            between = closes.iloc[pivot_idx+3:sweep_idx]
+            if kind == "HIGH" and h >= level+penetration and c <= level-0.05*atr:
+                if len(between) == 0 or not (between > level).any():
+                    fresh_bear_levels.append(p)
+            elif kind == "LOW" and l <= level-penetration and c >= level+0.05*atr:
+                if len(between) == 0 or not (between < level).any():
+                    fresh_bull_levels.append(p)
+        bear_levels = fresh_bear_levels
+        bull_levels = fresh_bull_levels
         bear = bool(bear_levels) and c < o and h-max(o,c) >= 0.20*atr and (c-l)/rng <= 0.60 and body >= 0.10*atr
         bull = bool(bull_levels) and c > o and min(o,c)-l >= 0.20*atr and (c-l)/rng >= 0.40 and body >= 0.10*atr
         if not bear and not bull:
