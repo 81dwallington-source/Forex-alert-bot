@@ -16,7 +16,7 @@ on:
     - cron: "0 * * * 1-5"
 
 concurrency:
-  group: forex-bot-3-independent
+  group: forex-bot-3-independent-${{ github.event_name }}
   cancel-in-progress: false
 permissions:
   contents: write
