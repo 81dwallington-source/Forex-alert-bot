@@ -90,7 +90,7 @@ def confirmed_pivots(frame, side, lookback=30, left=2, right=2):
             found.append((i,float(value)))
     return found
 
-def build_signal(pair,m5,m15,h1,live_price=None,live_stamp=None,now=None):
+def build_signal(pair,m5,m15,h1,live_price=None,live_stamp=None,live_bid=None,live_ask=None,now=None):
     now = now or datetime.now(timezone.utc)
     now_ts = pd.Timestamp(now)
     now_utc = now_ts.tz_convert("UTC") if now_ts.tzinfo else now_ts.tz_localize("UTC")
@@ -133,23 +133,39 @@ def build_signal(pair,m5,m15,h1,live_price=None,live_stamp=None,now=None):
         risk=stop-entry
         if risk<=0 or risk>MAX_STOP_ATR*atr: return None
         target=entry-risk*MIN_RR
-    if live_price is None or live_stamp is None: return None
+    if live_price is None or live_stamp is None or live_bid is None or live_ask is None: return None
     live_time=pd.Timestamp(live_stamp)
     if live_time.tzinfo is None: live_time=live_time.tz_localize("UTC")
-    live_age=(now_utc-live_time.tz_convert("UTC")).total_seconds()/60
-    if live_age < -1 or live_age > 6 or live_price<=0: return None
-    if abs(float(live_price)-entry)>MAX_ENTRY_DRIFT_ATR*atr: return None
+    live_age_seconds=(now_utc-live_time.tz_convert("UTC")).total_seconds()
+    if live_age_seconds < -60 or live_age_seconds > 120: return None
+    bid,ask,mid=float(live_bid),float(live_ask),float(live_price)
+    if bid<=0 or ask<=bid or mid<=0 or not (bid<=mid<=ask): return None
+    spread=ask-bid
+    if spread > 0.15*atr: return None
+    if abs(mid-entry)>MAX_ENTRY_DRIFT_ATR*atr: return None
     return {"pair":pair,"direction":direction,"entry":entry,"stop":stop,"target":target,
         "rr":MIN_RR,"atr":atr,"swing":swing,"candle_time":m5.index[-1].isoformat(),
-        "live_price":float(live_price),"data_source":DATA_SOURCE}
+        "live_price":mid,"live_bid":bid,"live_ask":ask,"spread":spread,
+        "quote_time":live_time.isoformat(),"data_source":DATA_SOURCE}
 
-def fetch_live_quote(pair):
-    r=SESSION.get(f"https://biquote.io/api/{pair}/ohlc",params={"interval":"5m","limit":10},timeout=15)
+def fetch_live_quote(pair, now=None):
+    # Use the dedicated tick endpoint, never the close of an unfinished candle as a quote.
+    r=SESSION.get(f"https://biquote.io/api/{pair}",params={"allowStale":"false"},timeout=15)
     r.raise_for_status()
-    bars=[b for b in (r.json().get("bars") or []) if b.get("isOpen") is True]
-    if not bars: return None,None
-    bar=max(bars,key=lambda b:pd.to_datetime(b.get("openTime"),utc=True))
-    return float(bar["close"]),pd.to_datetime(bar["openTime"],utc=True)
+    tick=r.json()
+    if tick.get("marketState") != "open" or tick.get("stale") is not False:
+        raise ValueError(f"{pair}: market is closed or quote is marked stale")
+    bid,ask,mid=float(tick["bid"]),float(tick["ask"]),float(tick["mid"])
+    stamp=pd.to_datetime(tick["timestamp"],utc=True)
+    now_ts=pd.Timestamp(now or datetime.now(timezone.utc))
+    if now_ts.tzinfo is None: now_ts=now_ts.tz_localize("UTC")
+    age=(now_ts.tz_convert("UTC")-stamp).total_seconds()
+    reported_age=float(tick.get("quoteAgeSeconds",age))
+    if age < -60 or age > 120 or reported_age < 0 or reported_age > 120:
+        raise ValueError(f"{pair}: quote is too old or timestamp is invalid ({age:.0f}s)")
+    if bid<=0 or ask<=bid or mid<=0 or not (bid<=mid<=ask):
+        raise ValueError(f"{pair}: invalid bid/ask/mid quote")
+    return mid,stamp,bid,ask
 
 def send_telegram(message):
     if not TOKEN or not CHAT_ID: raise RuntimeError("Telegram secrets missing")
@@ -188,8 +204,8 @@ def scan_once():
         if MAX_ONE_ALERT_PER_PAIR_PER_UK_DAY and pair in sent: continue
         try:
             m5=fetch_candles(pair,"5m"); m15=fetch_candles(pair,"15m"); h1=fetch_candles(pair,"1h")
-            price,stamp=fetch_live_quote(pair)
-            s=build_signal(pair,m5,m15,h1,price,stamp,now)
+            price,stamp,bid,ask=fetch_live_quote(pair,now)
+            s=build_signal(pair,m5,m15,h1,price,stamp,bid,ask,now)
             if s:
                 send_telegram(format_alert(s)); log_signal(s)
                 count+=1; sent.add(pair); state[day_key]=count; state[pair_key]=sorted(sent); save_state(state)
