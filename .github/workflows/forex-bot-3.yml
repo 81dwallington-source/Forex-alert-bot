@@ -1,0 +1,55 @@
+name: Forex Bot 3 — Independent
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 * * * 1-5"
+
+concurrency:
+  group: forex-bot-3-independent
+  cancel-in-progress: false
+permissions:
+  contents: write
+
+jobs:
+  bot3:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Regression tests
+        run: python -m unittest -v bot3.test_bot3
+      - name: Run independent scans
+        env:
+          TELEGRAM_BOT_TOKEN: \${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: \${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          cycles=1
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then cycles=12; fi
+          failures=0
+          for cycle in $(seq 1 "$cycles"); do
+            echo "Bot 3 scan $cycle/$cycles"
+            if ! python -m bot3.bot3; then failures=$((failures + 1)); fi
+            if [ "$cycle" -lt "$cycles" ]; then sleep 300; fi
+          done
+          if [ "$failures" -gt 0 ]; then exit 1; fi
+      - name: Save Bot 3 state and signal log
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bot3_state.json bot3_signal_log.csv 2>/dev/null || true
+          if ! git diff --cached --quiet; then
+            git commit -m "Save Bot 3 independent signal state [skip ci]"
+            git push origin HEAD:main
+          fi
