@@ -36,8 +36,8 @@ jobs:
       - name: Run independent scans
         if: github.event_name != 'pull_request'
         env:
-          TELEGRAM_BOT_TOKEN: \${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: \${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           cycles=1
           if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then cycles=12; fi
@@ -50,7 +50,6 @@ jobs:
           if [ "$failures" -gt 0 ]; then exit 1; fi
       - name: Save Bot 3 state and signal log
         if: always() && github.event_name != 'pull_request'
-        if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
