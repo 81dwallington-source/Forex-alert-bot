@@ -87,103 +87,169 @@ def swing_level_is_fresh(closes, pivot_idx, sweep_idx, level, direction):
     return False
 
 def detect_sweep(m5):
-    """Require a confirmed swing-liquidity sweep, structure break, then EMA21 retest."""
-    if len(m5) < 40:
+    """
+    Strict sequence: confirmed swing sweep/rejection -> later M5 structure
+    close-break -> separate EMA21 retest candle -> separate confirmation
+    close through the retest candle. The final candle is the entry trigger.
+    """
+    if len(m5) < 50:
         return None
     atr = atr_value(m5.iloc[:-1])
     if not atr or atr <= 0:
         return None
-    highs, lows = m5["High"].astype(float), m5["Low"].astype(float)
-    opens, closes = m5["Open"].astype(float), m5["Close"].astype(float)
-    ema21 = closes.ewm(span=21, adjust=False).mean()
-    pullback = m5.iloc[-1]
-    ema_now = float(ema21.iloc[-1])
-    tolerance = 0.12 * atr
-    penetration = max(0.08 * atr, float(closes.iloc[-1]) * 0.000015)
 
-    first_sweep, last_sweep = max(4, len(m5)-10), len(m5)-4
-    for sweep_idx in range(last_sweep, first_sweep-1, -1):
-        # A level must be a confirmed pivot: two candles on each side.
+    highs = m5["High"].astype(float)
+    lows = m5["Low"].astype(float)
+    opens = m5["Open"].astype(float)
+    closes = m5["Close"].astype(float)
+    ema21 = closes.ewm(span=21, adjust=False).mean()
+
+    retest_idx = len(m5) - 2
+    confirm_idx = len(m5) - 1
+    retest = m5.iloc[retest_idx]
+    confirm = m5.iloc[confirm_idx]
+    ro, rh, rl, rc = map(float, (retest["Open"], retest["High"], retest["Low"], retest["Close"]))
+    co, ch, cl, cc = map(float, (confirm["Open"], confirm["High"], confirm["Low"], confirm["Close"]))
+    retest_ema = float(ema21.iloc[retest_idx])
+    confirm_ema = float(ema21.iloc[confirm_idx])
+
+    tolerance = 0.10 * atr
+    penetration = max(0.10 * atr, float(closes.iloc[-1]) * 0.00002)
+    min_wick = 0.30 * atr
+    min_body = 0.10 * atr
+
+    # Reserve the final two completed candles for retest and confirmation.
+    first_sweep = max(4, len(m5) - 14)
+    last_sweep = len(m5) - 5
+
+    for sweep_idx in range(last_sweep, first_sweep - 1, -1):
         pivots = []
-        for i in range(max(2, sweep_idx-24), sweep_idx-2):
-            if float(highs.iloc[i]) > max(float(x) for x in highs.iloc[i-2:i]) and float(highs.iloc[i]) >= max(float(x) for x in highs.iloc[i+1:i+3]):
-                pivots.append(("HIGH", i, float(highs.iloc[i])))
-            if float(lows.iloc[i]) < min(float(x) for x in lows.iloc[i-2:i]) and float(lows.iloc[i]) <= min(float(x) for x in lows.iloc[i+1:i+3]):
-                pivots.append(("LOW", i, float(lows.iloc[i])))
-        sweep = m5.iloc[sweep_idx]
-        o,h,l,c = map(float, (sweep["Open"], sweep["High"], sweep["Low"], sweep["Close"]))
-        rng, body = h-l, abs(c-o)
-        if rng <= 0:
+        for i in range(max(2, sweep_idx - 30), sweep_idx - 2):
+            pivot_high = float(highs.iloc[i])
+            pivot_low = float(lows.iloc[i])
+            if (pivot_high > max(float(x) for x in highs.iloc[i-2:i])
+                    and pivot_high >= max(float(x) for x in highs.iloc[i+1:i+3])):
+                pivots.append(("HIGH", i, pivot_high))
+            if (pivot_low < min(float(x) for x in lows.iloc[i-2:i])
+                    and pivot_low <= min(float(x) for x in lows.iloc[i+1:i+3])):
+                pivots.append(("LOW", i, pivot_low))
+
+        so, sh, sl, sc = map(float, (
+            m5.iloc[sweep_idx]["Open"], m5.iloc[sweep_idx]["High"],
+            m5.iloc[sweep_idx]["Low"], m5.iloc[sweep_idx]["Close"]
+        ))
+        candle_range = sh - sl
+        if candle_range <= 0:
             continue
-        # A valid liquidity level must still be intact immediately before
-        # the sweep. If price previously CLOSED through it, it is no longer
-        # fresh liquidity and cannot be counted as a new sweep.
-        fresh_bear_levels = []
-        fresh_bull_levels = []
-        for p in pivots:
-            kind, pivot_idx, level = p
-            if kind == "HIGH" and h >= level+penetration and c <= level-0.05*atr:
-                if swing_level_is_fresh(closes, pivot_idx, sweep_idx, level, "SELL"):
-                    fresh_bear_levels.append(p)
-            elif kind == "LOW" and l <= level-penetration and c >= level+0.05*atr:
-                if swing_level_is_fresh(closes, pivot_idx, sweep_idx, level, "BUY"):
-                    fresh_bull_levels.append(p)
-        bear_levels = fresh_bear_levels
-        bull_levels = fresh_bull_levels
-        bear = bool(bear_levels) and c < o and h-max(o,c) >= 0.20*atr and (c-l)/rng <= 0.60 and body >= 0.10*atr
-        bull = bool(bull_levels) and c > o and min(o,c)-l >= 0.20*atr and (c-l)/rng >= 0.40 and body >= 0.10*atr
-        if not bear and not bull:
+
+        bearish_levels = [
+            p for p in pivots if p[0] == "HIGH"
+            and sh >= p[2] + penetration
+            and sc <= p[2] - 0.05 * atr
+            and swing_level_is_fresh(closes, p[1], sweep_idx, p[2], "SELL")
+        ]
+        bullish_levels = [
+            p for p in pivots if p[0] == "LOW"
+            and sl <= p[2] - penetration
+            and sc >= p[2] + 0.05 * atr
+            and swing_level_is_fresh(closes, p[1], sweep_idx, p[2], "BUY")
+        ]
+
+        bearish_rejection = (
+            bool(bearish_levels) and sc < so
+            and sh - max(so, sc) >= min_wick
+            and (sc - sl) / candle_range <= 0.55
+            and abs(sc - so) >= min_body
+        )
+        bullish_rejection = (
+            bool(bullish_levels) and sc > so
+            and min(so, sc) - sl >= min_wick
+            and (sc - sl) / candle_range >= 0.45
+            and abs(sc - so) >= min_body
+        )
+        if not bearish_rejection and not bullish_rejection:
             continue
-        chosen = max(bear_levels, key=lambda p:p[1]) if bear else max(bull_levels, key=lambda p:p[1])
+
+        direction = "SELL" if bearish_rejection else "BUY"
+        chosen_levels = bearish_levels if direction == "SELL" else bullish_levels
+        chosen = max(chosen_levels, key=lambda p: p[1])
         swept_level = chosen[2]
 
-        # The sweep must be followed by a break of a confirmed protected
-        # swing, not merely the lowest/highest of the last few noisy candles.
-        # This models the sequence in the reference diagram: take the prior
-        # swing liquidity, reject, break the opposing structure, then retest.
-        structure_start = max(2, sweep_idx-16)
-        protected_levels = []
-        for k in range(structure_start, sweep_idx-2):
-            if bear:
-                is_pivot = (float(lows.iloc[k]) < min(float(x) for x in lows.iloc[k-2:k])
-                            and float(lows.iloc[k]) <= min(float(x) for x in lows.iloc[k+1:k+3]))
+        # Find the latest confirmed opposing pivot that existed before sweep.
+        structure_pivots = []
+        for k in range(max(2, sweep_idx - 24), sweep_idx - 2):
+            if direction == "SELL":
+                is_pivot = (
+                    float(lows.iloc[k]) < min(float(x) for x in lows.iloc[k-2:k])
+                    and float(lows.iloc[k]) <= min(float(x) for x in lows.iloc[k+1:k+3])
+                )
                 if is_pivot:
-                    protected_levels.append((k, float(lows.iloc[k])))
+                    structure_pivots.append((k, float(lows.iloc[k])))
             else:
-                is_pivot = (float(highs.iloc[k]) > max(float(x) for x in highs.iloc[k-2:k])
-                            and float(highs.iloc[k]) >= max(float(x) for x in highs.iloc[k+1:k+3]))
+                is_pivot = (
+                    float(highs.iloc[k]) > max(float(x) for x in highs.iloc[k-2:k])
+                    and float(highs.iloc[k]) >= max(float(x) for x in highs.iloc[k+1:k+3])
+                )
                 if is_pivot:
-                    protected_levels.append((k, float(highs.iloc[k])))
-        if not protected_levels:
+                    structure_pivots.append((k, float(highs.iloc[k])))
+
+        if not structure_pivots:
             continue
-        # Most recent confirmed opposing swing is the structure that must break.
-        break_level = protected_levels[-1][1]
-        broke = False
-        for j in range(sweep_idx+1, len(m5)-1):
-            candle = m5.iloc[j]
-            cj, oj = float(candle["Close"]), float(candle["Open"])
-            if (bear and cj < break_level and cj < oj) or (bull and cj > break_level and cj > oj):
-                broke = True
+        break_level = structure_pivots[-1][1]
+
+        # A candle CLOSE must break structure after the sweep and before retest.
+        break_idx = None
+        for j in range(sweep_idx + 1, retest_idx):
+            bj = m5.iloc[j]
+            bo, bc = float(bj["Open"]), float(bj["Close"])
+            if direction == "SELL" and bc < break_level and bc < bo:
+                break_idx = j
                 break
-        if not broke:
+            if direction == "BUY" and bc > break_level and bc > bo:
+                break_idx = j
+                break
+        if break_idx is None:
             continue
 
-        # Last closed candle must be a separate EMA21 retest and rejection.
-        po, ph, pl, pc = map(float, (pullback["Open"],pullback["High"],pullback["Low"],pullback["Close"]))
-        if bear:
-            touched = ph >= ema_now-tolerance
-            confirmed = touched and pc < ema_now and pc < po and pc < break_level
-            if confirmed:
-                return {"direction":"SELL","sweep_extreme":h,"entry":pc,"atr":atr,
-                        "candle_time":m5.index[-1].isoformat(),"swept_level":swept_level,
-                        "break_level":break_level,"pullback_level":ema_now}
+        # Retest is a separate candle, tested against its own EMA21 value.
+        if direction == "SELL":
+            retest_ok = (
+                rh >= retest_ema - tolerance and rc < retest_ema
+                and rc < ro and rc < break_level
+                and retest_ema < float(ema21.iloc[max(0, retest_idx - 3)])
+            )
+            confirmation_ok = (
+                cc < co and cc < rl and cc < confirm_ema and cc < break_level
+            )
         else:
-            touched = pl <= ema_now+tolerance
-            confirmed = touched and pc > ema_now and pc > po and pc > break_level
-            if confirmed:
-                return {"direction":"BUY","sweep_extreme":l,"entry":pc,"atr":atr,
-                        "candle_time":m5.index[-1].isoformat(),"swept_level":swept_level,
-                        "break_level":break_level,"pullback_level":ema_now}
+            retest_ok = (
+                rl <= retest_ema + tolerance and rc > retest_ema
+                and rc > ro and rc > break_level
+                and retest_ema > float(ema21.iloc[max(0, retest_idx - 3)])
+            )
+            confirmation_ok = (
+                cc > co and cc > rh and cc > confirm_ema and cc > break_level
+            )
+
+        if not (retest_ok and confirmation_ok):
+            continue
+
+        sweep_extreme = sh if direction == "SELL" else sl
+        return {
+            "direction": direction,
+            "sweep_extreme": sweep_extreme,
+            "entry": cc,
+            "atr": atr,
+            "candle_time": m5.index[confirm_idx].isoformat(),
+            "swept_level": swept_level,
+            "break_level": break_level,
+            "break_candle_time": m5.index[break_idx].isoformat(),
+            "retest_level": retest_ema,
+            "retest_candle_time": m5.index[retest_idx].isoformat(),
+            "confirmation_candle_high": ch,
+            "confirmation_candle_low": cl,
+        }
+
     return None
 
 def build_signal(m5,m15,h1):
@@ -269,12 +335,14 @@ def main():
             msg=(f"FOREX LIQUIDITY SWEEP — M5 REVERSAL\n"
                  f"Pair: {pair.replace('=X','').replace('USD','/USD') if False else pair.replace('=X','')}\n"
                  f"Direction: {signal['direction']}\n"
-                 f"Setup: SWEEP + REJECTION + BREAK + EMA21 PULLBACK\n"
+                 f"Setup: CONFIRMED SWING SWEEP + REJECTION + STRUCTURE CLOSE-BREAK + EMA21 RETEST + NEXT-CANDLE BREAK\n"
                  f"Entry reference: {fmt(signal['entry'])}\n"
                  f"Stop-loss: {fmt(signal['sl'])}\n"
                  f"Take-profit: {fmt(signal['tp'])}\n"
                  f"Planned risk/reward: 1:1\n"
                  f"Swept level: {fmt(signal['swept_level'])}\n"
+                 f"Structure break: {fmt(signal['break_level'])} at {signal['break_candle_time']}\n"
+                 f"EMA21 retest: {fmt(signal['retest_level'])} at {signal['retest_candle_time']}\n"
                  f"M15 trend: {signal['m15']} | H1 trend: {signal['h1']} (both aligned)\n"
                  f"Live public-feed price: {fmt(quote)}\n"
                  f"Data: {DATA_SOURCE}\n"
