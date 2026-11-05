@@ -1,7 +1,8 @@
 {
   "date": "2026-11-05",
-  "alerts": 1,
+  "alerts": 2,
   "pairs": [
-    "CHFJPY=X"
+    "CHFJPY=X",
+    "USDCAD=X"
   ]
 }
