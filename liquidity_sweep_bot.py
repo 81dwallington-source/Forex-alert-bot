@@ -77,6 +77,15 @@ def htf_direction(df):
     e50 = df["Close"].ewm(span=50, adjust=False).mean().iloc[-1]
     return "BUY" if e20 > e50 else "SELL" if e20 < e50 else "NONE"
 
+def swing_level_is_fresh(closes, pivot_idx, sweep_idx, level, direction):
+    """A swing level is stale if an intervening candle closed through it."""
+    intervening = closes.iloc[pivot_idx+3:sweep_idx]
+    if direction == "SELL":
+        return not (intervening > level).any()
+    if direction == "BUY":
+        return not (intervening < level).any()
+    return False
+
 def detect_sweep(m5):
     """Require a confirmed swing-liquidity sweep, structure break, then EMA21 retest."""
     if len(m5) < 40:
@@ -113,12 +122,11 @@ def detect_sweep(m5):
         fresh_bull_levels = []
         for p in pivots:
             kind, pivot_idx, level = p
-            between = closes.iloc[pivot_idx+3:sweep_idx]
             if kind == "HIGH" and h >= level+penetration and c <= level-0.05*atr:
-                if len(between) == 0 or not (between > level).any():
+                if swing_level_is_fresh(closes, pivot_idx, sweep_idx, level, "SELL"):
                     fresh_bear_levels.append(p)
             elif kind == "LOW" and l <= level-penetration and c >= level+0.05*atr:
-                if len(between) == 0 or not (between < level).any():
+                if swing_level_is_fresh(closes, pivot_idx, sweep_idx, level, "BUY"):
                     fresh_bull_levels.append(p)
         bear_levels = fresh_bear_levels
         bull_levels = fresh_bull_levels
