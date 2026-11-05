@@ -1,4 +1,4 @@
-name: Bot 3 historical backtest (GBPUSD) — validation v2
+name: Bot 3 multi-pair historical validation
 
 on:
   push:
@@ -15,7 +15,7 @@ permissions:
 jobs:
   backtest:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
         with:
@@ -28,54 +28,43 @@ jobs:
           node-version: '20'
       - name: Install Python dependencies
         run: python -m pip install pandas requests
-      - name: Download Dukascopy GBPUSD M5 history
+      - name: Download seven major-pair M5 histories
         run: |
+          set -e
           mkdir -p data
-          npx --yes dukascopy-node -i gbpusd -from 2024-01-01 -t m5 -f csv -dir data -fn gbpusd_m5 --batch-pause 1000 --retries 3
+          for pair in eurusd gbpusd usdjpy usdchf usdcad audusd nzdusd; do
+            echo "Downloading ${pair}"
+            npx --yes dukascopy-node -i "$pair" -from 2024-01-01 -t m5 -f csv -dir data -fn "${pair}_m5" --batch-pause 1000 --retries 3
+          done
       - name: Normalize historical candles
         run: |
           python - <<'PY'
           import pandas as pd
           from pathlib import Path
-          source = Path("data/gbpusd_m5.csv")
-          if not source.exists():
-              files = list(Path("data").glob("*.csv"))
-              if len(files) != 1:
-                  raise SystemExit(f"Could not identify downloaded CSV: {files}")
-              source = files[0]
-          df = pd.read_csv(source)
-          if "timestamp" not in df.columns:
-              raise SystemExit(f"Unexpected Dukascopy columns: {list(df.columns)}")
-          df["time"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True).astype(str)
-          df = df.rename(columns={"open":"Open","high":"High","low":"Low","close":"Close"})
-          df[["time","Open","High","Low","Close"]].to_csv("data/GBPUSD_M5_normalized.csv", index=False)
-          print(f"Prepared {len(df):,} completed historical M5 candles from {df.time.iloc[0]} to {df.time.iloc[-1]}")
+          for pair in ("EURUSD", "GBPUSD", "USDJPY", "USDCHF", "USDCAD", "AUDUSD", "NZDUSD"):
+              source = Path(f"data/{pair.lower()}_m5.csv")
+              if not source.exists():
+                  matches = list(Path("data").glob(f"{pair.lower()}_m5*.csv"))
+                  if len(matches) != 1:
+                      raise SystemExit(f"Could not identify {pair} CSV: {matches}")
+                  source = matches[0]
+              df = pd.read_csv(source)
+              if "timestamp" not in df.columns:
+                  raise SystemExit(f"{pair}: unexpected Dukascopy columns {list(df.columns)}")
+              df["time"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True).astype(str)
+              df = df.rename(columns={"open":"Open","high":"High","low":"Low","close":"Close"})
+              out = Path(f"data/{pair}_M5_normalized.csv")
+              df[["time","Open","High","Low","Close"]].to_csv(out, index=False)
+              print(f"{pair}: {len(df):,} M5 candles, {df.time.iloc[0]} to {df.time.iloc[-1]}")
           PY
-      - name: Apply bounded rolling windows for efficient point-in-time testing
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          p = Path("bot3/backtest.py")
-          s = p.read_text()
-          s = s.replace(
-              "m15 = m15_all.loc[m15_all.index + pd.Timedelta(minutes=15) <= decision_time]",
-              "m15_end = m15_all.index.searchsorted(decision_time - pd.Timedelta(minutes=15), side='right')\n        m15 = m15_all.iloc[max(0, m15_end - 100):m15_end]"
-          )
-          s = s.replace(
-              "h1 = h1_all.loc[h1_all.index + pd.Timedelta(hours=1) <= decision_time]",
-              "h1_end = h1_all.index.searchsorted(decision_time - pd.Timedelta(hours=1), side='right')\n        h1 = h1_all.iloc[max(0, h1_end - 80):h1_end]"
-          )
-          s = s.replace("history = m5.iloc[:i + 1]", "history = m5.iloc[max(0, i - 299):i + 1]")
-          if "history = m5.iloc[max(0, i - 299):i + 1]" not in s:
-              raise SystemExit("Backtest optimization patch failed")
-          p.write_text(s)
-          PY
-      - name: Run spread-sensitivity backtests
+      - name: Run pair-specific spread sensitivity backtests
         run: |
           set -e
-          for spread in 1.0 1.5 2.0; do
-            echo "===== Assumed GBPUSD full spread: ${spread} pips ====="
-            python -m bot3.backtest --pair GBPUSD --csv data/GBPUSD_M5_normalized.csv --spread-pips "$spread" --slippage-pips 0.2 --out "data/results_GBPUSD_${spread}pips.csv"
+          for pair in EURUSD GBPUSD USDJPY USDCHF USDCAD AUDUSD NZDUSD; do
+            for spread in 1.0 1.5; do
+              echo "===== ${pair} assumed full spread: ${spread} pips ====="
+              python -m bot3.backtest --pair "$pair" --csv "data/${pair}_M5_normalized.csv" --spread-pips "$spread" --slippage-pips 0.2 --out "data/results_${pair}_${spread}pips.csv"
+            done
           done
       - name: Report chronological in-sample and unseen out-of-sample results
         run: |
@@ -83,11 +72,13 @@ jobs:
           import pandas as pd
           from pathlib import Path
           rows = []
-          for path in sorted(Path("data").glob("results_GBPUSD_*pips.csv")):
+          for path in sorted(Path("data").glob("results_*pips.csv")):
               df = pd.read_csv(path)
               if df.empty:
                   continue
               df["signal_time_utc"] = pd.to_datetime(df["signal_time_utc"], utc=True)
+              pair = path.name.split("_")[1]
+              spread = path.name.split("_")[2].replace("pips.csv", "")
               for label, start, end in [
                   ("IN_SAMPLE_2024_2025", "2024-01-01", "2026-01-01"),
                   ("OUT_OF_SAMPLE_2026", "2026-01-01", "2027-01-01"),
@@ -98,7 +89,7 @@ jobs:
                   wins = int((closed.outcome == "WIN").sum())
                   losses = int((closed.outcome == "LOSS").sum())
                   rows.append({
-                      "file": path.name, "period": label,
+                      "pair": pair, "spread_pips": spread, "period": label,
                       "trades_including_ambiguous": len(part),
                       "wins": wins, "losses": losses,
                       "ambiguous": int((part.outcome == "AMBIGUOUS").sum()),
@@ -107,13 +98,13 @@ jobs:
                       "net_R": round(float(closed.result_R.sum()), 2) if not closed.empty else 0.0,
                   })
           report = pd.DataFrame(rows)
-          report.to_csv("data/chronological_validation_summary.csv", index=False)
+          report.to_csv("data/multi_pair_validation_summary.csv", index=False)
           print(report.to_string(index=False))
-          print("\n2026 is the unseen chronological test period; do not tune on it.")
+          print("\n2026 remains the unseen chronological test period. Do not tune rules against it.")
           PY
       - name: Upload historical data and results
         uses: actions/upload-artifact@v4
         with:
-          name: bot3-gbpusd-backtest
+          name: bot3-multi-pair-validation
           path: data/
           retention-days: 30
