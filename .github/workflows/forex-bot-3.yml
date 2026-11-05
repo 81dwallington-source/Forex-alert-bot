@@ -5,6 +5,12 @@ on:
     paths:
       - 'bot3/**'
       - '.github/workflows/forex-bot-3.yml'
+  push:
+    branches:
+      - 'bot3-independent-build-v2'
+    paths:
+      - 'bot3/**'
+      - '.github/workflows/forex-bot-3.yml'
   workflow_dispatch:
   schedule:
     - cron: "0 * * * 1-5"
@@ -48,6 +54,27 @@ jobs:
             if [ "$cycle" -lt "$cycles" ]; then sleep 300; fi
           done
           if [ "$failures" -gt 0 ]; then exit 1; fi
+      - name: Verify Bot 3 Telegram delivery
+        if: github.event_name == 'push'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python - <<'PY'
+          import os, requests
+          token = os.environ["TELEGRAM_BOT_TOKEN"]
+          chat_id = os.environ["TELEGRAM_CHAT_ID"]
+          response = requests.post(
+              f"https://api.telegram.org/bot{token}/sendMessage",
+              json={"chat_id": chat_id,
+                    "text": "BOT 3 CONNECTION TEST — Telegram delivery confirmed. This is a test, not a trade signal."},
+              timeout=20,
+          )
+          response.raise_for_status()
+          if not response.json().get("ok"):
+              raise SystemExit("Telegram rejected Bot 3 connection test")
+          print("Bot 3 Telegram delivery confirmed")
+          PY
       - name: Save Bot 3 state and signal log
         if: always() && github.event_name != 'pull_request'
         run: |
@@ -56,5 +83,5 @@ jobs:
           git add bot3_state.json bot3_signal_log.csv 2>/dev/null || true
           if ! git diff --cached --quiet; then
             git commit -m "Save Bot 3 independent signal state [skip ci]"
-            git push origin HEAD:main
+            git push origin HEAD:"$GITHUB_REF_NAME"
           fi
