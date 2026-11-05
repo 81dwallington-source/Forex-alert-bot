@@ -78,92 +78,74 @@ def htf_direction(df):
     return "BUY" if e20 > e50 else "SELL" if e20 < e50 else "NONE"
 
 def detect_sweep(m5):
-    """Require M5 sweep/reclaim, displacement break, then a confirmed EMA21 pullback."""
-    if len(m5) < LOOKBACK + 8:
+    """Require a confirmed swing-liquidity sweep, structure break, then EMA21 retest."""
+    if len(m5) < 40:
         return None
     atr = atr_value(m5.iloc[:-1])
     if not atr or atr <= 0:
         return None
-    ema21 = m5["Close"].ewm(span=21, adjust=False).mean()
+    highs, lows = m5["High"].astype(float), m5["Low"].astype(float)
+    opens, closes = m5["Open"].astype(float), m5["Close"].astype(float)
+    ema21 = closes.ewm(span=21, adjust=False).mean()
     pullback = m5.iloc[-1]
     ema_now = float(ema21.iloc[-1])
-    tolerance = 0.15 * atr
+    tolerance = 0.12 * atr
+    penetration = max(0.08 * atr, float(closes.iloc[-1]) * 0.000015)
 
-    # Sweep must be recent; the latest closed candle must be the pullback confirmation.
-    first_sweep = max(LOOKBACK, len(m5) - 8)
-    last_sweep = len(m5) - 3
-    for sweep_idx in range(last_sweep, first_sweep - 1, -1):
+    first_sweep, last_sweep = max(4, len(m5)-10), len(m5)-4
+    for sweep_idx in range(last_sweep, first_sweep-1, -1):
+        # A level must be a confirmed pivot: two candles on each side.
+        pivots = []
+        for i in range(max(2, sweep_idx-24), sweep_idx-1):
+            if float(highs.iloc[i]) > max(float(x) for x in highs.iloc[i-2:i]) and float(highs.iloc[i]) >= max(float(x) for x in highs.iloc[i+1:i+3]):
+                pivots.append(("HIGH", i, float(highs.iloc[i])))
+            if float(lows.iloc[i]) < min(float(x) for x in lows.iloc[i-2:i]) and float(lows.iloc[i]) <= min(float(x) for x in lows.iloc[i+1:i+3]):
+                pivots.append(("LOW", i, float(lows.iloc[i])))
         sweep = m5.iloc[sweep_idx]
-        prior = m5.iloc[sweep_idx-LOOKBACK:sweep_idx]
-        if len(prior) != LOOKBACK:
+        o,h,l,c = map(float, (sweep["Open"], sweep["High"], sweep["Low"], sweep["Close"]))
+        rng, body = h-l, abs(c-o)
+        if rng <= 0:
             continue
-        prior_low = float(prior["Low"].min())
-        prior_high = float(prior["High"].max())
-        body = abs(float(sweep["Close"] - sweep["Open"]))
-
-        bullish_sweep = (
-            float(sweep["Low"]) < prior_low
-            and float(sweep["Close"]) > prior_low
-            and float(sweep["Close"]) > float(sweep["Open"])
-            and body >= 0.20 * atr
-        )
-        bearish_sweep = (
-            float(sweep["High"]) > prior_high
-            and float(sweep["Close"]) < prior_high
-            and float(sweep["Close"]) < float(sweep["Open"])
-            and body >= 0.20 * atr
-        )
-        if not bullish_sweep and not bearish_sweep:
+        bear_levels = [p for p in pivots if p[0]=="HIGH" and h >= p[2]+penetration and c < p[2]]
+        bull_levels = [p for p in pivots if p[0]=="LOW" and l <= p[2]-penetration and c > p[2]]
+        bear = bool(bear_levels) and c < o and h-max(o,c) >= 0.20*atr and (c-l)/rng <= 0.60 and body >= 0.10*atr
+        bull = bool(bull_levels) and c > o and min(o,c)-l >= 0.20*atr and (c-l)/rng >= 0.40 and body >= 0.10*atr
+        if not bear and not bull:
             continue
+        chosen = max(bear_levels, key=lambda p:p[1]) if bear else max(bull_levels, key=lambda p:p[1])
+        swept_level = chosen[2]
 
-        break_idx = None
-        for j in range(sweep_idx + 1, len(m5) - 1):
+        # Break must close through the short-term structure that preceded the sweep.
+        pre = m5.iloc[max(0,sweep_idx-4):sweep_idx]
+        if len(pre) < 3:
+            continue
+        break_level = float(pre["Low"].min()) if bear else float(pre["High"].max())
+        broke = False
+        for j in range(sweep_idx+1, len(m5)-1):
             candle = m5.iloc[j]
-            if bullish_sweep and float(candle["Close"]) > float(sweep["High"]) and float(candle["Close"]) > float(candle["Open"]):
-                break_idx = j
+            cj, oj = float(candle["Close"]), float(candle["Open"])
+            if (bear and cj < break_level and cj < oj) or (bull and cj > break_level and cj > oj):
+                broke = True
                 break
-            if bearish_sweep and float(candle["Close"]) < float(sweep["Low"]) and float(candle["Close"]) < float(candle["Open"]):
-                break_idx = j
-                break
-        if break_idx is None:
+        if not broke:
             continue
 
-        if bullish_sweep:
-            touched = float(pullback["Low"]) <= ema_now + tolerance
-            confirmed = (
-                touched
-                and float(pullback["Close"]) > ema_now
-                and float(pullback["Close"]) > float(pullback["Open"])
-                and float(pullback["Close"]) > prior_low
-            )
+        # Last closed candle must be a separate EMA21 retest and rejection.
+        po, ph, pl, pc = map(float, (pullback["Open"],pullback["High"],pullback["Low"],pullback["Close"]))
+        if bear:
+            touched = ph >= ema_now-tolerance
+            confirmed = touched and pc < ema_now and pc < po and pc < break_level
             if confirmed:
-                return {
-                    "direction": "BUY",
-                    "sweep_extreme": float(sweep["Low"]),
-                    "entry": float(pullback["Close"]),
-                    "atr": atr,
-                    "candle_time": m5.index[-1].isoformat(),
-                    "swept_level": prior_low,
-                    "pullback_level": ema_now,
-                }
+                return {"direction":"SELL","sweep_extreme":h,"entry":pc,"atr":atr,
+                        "candle_time":m5.index[-1].isoformat(),"swept_level":swept_level,
+                        "break_level":break_level,"pullback_level":ema_now}
         else:
-            touched = float(pullback["High"]) >= ema_now - tolerance
-            confirmed = (
-                touched
-                and float(pullback["Close"]) < ema_now
-                and float(pullback["Close"]) < float(pullback["Open"])
-                and float(pullback["Close"]) < prior_high
-            )
+            touched = pl <= ema_now+tolerance
+            confirmed = touched and pc > ema_now and pc > po and pc > break_level
             if confirmed:
-                return {
-                    "direction": "SELL",
-                    "sweep_extreme": float(sweep["High"]),
-                    "entry": float(pullback["Close"]),
-                    "atr": atr,
-                    "candle_time": m5.index[-1].isoformat(),
-                    "swept_level": prior_high,
-                    "pullback_level": ema_now,
-                }
+                return {"direction":"BUY","sweep_extreme":l,"entry":pc,"atr":atr,
+                        "candle_time":m5.index[-1].isoformat(),"swept_level":swept_level,
+                        "break_level":break_level,"pullback_level":ema_now}
     return None
 
 def build_signal(m5,m15,h1):
