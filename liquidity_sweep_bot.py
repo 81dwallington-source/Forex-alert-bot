@@ -96,7 +96,7 @@ def detect_sweep(m5):
     for sweep_idx in range(last_sweep, first_sweep-1, -1):
         # A level must be a confirmed pivot: two candles on each side.
         pivots = []
-        for i in range(max(2, sweep_idx-24), sweep_idx-1):
+        for i in range(max(2, sweep_idx-24), sweep_idx-2):
             if float(highs.iloc[i]) > max(float(x) for x in highs.iloc[i-2:i]) and float(highs.iloc[i]) >= max(float(x) for x in highs.iloc[i+1:i+3]):
                 pivots.append(("HIGH", i, float(highs.iloc[i])))
             if float(lows.iloc[i]) < min(float(x) for x in lows.iloc[i-2:i]) and float(lows.iloc[i]) <= min(float(x) for x in lows.iloc[i+1:i+3]):
