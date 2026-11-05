@@ -70,7 +70,7 @@ def backtest_pair(pair: str, m5: pd.DataFrame, spread_pips: float, slippage_pips
             i += 1
             continue
 
-        # Conservative executable fill at the next candle open, including half-spread.
+        # Executable fill at next BID candle open: BUY pays full spread; SELL receives bid.
         next_open = float(m5.Open.iloc[i + 1])
         fill = next_open + spread + slippage if signal["direction"] == "BUY" else next_open - slippage
         if abs((next_open + spread / 2) - signal["entry"]) > bot3.MAX_ENTRY_DRIFT_ATR * signal["atr"]:
@@ -86,7 +86,7 @@ def backtest_pair(pair: str, m5: pd.DataFrame, spread_pips: float, slippage_pips
         outcome, exit_time, pnl_r = "OPEN", "", None
         for j in range(i + 1, len(m5)):
             bar = m5.iloc[j]
-            # Convert midpoint OHLC to executable exit-side prices.
+            # Convert BID OHLC to executable exit-side prices; SELL exits use ASK = BID + spread.
             if signal["direction"] == "BUY":
                 stop_hit = float(bar.Low) <= stop
                 target_hit = float(bar.High) >= target
@@ -109,6 +109,7 @@ def backtest_pair(pair: str, m5: pd.DataFrame, spread_pips: float, slippage_pips
                 break
             if gap_target or target_hit:
                 exit_px = (float(bar.Open) if signal["direction"] == "BUY" else float(bar.Open) + spread) if gap_target else target
+                exit_px = exit_px - slippage if signal["direction"] == "BUY" else exit_px + slippage
                 pnl = (exit_px - fill) if signal["direction"] == "BUY" else (fill - exit_px)
                 outcome, exit_time, pnl_r = "WIN", m5.index[j].isoformat(), pnl / risk
                 break
