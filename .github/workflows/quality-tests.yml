@@ -1,0 +1,38 @@
+name: Bot quality regression tests
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches:
+      - best-bot-quality-rebuild
+    paths:
+      - 'Forex_alert.py'
+      - 'test_bot.py'
+      - 'liquidity_sweep_bot.py'
+      - 'test_liquidity_sweep_bot.py'
+      - 'requirements.txt'
+      - '.github/workflows/quality-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  regression-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Run Bot 1 regression tests
+        run: python -m unittest -v test_bot.py
+      - name: Run Bot 2 regression tests
+        run: python -m unittest -v test_liquidity_sweep_bot.py
