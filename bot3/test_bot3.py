@@ -2,7 +2,7 @@ import unittest
 from datetime import datetime, timezone
 from unittest.mock import patch, Mock
 import pandas as pd
-from bot3.bot3 import in_session, trend_direction, confirmed_pivots, fetch_live_quote
+from bot3.bot3 import in_session, trend_direction, confirmed_pivots, fetch_live_quote, evaluate_trade_outcome
 
 class Bot3Tests(unittest.TestCase):
     def test_session_uses_uk_local_time(self):
@@ -57,5 +57,35 @@ class Bot3Tests(unittest.TestCase):
         get.return_value=response
         with self.assertRaisesRegex(ValueError,"quote is too old"):
             fetch_live_quote("EURUSD",datetime(2026,11,5,12,0,tzinfo=timezone.utc))
+
+
+    def test_outcome_tracker_records_first_target_hit(self):
+        signal={"direction":"BUY","entry":1.1000,"stop":1.0990,"target":1.1010,
+                "candle_time":"2026-11-05T10:00:00Z"}
+        candles=pd.DataFrame(
+            {"High":[1.1005,1.1012],"Low":[1.0995,1.1002],"Close":[1.1002,1.1011]},
+            index=pd.to_datetime(["2026-11-05T10:05:00Z","2026-11-05T10:10:00Z"]))
+        outcome,stamp,detail=evaluate_trade_outcome(signal,candles)
+        self.assertEqual(outcome,"WIN")
+        self.assertEqual(stamp,"2026-11-05T10:10:00+00:00")
+
+    def test_outcome_tracker_marks_same_candle_sl_tp_ambiguous(self):
+        signal={"direction":"SELL","entry":1.1000,"stop":1.1010,"target":1.0990,
+                "candle_time":"2026-11-05T10:00:00Z"}
+        candles=pd.DataFrame(
+            {"High":[1.1012],"Low":[1.0988],"Close":[1.1001]},
+            index=pd.to_datetime(["2026-11-05T10:05:00Z"]))
+        outcome,stamp,detail=evaluate_trade_outcome(signal,candles)
+        self.assertEqual(outcome,"AMBIGUOUS")
+        self.assertIn("Both stop and target",detail)
+
+    def test_outcome_tracker_does_not_reuse_signal_candle(self):
+        signal={"direction":"BUY","entry":1.1000,"stop":1.0990,"target":1.1010,
+                "candle_time":"2026-11-05T10:00:00Z"}
+        candles=pd.DataFrame(
+            {"High":[1.1012],"Low":[1.0995],"Close":[1.1011]},
+            index=pd.to_datetime(["2026-11-05T10:00:00Z"]))
+        outcome,stamp,detail=evaluate_trade_outcome(signal,candles)
+        self.assertEqual(outcome,"")
 
 if __name__=="__main__": unittest.main()
