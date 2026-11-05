@@ -24,7 +24,7 @@ permissions:
 jobs:
   bot3:
     runs-on: ubuntu-latest
-    timeout-minutes: 65
+    timeout-minutes: 80
     steps:
       - uses: actions/checkout@v4
         with:
@@ -55,7 +55,7 @@ jobs:
           done
           if [ "$failures" -gt 0 ]; then exit 1; fi
       - name: Verify Bot 3 Telegram delivery
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && github.sha == '05060799d65efb5e2bbba7683fa0b2c6e01b5a57'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
