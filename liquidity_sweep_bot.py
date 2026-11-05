@@ -176,11 +176,12 @@ def build_signal(m5,m15,h1):
         return None, f"M5 pullback confirmation stale ({fresh_age:.1f} min)"
     m15_dir = htf_direction(m15)
     h1_dir = htf_direction(h1)
-    # M15 is the primary trend filter. H1 is recorded as context rather
-    # than a hard veto, so a valid M5 sweep/pullback is not discarded solely
-    # because the higher timeframe is still lagging during a trend transition.
+    # Both higher timeframes are mandatory directional filters.
+    # Never let M15 override a conflicting H1 trend.
     if m15_dir != direction:
         return None, f"M15 trend ({m15_dir}) does not agree with the M5 setup"
+    if h1_dir != direction:
+        return None, f"H1 trend ({h1_dir}) does not agree with the M5 setup"
     entry = setup["entry"]
     atr = setup["atr"]
     buffer = max(0.10*atr, entry*0.00005)
@@ -254,8 +255,7 @@ def main():
                  f"Take-profit: {fmt(signal['tp'])}\n"
                  f"Planned risk/reward: 1:1\n"
                  f"Swept level: {fmt(signal['swept_level'])}\n"
-                 f"M15 trend: {signal['m15']} | H1 context: {signal['h1']} "
-                 f"({'aligned' if signal['h1_agrees'] else 'not aligned; M15 remains primary'})\n"
+                 f"M15 trend: {signal['m15']} | H1 trend: {signal['h1']} (both aligned)\n"
                  f"Live public-feed price: {fmt(quote)}\n"
                  f"Data: {DATA_SOURCE}\n"
                  f"Alert only — check spread and execution with your broker.")
