@@ -1,0 +1,84 @@
+name: Bot 3 historical backtest (GBPUSD)
+
+on:
+  push:
+    branches:
+      - bot3-independent-build-v2
+    paths:
+      - '.github/workflows/bot3-backtest.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Python dependencies
+        run: python -m pip install pandas requests
+      - name: Download Dukascopy GBPUSD M5 history
+        run: |
+          mkdir -p data
+          npx --yes dukascopy-node -i gbpusd -from 2024-01-01 -t m5 -f csv -dir data -fn gbpusd_m5 --batch-pause 1000 --retries 3
+      - name: Normalize historical candles
+        run: |
+          python - <<'PY'
+          import pandas as pd
+          from pathlib import Path
+          source = Path("data/gbpusd_m5.csv")
+          if not source.exists():
+              files = list(Path("data").glob("*.csv"))
+              if len(files) != 1:
+                  raise SystemExit(f"Could not identify downloaded CSV: {files}")
+              source = files[0]
+          df = pd.read_csv(source)
+          if "timestamp" not in df.columns:
+              raise SystemExit(f"Unexpected Dukascopy columns: {list(df.columns)}")
+          df["time"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True).astype(str)
+          df = df.rename(columns={"open":"Open","high":"High","low":"Low","close":"Close"})
+          df[["time","Open","High","Low","Close"]].to_csv("data/GBPUSD_M5_normalized.csv", index=False)
+          print(f"Prepared {len(df):,} completed historical M5 candles from {df.time.iloc[0]} to {df.time.iloc[-1]}")
+          PY
+      - name: Apply bounded rolling windows for efficient point-in-time testing
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path("bot3/backtest.py")
+          s = p.read_text()
+          s = s.replace(
+              "m15 = m15_all.loc[m15_all.index + pd.Timedelta(minutes=15) <= decision_time]",
+              "m15 = m15_all.loc[m15_all.index + pd.Timedelta(minutes=15) <= decision_time].tail(100)"
+          )
+          s = s.replace(
+              "h1 = h1_all.loc[h1_all.index + pd.Timedelta(hours=1) <= decision_time]",
+              "h1 = h1_all.loc[h1_all.index + pd.Timedelta(hours=1) <= decision_time].tail(80)"
+          )
+          s = s.replace("history = m5.iloc[:i + 1]", "history = m5.iloc[max(0, i - 299):i + 1]")
+          if "history = m5.iloc[max(0, i - 299):i + 1]" not in s:
+              raise SystemExit("Backtest optimization patch failed")
+          p.write_text(s)
+          PY
+      - name: Run spread-sensitivity backtests
+        run: |
+          set -e
+          for spread in 1.0 1.5 2.0; do
+            echo "===== Assumed GBPUSD full spread: ${spread} pips ====="
+            python -m bot3.backtest --pair GBPUSD --csv data/GBPUSD_M5_normalized.csv --spread-pips "$spread" --out "data/results_GBPUSD_${spread}pips.csv"
+          done
+      - name: Upload historical data and results
+        uses: actions/upload-artifact@v4
+        with:
+          name: bot3-gbpusd-backtest
+          path: data/
+          retention-days: 30
