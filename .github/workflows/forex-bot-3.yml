@@ -1,6 +1,10 @@
 name: Forex Bot 3 — Independent
 
 on:
+  pull_request:
+    paths:
+      - 'bot3/**'
+      - '.github/workflows/forex-bot-3.yml'
   workflow_dispatch:
   schedule:
     - cron: "0 * * * 1-5"
@@ -18,7 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
@@ -30,6 +34,7 @@ jobs:
       - name: Regression tests
         run: python -m unittest -v bot3.test_bot3
       - name: Run independent scans
+        if: github.event_name != 'pull_request'
         env:
           TELEGRAM_BOT_TOKEN: \${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: \${{ secrets.TELEGRAM_CHAT_ID }}
@@ -44,6 +49,7 @@ jobs:
           done
           if [ "$failures" -gt 0 ]; then exit 1; fi
       - name: Save Bot 3 state and signal log
+        if: always() && github.event_name != 'pull_request'
         if: always()
         run: |
           git config user.name "github-actions[bot]"
