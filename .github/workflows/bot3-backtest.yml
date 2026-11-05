@@ -74,8 +74,42 @@ jobs:
           set -e
           for spread in 1.0 1.5 2.0; do
             echo "===== Assumed GBPUSD full spread: ${spread} pips ====="
-            python -m bot3.backtest --pair GBPUSD --csv data/GBPUSD_M5_normalized.csv --spread-pips "$spread" --out "data/results_GBPUSD_${spread}pips.csv"
+            python -m bot3.backtest --pair GBPUSD --csv data/GBPUSD_M5_normalized.csv --spread-pips "$spread" --slippage-pips 0.2 --out "data/results_GBPUSD_${spread}pips.csv"
           done
+      - name: Report chronological in-sample and unseen out-of-sample results
+        run: |
+          python - <<'PY'
+          import pandas as pd
+          from pathlib import Path
+          rows = []
+          for path in sorted(Path("data").glob("results_GBPUSD_*pips.csv")):
+              df = pd.read_csv(path)
+              if df.empty:
+                  continue
+              df["signal_time_utc"] = pd.to_datetime(df["signal_time_utc"], utc=True)
+              for label, start, end in [
+                  ("IN_SAMPLE_2024_2025", "2024-01-01", "2026-01-01"),
+                  ("OUT_OF_SAMPLE_2026", "2026-01-01", "2027-01-01"),
+              ]:
+                  part = df[(df.signal_time_utc >= pd.Timestamp(start, tz="UTC")) &
+                            (df.signal_time_utc < pd.Timestamp(end, tz="UTC"))]
+                  closed = part[part.outcome.isin(["WIN", "LOSS"])]
+                  wins = int((closed.outcome == "WIN").sum())
+                  losses = int((closed.outcome == "LOSS").sum())
+                  rows.append({
+                      "file": path.name, "period": label,
+                      "trades_including_ambiguous": len(part),
+                      "wins": wins, "losses": losses,
+                      "ambiguous": int((part.outcome == "AMBIGUOUS").sum()),
+                      "open_censored": int((part.outcome == "OPEN").sum()),
+                      "win_rate_pct": round(100*wins/(wins+losses), 2) if wins+losses else None,
+                      "net_R": round(float(closed.result_R.sum()), 2) if not closed.empty else 0.0,
+                  })
+          report = pd.DataFrame(rows)
+          report.to_csv("data/chronological_validation_summary.csv", index=False)
+          print(report.to_string(index=False))
+          print("\n2026 is the unseen chronological test period; do not tune on it.")
+          PY
       - name: Upload historical data and results
         uses: actions/upload-artifact@v4
         with:
