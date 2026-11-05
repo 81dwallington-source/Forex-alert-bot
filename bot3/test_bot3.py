@@ -1,7 +1,8 @@
 import unittest
 from datetime import datetime, timezone
+from unittest.mock import patch, Mock
 import pandas as pd
-from bot3.bot3 import in_session, trend_direction, confirmed_pivots
+from bot3.bot3 import in_session, trend_direction, confirmed_pivots, fetch_live_quote
 
 class Bot3Tests(unittest.TestCase):
     def test_session_uses_uk_local_time(self):
