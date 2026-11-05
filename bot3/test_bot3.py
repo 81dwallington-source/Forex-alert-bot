@@ -3,8 +3,18 @@ from datetime import datetime, timezone
 from unittest.mock import patch, Mock
 import pandas as pd
 from bot3.bot3 import in_session, trend_direction, confirmed_pivots, fetch_live_quote, evaluate_trade_outcome
+from bot3.backtest import midpoint_stop_to_executable
 
 class Bot3Tests(unittest.TestCase):
+    def test_midpoint_stop_converts_to_correct_executable_side(self):
+        half_spread = 0.000075
+        self.assertAlmostEqual(midpoint_stop_to_executable(1.25000, "BUY", half_spread), 1.249925)
+        self.assertAlmostEqual(midpoint_stop_to_executable(1.25000, "SELL", half_spread), 1.250075)
+
+    def test_midpoint_stop_rejects_unknown_direction(self):
+        with self.assertRaises(ValueError):
+            midpoint_stop_to_executable(1.25000, "HOLD", 0.000075)
+
     def test_session_uses_uk_local_time(self):
         self.assertTrue(in_session(datetime(2026,11,5,6,0,tzinfo=timezone.utc)))
         self.assertFalse(in_session(datetime(2026,11,5,23,0,tzinfo=timezone.utc)))
