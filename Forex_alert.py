@@ -82,8 +82,8 @@ MAX_STOP_DISTANCE_ATR = 4.5
 
 MIN_SCORE = 6
 
-# Keep the two actionable M5 patterns; M15 is the primary trend filter.
-# H1 is contextual confirmation rather than a second absolute gate.
+# Keep the two actionable M5 patterns.
+# Both M15 and H1 must agree with the proposed trade direction.
 ALLOWED_SETUP_TYPES = ("PULLBACK CONTINUATION", "BREAKOUT RETEST")
 BUY_RSI_MIN, BUY_RSI_MAX = 52, 65
 SELL_RSI_MIN, SELL_RSI_MAX = 35, 48
@@ -411,6 +411,15 @@ def trend_direction(data):
         return "SELL"
 
     return "NONE"
+
+def higher_timeframe_alignment(m15_trend, h1_trend, direction):
+    """Require both completed higher timeframes to agree with the proposed trade."""
+    if m15_trend != direction:
+        return False, f"M15 trend ({m15_trend}) does not agree with setup ({direction})"
+    if h1_trend != direction:
+        return False, f"H1 trend ({h1_trend}) does not agree with M15 ({direction})"
+    return True, "M15 and H1 aligned"
+
 
 def detect_h1_swing_levels(data, lookback=120, left_bars=2, right_bars=2):
     """Return latest confirmed H1 pivot high/low using two closed bars either side."""
@@ -758,12 +767,15 @@ def analyse_pair(ticker):
 
     h1_trend = trend_direction(h1)
 
-    # M15 sets the trade direction. H1 is retained as context and contributes
-    # to the quality score; it no longer vetoes every otherwise valid M5 setup.
+    # Both higher timeframes must agree with the M5 trade direction.
+    # A conflicting or neutral H1 is a hard rejection, never just a score penalty.
     if m15_trend == "NONE":
         return None, "M15 trend unclear"
 
     direction = m15_trend
+    aligned, alignment_reason = higher_timeframe_alignment(m15_trend, h1_trend, direction)
+    if not aligned:
+        return None, alignment_reason
 
     # EMA21 is an entry area, not a one-sided trend gate. A pullback may briefly
     # cross it; the later setup-specific reclaim/break confirmation is the real trigger.
@@ -771,8 +783,8 @@ def analyse_pair(ticker):
     if not entry_area_ok:
         return None, entry_area_note
 
-    # M15 must show a usable EMA20/EMA50 directional gap; H1 may be neutral
-    # or opposite during a pullback, but that reduces the quality score.
+    # M15 must show a usable EMA20/EMA50 directional gap. H1 alignment
+    # has already passed as a mandatory hard filter above.
 
     setup_type = "CONTINUATION"
     location_note = "M5 continuation confirmation"

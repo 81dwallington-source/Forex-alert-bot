@@ -29,3 +29,18 @@ The workflow runs offline regression tests with `python -m unittest -v test_bot.
 - Each scan reports public-candle estimate TP/SL counts, estimated hit rate, average/expectancy in R, maximum drawdown in R, pending and ambiguous counts.
 - These estimates are not broker fills, verified trade outcomes, or proof of profitability. Ambiguous candles are excluded.
 - Broker-verified records are counted only when explicitly labelled VERIFIED_WIN, VERIFIED_LOSS, or VERIFIED_BREAK_EVEN. The bot does not infer these labels from public candles.
+
+## Historical execution simulator (rebuild branch)
+
+The rebuild branch now includes `execution_backtest.py`, a conservative execution simulator for timestamped strategy signals and historical M5 OHLC candles. It deliberately does **not** create strategy signals: the strategy-replay/export step must supply signals generated using only information available at each candle close. Do not hand-pick signals or export signals from the live log and call that a strategy backtest.
+
+Input CSV formats:
+
+- Signals: `time,pair,direction,entry,stop,target` (time is the signal candle close in UTC; pair e.g. EURUSD; direction BUY/SELL).
+- Candles: `time,pair,open,high,low,close` (UTC candle-open timestamps, one row per pair per M5 candle).
+
+Run: `python execution_backtest.py --signals historical_signals.csv --candles historical_m5.csv --spread 0.00012 --slippage 0.00002 --commission-r 0.02 --test-start 2026-01-01T00:00:00Z`
+
+The simulator enters on the first candle after the signal timestamp, charges spread and slippage on entry and exit, uses stop-first handling when one candle touches both stop and target, applies an optional round-trip commission in R, and exports a trade ledger plus win rate, expectancy, profit factor and maximum drawdown in R. Costs must be set per instrument/venue using defensible historical assumptions; the example values are illustrative only. A test-start date supports a held-out period, but a separate development-period run is still needed. Use enough history across market regimes and all relevant pairs before drawing conclusions.
+
+**Important current status:** this is the execution-simulation foundation, not yet a full end-to-end historical replay of Bot 1 and Bot 2. No performance result is claimed. The public BiQuote endpoint used by the live bots is currently requested with a 1,000-bar limit and has not been shown to provide the multi-month, timestamp-complete history needed here. The next step is to connect a verified historical OHLC export/provider to point-in-time replay of each bot's actual signal logic, then validate on untouched out-of-sample data. Until that is done, do not merge this rebuild as a proven profitable upgrade or change the production bots.
