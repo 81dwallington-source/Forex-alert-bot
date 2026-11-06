@@ -38,19 +38,25 @@ jobs:
           download_pair() {
             pair="$1"
             echo "===== Starting ${pair} M5 download ====="
-            ./node_modules/.bin/dukascopy-node -i "$pair" -from 2024-01-01 -t m5 -f csv -dir data -fn "${pair}_m5" --batch-pause 500 --retries 3
-            test -s "data/${pair}_m5.csv"
-            echo "===== Finished ${pair}; $(wc -c < "data/${pair}_m5.csv") bytes ====="
-          }
-          # Two concurrent downloads reduce wall-clock time without flooding the data provider.
-          pairs=(eurusd gbpusd usdjpy usdchf usdcad audusd nzdusd)
-          for ((i=0; i<${#pairs[@]}; i+=2)); do
-            pids=()
-            for pair in "${pairs[@]:i:2}"; do
-              download_pair "$pair" &
-              pids+=("$!")
+            # Dukascopy can temporarily answer HTTP 202 while its data service is
+            # busy. Retry the whole instrument download with increasing delays.
+            for attempt in 1 2 3 4 5 6; do
+              rm -f "data/${pair}_m5.csv"
+              if ./node_modules/.bin/dukascopy-node -i "$pair" -from 2024-01-01 -t m5 -f csv -dir data -fn "${pair}_m5" --batch-pause 1500 --retries 5; then
+                if test -s "data/${pair}_m5.csv"; then
+                  echo "===== Finished ${pair}; $(wc -c < "data/${pair}_m5.csv") bytes ====="
+                  return 0
+                fi
+              fi
+              echo "Download attempt ${attempt}/6 failed for ${pair}; waiting before retry"
+              sleep $((attempt * 20))
             done
-            for pid in "${pids[@]}"; do wait "$pid"; done
+            echo "ERROR: Could not download ${pair} after 6 attempts" >&2
+            return 1
+          }
+          # Download sequentially: parallel requests were triggering HTTP 202 responses.
+          for pair in eurusd gbpusd usdjpy usdchf usdcad audusd nzdusd; do
+            download_pair "$pair"
           done
       - name: Normalize historical candles
         run: |
