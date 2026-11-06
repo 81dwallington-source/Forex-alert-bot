@@ -26,15 +26,31 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Install Python dependencies
-        run: python -m pip install pandas requests
-      - name: Download seven major-pair M5 histories
+      - name: Install Python and historical-data dependencies
         run: |
-          set -e
+          python -m pip install pandas requests
+          npm install --no-save dukascopy-node@1.50.0
+      - name: Download seven major-pair M5 histories
+        timeout-minutes: 90
+        run: |
+          set -euo pipefail
           mkdir -p data
-          for pair in eurusd gbpusd usdjpy usdchf usdcad audusd nzdusd; do
-            echo "Downloading ${pair}"
-            npx --yes dukascopy-node -i "$pair" -from 2024-01-01 -t m5 -f csv -dir data -fn "${pair}_m5" --batch-pause 250 --retries 3 --rate-limit-retries 5
+          download_pair() {
+            pair="$1"
+            echo "===== Starting ${pair} M5 download ====="
+            ./node_modules/.bin/dukascopy-node -i "$pair" -from 2024-01-01 -t m5 -f csv -dir data -fn "${pair}_m5" --batch-pause 500 --retries 3 --rate-limit-retries 5
+            test -s "data/${pair}_m5.csv"
+            echo "===== Finished ${pair}; $(wc -c < "data/${pair}_m5.csv") bytes ====="
+          }
+          # Two concurrent downloads reduce wall-clock time without flooding the data provider.
+          pairs=(eurusd gbpusd usdjpy usdchf usdcad audusd nzdusd)
+          for ((i=0; i<${#pairs[@]}; i+=2)); do
+            pids=()
+            for pair in "${pairs[@]:i:2}"; do
+              download_pair "$pair" &
+              pids+=("$!")
+            done
+            for pid in "${pids[@]}"; do wait "$pid"; done
           done
       - name: Normalize historical candles
         run: |
