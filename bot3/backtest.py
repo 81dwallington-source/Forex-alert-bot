@@ -67,9 +67,12 @@ def backtest_pair(pair: str, m5: pd.DataFrame, spread_pips: float, slippage_pips
         raise ValueError("spread_pips must be positive and slippage_pips cannot be negative")
     pip = 0.01 if "JPY" in pair else 0.0001
     spread = spread_pips * pip
-    half_spread = spread / 2
     slippage = slippage_pips * pip
-    m15_all, h1_all = resample_ohlc(m5, "15min"), resample_ohlc(m5, "1h")
+    # Calculate indicators once per timeframe. The signal engine recognises
+    # these prepared columns and reuses them for every historical decision.
+    m5 = bot3.add_indicators(m5)
+    m15_all = bot3.add_indicators(resample_ohlc(m5, "15min"))
+    h1_all = bot3.add_indicators(resample_ohlc(m5, "1h"))
     results = []
     i = 800
     while i < len(m5) - 2:
