@@ -42,6 +42,19 @@ for (const pair of pairs) {
   if (!Array.isArray(candles) || candles.length < 800) {
     throw new Error(`${pair}: insufficient historical candles (${candles?.length ?? 0})`);
   }
+  // Empty weekend/holiday periods are normal, but missing weekday data can
+  // indicate an upstream block or failed download. Do not silently backtest it.
+  const coveredDays = new Set(candles.map(c => new Date(c.timestamp).toISOString().slice(0,10)));
+  const expectedWeekdays = [];
+  for (let d = new Date(fromDate); d <= new Date(to + "T00:00:00Z"); d.setUTCDate(d.getUTCDate()+1)) {
+    const day = d.getUTCDay();
+    if (day !== 0 && day !== 6) expectedWeekdays.push(d.toISOString().slice(0,10));
+  }
+  const missingWeekdays = expectedWeekdays.filter(day => !coveredDays.has(day));
+  console.log(`${pair} coverage: ${candles.length} bars; ${missingWeekdays.length} missing weekdays`);
+  if (missingWeekdays.length > 4) {
+    throw new Error(`${pair}: refusing incomplete history; missing weekdays: ${missingWeekdays.slice(0,12).join(", ")}`);
+  }
   const csv = ["time,Open,High,Low,Close", ...candles.map(c =>
     [new Date(c.timestamp).toISOString(), c.open, c.high, c.low, c.close].join(",")
   )].join("\n") + "\n";
