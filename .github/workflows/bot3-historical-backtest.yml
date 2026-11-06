@@ -7,7 +7,7 @@ on:
     paths:
       - 'bot3/run_historical_backtest.mjs'
       - '.github/workflows/bot3-historical-backtest.yml'
-      - 'bot3/backtest.py'
+      - 'bot3/backtest.py'\n      - 'bot3/strategy_competition.py'
       - 'bot3/bot3.py'
   workflow_dispatch:
 
@@ -38,6 +38,8 @@ jobs:
         run: npm install --no-save dukascopy-node@1.51.1
       - name: Download six months and backtest all Bot 3 pairs
         run: node bot3/run_historical_backtest.mjs
+      - name: Run predeclared strategy competition on seven major pairs
+        run: python -m bot3.strategy_competition --data-dir research-data --out-dir research-results/competition
       - name: Upload historical data and reports
         uses: actions/upload-artifact@v4
         with:
