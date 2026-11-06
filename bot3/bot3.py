@@ -152,13 +152,35 @@ def build_signal(pair,m5,m15,h1,live_price=None,live_stamp=None,live_bid=None,li
     h1_last = add_indicators(h1).iloc[-1]
     pullback_atr = float(pullback_candle.ATR)
     # Diagnostic features only: these are logged for research and do not alter entry rules.
+    prior6 = df.iloc[-7:-1]
+    prior12 = df.iloc[-13:-1]
+    prior24 = df.iloc[-25:-1]
+    direction_sign = 1.0 if direction == "BUY" else -1.0
+    prior_atr_median = float(df.ATR.iloc[-60:].median())
+    breakout_margin = ((float(last.Close) - float(prior12.High.max())) if direction == "BUY"
+                       else (float(prior12.Low.min()) - float(last.Close))) / atr
+    opposing_distance = ((float(prior24.High.max()) - float(last.Close)) if direction == "BUY"
+                         else (float(last.Close) - float(prior24.Low.min()))) / atr
     features = {
         "m5_ema21_slope_atr": float((last.EMA21 - df.iloc[-4].EMA21) / atr),
+        "m5_directional_ema21_slope_atr": float((last.EMA21 - df.iloc[-4].EMA21) / atr * direction_sign),
         "m15_ema20_50_gap_atr": float(abs(m15_last.EMA20 - m15_last.EMA50) / m15_last.ATR),
         "h1_ema20_50_gap_atr": float(abs(h1_last.EMA20 - h1_last.EMA50) / h1_last.ATR),
+        "m15_directional_trend_gap_atr": float((m15_last.EMA20 - m15_last.EMA50) / m15_last.ATR * direction_sign),
+        "h1_directional_trend_gap_atr": float((h1_last.EMA20 - h1_last.EMA50) / h1_last.ATR * direction_sign),
         "confirmation_body_ratio": float(body / rng),
         "confirmation_close_location": float(location),
+        "confirmation_range_atr": float(rng / atr),
+        "directional_momentum_3_atr": float((last.Close - df.iloc[-4].Close) / atr * direction_sign),
+        "directional_momentum_6_atr": float((last.Close - df.iloc[-7].Close) / atr * direction_sign),
+        "directional_bar_fraction_6": float(((df.Close.iloc[-6:].to_numpy() - df.Open.iloc[-6:].to_numpy()) * direction_sign > 0).mean()),
+        "prior_range_6_atr": float((prior6.High.max() - prior6.Low.min()) / atr),
+        "breakout_margin_12_atr": float(breakout_margin),
+        "opposing_distance_24_atr": float(max(0.0, opposing_distance)),
         "pullback_distance_atr": float(abs(pullback_candle.Close - pullback_candle.EMA21) / pullback_atr),
+        "pullback_depth_atr": float(((pullback_candle.EMA21 - pullback_candle.Low) if direction == "BUY" else (pullback_candle.High - pullback_candle.EMA21)) / pullback_atr),
+        "pullback_age_bars": int(len(df) - 1 - pullback),
+        "atr_regime_60": float(atr / prior_atr_median) if prior_atr_median > 0 else 0.0,
     }
     return {"pair":pair,"direction":direction,"entry":entry,"stop":stop,"target":target,
         "rr":MIN_RR,"atr":atr,"swing":swing,"candle_time":m5.index[-1].isoformat(),
@@ -193,6 +215,12 @@ def send_telegram(message):
 
 OUTCOME_FIELDS = ["timestamp_utc","uk_date","pair","direction","entry","stop","target","rr","swing",
     "candle_time","live_price","live_bid","live_ask","spread","quote_time","data_source",
+    "m5_ema21_slope_atr","m5_directional_ema21_slope_atr","m15_ema20_50_gap_atr","h1_ema20_50_gap_atr",
+    "m15_directional_trend_gap_atr","h1_directional_trend_gap_atr","confirmation_body_ratio",
+    "confirmation_close_location","confirmation_range_atr","directional_momentum_3_atr",
+    "directional_momentum_6_atr","directional_bar_fraction_6","prior_range_6_atr",
+    "breakout_margin_12_atr","opposing_distance_24_atr","pullback_distance_atr",
+    "pullback_depth_atr","pullback_age_bars","atr_regime_60",
     "outcome","outcome_time_utc","outcome_detail"]
 
 def log_signal(s):
