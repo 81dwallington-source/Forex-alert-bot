@@ -3,10 +3,7 @@ import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 
-const pairs = ["EURUSD","GBPUSD","USDJPY","USDCHF","USDCAD","AUDUSD","NZDUSD",
-"EURGBP","EURJPY","EURCHF","EURAUD","EURCAD","EURNZD","GBPJPY","GBPCHF",
-"GBPAUD","GBPCAD","GBPNZD","AUDJPY","AUDCHF","AUDCAD","AUDNZD","NZDJPY",
-"NZDCHF","NZDCAD","CADJPY","CHFJPY"];
+const pairs = ["EURUSD","GBPUSD","USDJPY","USDCHF","USDCAD","AUDUSD","NZDUSD"];
 const spreads = {
   EURUSD:1.2, GBPUSD:1.5, USDJPY:1.3, USDCHF:1.5, USDCAD:1.6, AUDUSD:1.4, NZDUSD:1.8,
   EURGBP:1.5, EURJPY:2.0, EURCHF:2.0, EURAUD:2.5, EURCAD:2.5, EURNZD:3.0,
