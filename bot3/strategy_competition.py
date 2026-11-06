@@ -1,4 +1,4 @@
-"""First-pass Bot 3 strategy competition: predeclared filters, chronological OOS, no live alerts."""
+"""First-pass Bot 3 strategy competition: predeclared filters, chronological OOS, no live alerts."""\n# Invoked by bot3-historical-backtest.yml after the six-month data download.
 from __future__ import annotations
 import argparse
 from pathlib import Path
