@@ -5,7 +5,7 @@ import pandas as pd
 import tempfile
 from pathlib import Path
 from bot3.bot3 import in_session, trend_direction, confirmed_pivots, fetch_live_quote, evaluate_trade_outcome
-from bot3.backtest import midpoint_stop_to_executable, load_m5
+from bot3.backtest import bid_stop_to_executable, load_m5
 
 class Bot3Tests(unittest.TestCase):
     def test_backtest_loader_removes_zero_range_stale_bars(self):
@@ -25,14 +25,14 @@ class Bot3Tests(unittest.TestCase):
         self.assertEqual(loaded.attrs["raw_rows"], 805)
         self.assertEqual(loaded.attrs["flat_rows_removed"], 3)
 
-    def test_midpoint_stop_converts_to_correct_executable_side(self):
-        half_spread = 0.000075
-        self.assertAlmostEqual(midpoint_stop_to_executable(1.25000, "BUY", half_spread), 1.249925)
-        self.assertAlmostEqual(midpoint_stop_to_executable(1.25000, "SELL", half_spread), 1.250075)
+    def test_bid_stop_converts_to_correct_executable_side(self):
+        full_spread = 0.00015
+        self.assertAlmostEqual(bid_stop_to_executable(1.25000, "BUY", full_spread), 1.25000)
+        self.assertAlmostEqual(bid_stop_to_executable(1.25000, "SELL", full_spread), 1.25015)
 
-    def test_midpoint_stop_rejects_unknown_direction(self):
+    def test_bid_stop_rejects_unknown_direction(self):
         with self.assertRaises(ValueError):
-            midpoint_stop_to_executable(1.25000, "HOLD", 0.000075)
+            bid_stop_to_executable(1.25000, "HOLD", 0.00015)
 
     def test_session_uses_uk_local_time(self):
         self.assertTrue(in_session(datetime(2026,11,5,6,0,tzinfo=timezone.utc)))
