@@ -28,8 +28,15 @@ for (const pair of pairs) {
     priceType: "bid",
     format: "json",
     volumes: false,
-    retryCount: 4,
-    requestIntervalMs: 500
+    batchSize: 10,
+    pauseBetweenBatchesMs: 1000,
+    requestIntervalMs: 0,
+    retryCount: 3,
+    rateLimitRetryCount: 3,
+    pauseBetweenRetriesMs: 1000,
+    retryOnEmpty: true,
+    useCache: true,
+    cacheFolderPath: ".dukascopy-cache"
   });
   if (!Array.isArray(candles) || candles.length < 800) {
     throw new Error(`${pair}: insufficient historical candles (${candles?.length ?? 0})`);
