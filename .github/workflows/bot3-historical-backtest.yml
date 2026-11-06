@@ -17,7 +17,7 @@ permissions:
 
 concurrency:
   group: bot3-historical-backtest
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   backtest:
@@ -39,7 +39,7 @@ jobs:
         run: npm install --no-save dukascopy-node@1.51.1
       - name: Download six months and backtest all Bot 3 pairs
         run: node bot3/run_historical_backtest.mjs
-      - name: Run predeclared strategy competition on seven major pairs
+      - name: Run predeclared strategy competition on all 27 pairs
         run: python -m bot3.strategy_competition --data-dir research-data --out-dir research-results/competition
       - name: Upload historical data and reports
         uses: actions/upload-artifact@v4
