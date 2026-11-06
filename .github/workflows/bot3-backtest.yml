@@ -43,7 +43,7 @@ jobs:
             # busy. Retry the whole instrument download with increasing delays.
             for attempt in 1 2 3 4 5 6; do
               rm -f "data/${pair}_m5.csv"
-              if ./node_modules/.bin/dukascopy-node -i "$pair" -from 2024-01-01 -t m5 -f csv -dir data -fn "${pair}_m5" --batch-size 1 --request-interval 100 --batch-pause 0 --retries 5 --retry-pause 3000 --cache; then
+              if ./node_modules/.bin/dukascopy-node -i "$pair" -from 2024-01-01 -t m5 -f csv -dir data -fn "${pair}_m5" --batch-size 1 --batch-pause 100 --retries 5 --retry-pause 3000 --cache; then
                 if test -s "data/${pair}_m5.csv"; then
                   echo "===== Finished ${pair}; $(wc -c < "data/${pair}_m5.csv") bytes ====="
                   return 0
