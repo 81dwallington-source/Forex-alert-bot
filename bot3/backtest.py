@@ -48,12 +48,16 @@ def resample_ohlc(m5: pd.DataFrame, rule: str) -> pd.DataFrame:
     return out.loc[counts == expected].dropna()
 
 
-def midpoint_stop_to_executable(stop_mid: float, direction: str, half_spread: float) -> float:
-    """Convert a strategy level calculated on midpoint prices to the executable stop side."""
+def bid_stop_to_executable(stop_bid: float, direction: str, full_spread: float) -> float:
+    """Convert BID-candle structure levels to the side on which the stop executes.
+
+    BUY stops execute on BID, so the BID-derived level is unchanged.
+    SELL stops execute on ASK, so add the full BID/ASK spread.
+    """
     if direction == "BUY":
-        return stop_mid - half_spread  # long stops execute against BID
+        return stop_bid
     if direction == "SELL":
-        return stop_mid + half_spread  # short stops execute against ASK
+        return stop_bid + full_spread
     raise ValueError(f"Unsupported direction: {direction}")
 
 
@@ -98,12 +102,14 @@ def backtest_pair(pair: str, m5: pd.DataFrame, spread_pips: float, slippage_pips
         # Executable fill at next BID candle open: BUY pays full spread; SELL receives bid.
         next_open = float(m5.Open.iloc[i + 1])
         fill = next_open + spread + slippage if signal["direction"] == "BUY" else next_open - slippage
-        if abs((next_open + spread / 2) - signal["entry"]) > bot3.MAX_ENTRY_DRIFT_ATR * signal["atr"]:
+        # Both next_open and signal.entry are BID prices. Comparing their
+        # difference keeps spread from artificially changing signal eligibility.
+        if abs(next_open - signal["entry"]) > bot3.MAX_ENTRY_DRIFT_ATR * signal["atr"]:
             i += 1
             continue
-        # Strategy levels are calculated from synthetic midpoint candles. Convert the
-        # stop to the executable side using HALF the spread, not the full spread.
-        stop = midpoint_stop_to_executable(float(signal["stop"]), signal["direction"], half_spread)
+        # Signal structure is calculated from BID OHLC. BUY stops execute on BID;
+        # SELL stops execute on ASK and therefore need the FULL spread added.
+        stop = bid_stop_to_executable(float(signal["stop"]), signal["direction"], spread)
         risk = fill - stop if signal["direction"] == "BUY" else stop - fill
         if risk <= 0 or risk > bot3.MAX_STOP_ATR * signal["atr"]:
             i += 1
