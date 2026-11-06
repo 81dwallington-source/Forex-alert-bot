@@ -8,7 +8,7 @@ from bot3.bot3 import in_session, trend_direction, confirmed_pivots, fetch_live_
 from bot3.backtest import bid_stop_to_executable, load_m5
 
 class Bot3Tests(unittest.TestCase):
-    def test_backtest_loader_removes_zero_range_stale_bars(self):
+    def test_backtest_loader_preserves_zero_range_candle_timestamps(self):
         prices = [1.1] * 3 + [1.1001 + i * 0.00001 for i in range(802)]
         frame = pd.DataFrame({
             "time": pd.date_range("2026-01-01", periods=805, freq="5min", tz="UTC").astype(str),
@@ -21,9 +21,10 @@ class Bot3Tests(unittest.TestCase):
             path = Path(tmp) / "bars.csv"
             frame.to_csv(path, index=False)
             loaded = load_m5(path)
-        self.assertEqual(len(loaded), 802)
+        self.assertEqual(len(loaded), 805)
         self.assertEqual(loaded.attrs["raw_rows"], 805)
-        self.assertEqual(loaded.attrs["flat_rows_removed"], 3)
+        self.assertEqual(loaded.attrs["flat_rows"], 3)
+        self.assertEqual(loaded.attrs["flat_rows_removed"], 0)
 
     def test_bid_stop_converts_to_correct_executable_side(self):
         full_spread = 0.00015
