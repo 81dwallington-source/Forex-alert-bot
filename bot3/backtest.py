@@ -85,12 +85,17 @@ def backtest_pair(pair: str, m5: pd.DataFrame, spread_pips: float, slippage_pips
         if m5.index[i + 1] != candle_time + pd.Timedelta(minutes=5):
             i += 1
             continue
-        m15 = m15_all.loc[m15_all.index + pd.Timedelta(minutes=15) <= decision_time]
-        h1 = h1_all.loc[h1_all.index + pd.Timedelta(hours=1) <= decision_time]
-        if len(m15) < 60 or len(h1) < 60:
+        # Use searchsorted to locate the latest fully closed higher-timeframe
+        # candles, then pass only the indicator-ready tail needed by the rules.
+        # This avoids copying an ever-growing history on every M5 iteration.
+        m15_end = m15_all.index.searchsorted(decision_time - pd.Timedelta(minutes=15), side="right")
+        h1_end = h1_all.index.searchsorted(decision_time - pd.Timedelta(hours=1), side="right")
+        if m15_end < 60 or h1_end < 60:
             i += 1
             continue
-        history = m5.iloc[:i + 1]
+        m15 = m15_all.iloc[m15_end - 60:m15_end]
+        h1 = h1_all.iloc[h1_end - 60:h1_end]
+        history = m5.iloc[max(0, i - 59):i + 1]
         close = float(history.Close.iloc[-1])
         synthetic_bid, synthetic_ask = close, close + spread
         synthetic_mid = close + spread / 2
