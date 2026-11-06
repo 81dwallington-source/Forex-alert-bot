@@ -7,7 +7,8 @@ on:
     paths:
       - 'bot3/run_historical_backtest.mjs'
       - '.github/workflows/bot3-historical-backtest.yml'
-      - 'bot3/backtest.py'\n      - 'bot3/strategy_competition.py'
+      - 'bot3/backtest.py'
+      - 'bot3/strategy_competition.py'
       - 'bot3/bot3.py'
   workflow_dispatch:
 
