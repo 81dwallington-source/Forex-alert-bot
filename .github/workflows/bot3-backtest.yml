@@ -1,5 +1,6 @@
 name: Bot 3 multi-pair historical validation
 # Triggered on this branch by workflow-file updates; strategy and Bot 1/2 are untouched.
+# Validation rerun after allowing legitimate empty weekend/holiday data.
 
 on:
   push:
