@@ -60,7 +60,7 @@ def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--data-dir",type=Path,default=Path("research-data"))
     ap.add_argument("--out-dir",type=Path,default=Path("research-results/competition"))
-    ap.add_argument("--pairs",default="EURUSD,GBPUSD,USDJPY,USDCHF,USDCAD,AUDUSD,NZDUSD")
+    ap.add_argument("--pairs",default="EURUSD,GBPUSD,USDJPY,USDCHF,USDCAD,AUDUSD,NZDUSD,EURGBP,EURJPY,EURCHF,EURAUD,EURCAD,EURNZD,GBPJPY,GBPCHF,GBPAUD,GBPCAD,GBPNZD,AUDJPY,AUDCHF,AUDCAD,AUDNZD,NZDJPY,NZDCHF,NZDCAD,CADJPY,CHFJPY")
     args=ap.parse_args(); args.out_dir.mkdir(parents=True,exist_ok=True)
     original=bot3.build_signal
     report=[]
@@ -75,12 +75,15 @@ def main():
         # OOS includes a 1,000-bar indicator warm-up; only trades signalled
         # at/after the fixed chronological boundary are scored.
         periods={"IS":data.iloc[:split],"OOS":data.iloc[max(0,split-1000):]}
-        spread=1.2 if pair=="EURUSD" else 1.5 if pair=="GBPUSD" else 1.3 if pair=="USDJPY" else 1.5
-        if pair not in ("EURUSD","GBPUSD","USDJPY","USDCHF","USDCAD","AUDUSD","NZDUSD"):
-            spread=2.0
+        spread_map={"EURUSD":1.2,"GBPUSD":1.5,"USDJPY":1.3,"USDCHF":1.5,"USDCAD":1.6,"AUDUSD":1.4,"NZDUSD":1.8,
+          "EURGBP":1.5,"EURJPY":2.0,"EURCHF":2.0,"EURAUD":2.5,"EURCAD":2.5,"EURNZD":3.0,
+          "GBPJPY":2.5,"GBPCHF":2.5,"GBPAUD":3.0,"GBPCAD":3.0,"GBPNZD":3.5,
+          "AUDJPY":2.0,"AUDCHF":2.0,"AUDCAD":2.0,"AUDNZD":2.5,"NZDJPY":2.5,"NZDCHF":2.5,
+          "NZDCAD":2.5,"CADJPY":2.0,"CHFJPY":2.5}
+        spread=spread_map[pair]
         for period,frame in periods.items():
             for name,rule in CANDIDATES.items():
-                for rr in (1.0,1.5):
+                for rr in (1.0,):
                     def filtered(*a,_rule=rule,**kw):
                         s=original(*a,**kw)
                         return s if s and _rule(s) else None
@@ -104,6 +107,8 @@ def main():
           pairs=("pair","nunique"),trades=("trades","sum"),wins=("wins","sum"),
           losses=("losses","sum"),net_R=("net_R","sum")).reset_index()
         grouped["win_rate_pct"]=100*grouped.wins/(grouped.wins+grouped.losses).replace(0,pd.NA)
+        grouped["eligible_for_review"]=(grouped["period"]=="OOS") & (grouped["trades"]>=200) & (grouped["net_R"]>0)
+        grouped["minimum_oos_trades_required"]=200
         grouped.to_csv(args.out_dir/"candidate_summary.csv",index=False)
     print("Competition complete. OOS is chronological holdout; candidates with tiny samples are not eligible.")
 if __name__=="__main__": main()
