@@ -34,7 +34,8 @@ for (const pair of pairs) {
     retryCount: 3,
     rateLimitRetryCount: 3,
     pauseBetweenRetriesMs: 1000,
-    retryOnEmpty: false,
+    retryOnEmpty: true,
+    failAfterRetryCount: false,
     useCache: true,
     cacheFolderPath: ".dukascopy-cache"
   });
