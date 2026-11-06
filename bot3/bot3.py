@@ -61,6 +61,11 @@ def fetch_candles(pair, interval, limit=300):
     return df
 
 def add_indicators(frame):
+    # Backtests pass precomputed indicator frames to avoid recalculating the
+    # full history at every M5 decision point. Live scans still calculate once.
+    required = {"EMA21", "EMA20", "EMA50", "ATR"}
+    if required.issubset(frame.columns):
+        return frame
     df = frame.copy()
     df["EMA21"] = df.Close.ewm(span=21,adjust=False).mean()
     df["EMA20"] = df.Close.ewm(span=20,adjust=False).mean()
