@@ -1,0 +1,51 @@
+name: Bot 3 historical backtest
+
+on:
+  push:
+    branches:
+      - bot3-independent-build-v2
+    paths:
+      - 'bot3/run_historical_backtest.mjs'
+      - '.github/workflows/bot3-historical-backtest.yml'
+      - 'bot3/backtest.py'
+      - 'bot3/strategy_competition.py'
+      - 'bot3/bot3.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bot3-historical-backtest
+  cancel-in-progress: true
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: bot3-independent-build-v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Install historical data client
+        run: npm install --no-save dukascopy-node@1.51.1
+      - name: Download six months and backtest all Bot 3 pairs
+        run: node bot3/run_historical_backtest.mjs
+      - name: Run predeclared strategy competition on all 27 pairs
+        run: python -m bot3.strategy_competition --data-dir research-data --out-dir research-results/competition
+      - name: Upload historical data and reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: bot3-six-month-backtest
+          path: |
+            research-results/
+            research-data/
+          retention-days: 30
