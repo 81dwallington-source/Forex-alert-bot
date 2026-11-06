@@ -34,7 +34,7 @@ jobs:
           mkdir -p data
           for pair in eurusd gbpusd usdjpy usdchf usdcad audusd nzdusd; do
             echo "Downloading ${pair}"
-            npx --yes dukascopy-node -i "$pair" -from 2024-01-01 -t m5 -f csv -dir data -fn "${pair}_m5" --batch-pause 1000 --retries 3
+            npx --yes dukascopy-node -i "$pair" -from 2024-01-01 -t m5 -f csv -dir data -fn "${pair}_m5" --batch-pause 250 --retries 3 --rate-limit-retries 5
           done
       - name: Normalize historical candles
         run: |
