@@ -38,7 +38,7 @@ jobs:
           download_pair() {
             pair="$1"
             echo "===== Starting ${pair} M5 download ====="
-            ./node_modules/.bin/dukascopy-node -i "$pair" -from 2024-01-01 -t m5 -f csv -dir data -fn "${pair}_m5" --batch-pause 500 --retries 3 --rate-limit-retries 5
+            ./node_modules/.bin/dukascopy-node -i "$pair" -from 2024-01-01 -t m5 -f csv -dir data -fn "${pair}_m5" --batch-pause 500 --retries 3
             test -s "data/${pair}_m5.csv"
             echo "===== Finished ${pair}; $(wc -c < "data/${pair}_m5.csv") bytes ====="
           }
