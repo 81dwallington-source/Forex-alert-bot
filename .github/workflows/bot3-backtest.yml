@@ -42,10 +42,10 @@ jobs:
             # M5 requires one request per calendar day. Use small concurrent batches
             # with a 2s pause: serial one-request batches make this 7-pair, 2024-now
             # validation exceed the job timeout. 1.51.1 includes the WAF header fix.
-            # Retry failed/empty periods and retain completed periods in the cache.
+            # Retry request failures; accept legitimate empty weekend/holiday periods. Retain completed periods in cache.
             for attempt in 1 2 3 4 5 6; do
               rm -f "data/${pair}_m5.csv"
-              if ./node_modules/.bin/dukascopy-node -i "$pair" -from 2024-01-01 -t m5 -f csv -dir data -fn "${pair}_m5" --batch-size 5 --batch-pause 2000 --retries 5 --retry-pause 3000 --rate-limit-retries 3 --retry-on-empty --cache; then
+              if ./node_modules/.bin/dukascopy-node -i "$pair" -from 2024-01-01 -t m5 -f csv -dir data -fn "${pair}_m5" --batch-size 5 --batch-pause 2000 --retries 5 --retry-pause 3000 --rate-limit-retries 3 --cache; then
                 if test -s "data/${pair}_m5.csv"; then
                   echo "===== Finished ${pair}; $(wc -c < "data/${pair}_m5.csv") bytes ====="
                   return 0
