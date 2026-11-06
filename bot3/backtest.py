@@ -22,11 +22,12 @@ def load_m5(path: Path) -> pd.DataFrame:
     raw_count = len(df)
     flat = (df[["Open", "High", "Low", "Close"]].nunique(axis=1) == 1)
     flat_count = int(flat.sum())
-    # The Dukascopy export contains long runs of zero-range bars despite the
-    # downloader's include-flats=false option. Exclude them from the test.
-    df = df.loc[~flat].copy()
+    # A zero-range M5 candle is still a real time interval: it can represent
+    # no price movement. Keep it so M15/H1 resampling does not lose otherwise
+    # complete bars or create artificial gaps in the indicator history.
     df.attrs["raw_rows"] = raw_count
-    df.attrs["flat_rows_removed"] = flat_count
+    df.attrs["flat_rows"] = flat_count
+    df.attrs["flat_rows_removed"] = 0
     df.attrs["gaps_over_5m"] = int((df.index.to_series().diff() > pd.Timedelta(minutes=5)).sum())
     if (df[["Open", "High", "Low", "Close"]] <= 0).any().any():
         raise ValueError(f"{path}: prices must be positive")
@@ -211,7 +212,7 @@ def main():
     total_r = float(closed.result_R.sum()) if not closed.empty else 0.0
     win_rate = 100 * wins / (wins + losses) if wins + losses else 0.0
     print(f"Pair: {args.pair.upper()} | usable M5 bars: {len(bars)} | raw: {bars.attrs.get('raw_rows', len(bars))}")
-    print(f"Data QA: removed {bars.attrs.get('flat_rows_removed', 0)} zero-range bars; "
+    print(f"Data QA: retained {bars.attrs.get('flat_rows', 0)} zero-range bars; "
           f"{bars.attrs.get('gaps_over_5m', 0)} gaps longer than 5 minutes")
     print(f"Signals: {len(out)} | Wins: {wins} | Losses: {losses} | Ambiguous: {ambiguous}")
     print(f"Win rate (closed unambiguous): {win_rate:.1f}% | Net R: {total_r:.2f}")
