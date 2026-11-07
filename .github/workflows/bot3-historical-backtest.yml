@@ -3,7 +3,7 @@ name: Bot 3 historical backtest
 on:
   push:
     branches:
-      - bot3-independent-build-v2
+      - bot3-research-70-validation
     paths:
       - 'bot3/run_historical_backtest.mjs'
       - '.github/workflows/bot3-historical-backtest.yml'
@@ -37,14 +37,14 @@ jobs:
         run: python -m pip install -r requirements.txt
       - name: Install historical data client
         run: npm install --no-save dukascopy-node@1.51.1
-      - name: Download six months and backtest all Bot 3 pairs
+      - name: Download two years and backtest seven major pairs
         run: node bot3/run_historical_backtest.mjs
-      - name: Run predeclared strategy competition on all 27 pairs
-        run: python -m bot3.strategy_competition --data-dir research-data --out-dir research-results/competition
+      - name: Run predeclared strategy competition on seven major pairs
+        run: python -m bot3.strategy_competition --data-dir research-data --out-dir research-results/competition --pairs EURUSD,GBPUSD,USDJPY,USDCHF,USDCAD,AUDUSD,NZDUSD
       - name: Upload historical data and reports
         uses: actions/upload-artifact@v4
         with:
-          name: bot3-six-month-backtest
+          name: bot3-two-year-70pct-validation
           path: |
             research-results/
             research-data/
