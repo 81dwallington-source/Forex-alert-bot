@@ -136,6 +136,11 @@ def main():
         (grouped["period"] == "OOS") & (grouped["trades"] >= 100) &
         (grouped["net_R"] > 0) & (grouped["profitable_pairs"] >= (grouped["pairs"] * 0.60).apply(lambda x: int(x + 0.999)))
     )
+    grouped["target_70pct_met"] = (
+        (grouped["period"] == "OOS") & (grouped["trades"] >= 100) &
+        (grouped["win_rate_pct"] >= 70.0) & (grouped["net_R"] > 0) &
+        (grouped["profitable_pairs"] >= (grouped["pairs"] * 0.60).apply(lambda x: int(x + 0.999)))
+    )
     grouped["not_a_live_approval"] = True
     grouped.to_csv(args.out_dir / "candidate_summary.csv", index=False)
     print("Research complete. Eligibility is a screening gate only; no candidate is automatically deployed.", flush=True)
