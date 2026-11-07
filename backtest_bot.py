@@ -179,9 +179,13 @@ def main():
     train=all_trades[:split]; test=all_trades[split:]
     print("\nBOT 3 HISTORICAL RESULTS — NOT BROKER-VERIFIED")
     print("Assumptions: next-M5-open entry; configured constant spread; ambiguous same-bar SL/TP counted as loss; no commissions/swaps.")
+    print("This run evaluates the CURRENT Bot 3 rules only; it does not optimise parameters or prove a future win rate.")
+    print(f"Resolved sample: {len(all_trades)} trades; development={len(train)}; untouched out-of-sample={len(test)}")
     print(f"All: {metrics(all_trades)}")
     print(f"Chronological first 70% (development): {metrics(train)}")
     print(f"Final 30% (out-of-sample): {metrics(test)}")
+    if len(test) < 30:
+        raise SystemExit(f"BACKTEST INCONCLUSIVE: only {len(test)} out-of-sample trades; at least 30 are required before interpreting the holdout win rate.")
     out=Path("backtest_trades.csv")
     with out.open("w",newline="",encoding="utf-8") as f:
         writer=csv.DictWriter(f,fieldnames=["time","pair","direction","setup","result","r"])
