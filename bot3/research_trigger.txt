@@ -1,0 +1,2 @@
+Trigger a fresh Bot 3 historical validation after wiring the strategy competition into the backtest workflow.
+Research only: do not deploy or alter live signal rules from competition results without independent out-of-sample validation.
