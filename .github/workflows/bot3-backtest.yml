@@ -39,7 +39,7 @@ jobs:
       - name: Install Dukascopy historical data downloader
         run: npm install --global dukascopy-node
 
-      - name: Download 2025-2026 M5, M15 and H1 history in quarterly chunks
+      - name: Download 2025-2026 M5, M15 and H1 history in monthly chunks
         shell: bash
         run: |
           set -euo pipefail
@@ -54,13 +54,13 @@ jobs:
               header_written=false
               chunk_start="$overall_start"
               while [[ "$chunk_start" < "$overall_end" || "$chunk_start" == "$overall_end" ]]; do
-                chunk_end="$(date -u -d "$chunk_start + 3 months - 1 day" +%Y-%m-%d)"
+                chunk_end="$(date -u -d "$chunk_start + 1 month - 1 day" +%Y-%m-%d)"
                 if [[ "$chunk_end" > "$overall_end" ]]; then chunk_end="$overall_end"; fi
                 echo "Downloading $pair $tf: $chunk_start to $chunk_end"
                 rm -f download/*
                 success=false
                 for attempt in 1 2 3; do
-                  if dukascopy-node -i "$pair" -from "$chunk_start" -to "$chunk_end" -t "$tf" -f csv -v; then
+                  if dukascopy-node -i "$pair" -from "$chunk_start" -to "$chunk_end" -t "$tf" -f csv -v --batch-size 1 --batch-pause 1500 --retries 5 --retry-pause 2000 --cache; then
                     success=true
                     break
                   fi
