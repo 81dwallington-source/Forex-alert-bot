@@ -17,7 +17,7 @@ permissions:
 jobs:
   backtest:
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
         with:
@@ -83,6 +83,15 @@ jobs:
               df[["time","Open","High","Low","Close"]].to_csv(out, index=False)
               print(f"{pair}: {len(df):,} M5 candles, {df.time.iloc[0]} to {df.time.iloc[-1]}")
           PY
+      - name: Prepare competition input filenames
+        run: |
+          for pair in EURUSD GBPUSD USDJPY USDCHF USDCAD AUDUSD NZDUSD; do
+            cp "data/${pair}_M5_normalized.csv" "data/${pair}_M5.csv"
+          done
+      - name: Run Bot 3 strategy filter competition (research only)
+        timeout-minutes: 180
+        run: |
+          python -m bot3.strategy_competition --data-dir data --out-dir data/competition --pairs EURUSD,GBPUSD,USDJPY,USDCHF,USDCAD,AUDUSD,NZDUSD --rr 1.0,1.5 --spread-multipliers 1.0,1.5
       - name: Run pair-specific spread sensitivity backtests
         run: |
           set -e
@@ -150,6 +159,7 @@ jobs:
           print("PASS: both unseen-data spread tests are profitable with at least 30 trades")
           PY
       - name: Upload historical data and results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: bot3-multi-pair-validation
