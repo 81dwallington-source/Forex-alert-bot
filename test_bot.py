@@ -12,6 +12,27 @@ import Forex_alert as bot
 
 
 class ForexBotRegressionTests(unittest.TestCase):
+    def test_backtest_metrics_count_ambiguous_as_non_win_and_include_r(self):
+        import backtest_bot
+        report = backtest_bot.metrics([
+            {"result": "WIN", "r": 1.5},
+            {"result": "LOSS", "r": -1.0},
+            {"result": "AMBIGUOUS_AS_LOSS", "r": -1.0},
+        ])
+        self.assertEqual(report["trades"], 3)
+        self.assertEqual(report["wins"], 1)
+        self.assertEqual(report["ambiguous"], 1)
+        self.assertAlmostEqual(report["win_rate"], 33.33, places=2)
+        self.assertAlmostEqual(report["expectancy_r"], -0.167, places=3)
+
+    def test_backtest_script_does_not_call_live_telegram_or_market_feed(self):
+        import inspect
+        import backtest_bot
+        source = inspect.getsource(backtest_bot)
+        self.assertNotIn("telegram_send(", source)
+        self.assertIn("analyse_pair(", source)
+        self.assertIn("next M5 candle open", source)
+
     def test_performance_report_separates_public_estimates_from_verified_trades(self):
         rows = [
             {"outcome": "TP_HIT_PUBLIC_CANDLE_ESTIMATE", "planned_rr": "1.5", "outcome_candle_time": "2026-10-30T10:00:00+00:00"},
