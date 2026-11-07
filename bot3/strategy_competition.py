@@ -84,32 +84,31 @@ def main():
             print(f"SKIP {pair}: missing {path}", flush=True)
             continue
         data = load_m5(path)
-        split_time = data.index[int(len(data) * 0.70)]
+        split_index = int(len(data) * 0.70)
+        split_time = data.index[split_index]
+        is_data = data.iloc[:split_index].copy()
+        # OOS gets an independent position state plus 1,000 preceding M5 bars
+        # for indicator warm-up. IS cannot use post-split prices; an IS trade
+        # cannot block a valid OOS entry.
+        oos_data = data.iloc[max(0, split_index - 1000):].copy()
         base_spread = SPREADS.get(pair)
         if base_spread is None:
             print(f"SKIP {pair}: no predeclared spread", flush=True)
             continue
-        print(f"BASELINE REPLAY {pair}: {len(data)} bars; split {split_time}", flush=True)
-        # One expensive point-in-time replay per pair/RR/spread. Candidate filters
-        # are then applied to the recorded signal features, avoiding nine replays.
+        print(f"INDEPENDENT IS/OOS REPLAYS {pair}: {len(data)} bars; split {split_time}", flush=True)
         for rr in [float(x) for x in args.rr.split(",")]:
             for spread_mult in [float(x) for x in args.spread_multipliers.split(",")]:
                 spread = base_spread * spread_mult
-                rows = backtest_pair(pair, data.copy(), spread, 0.2)
-                for period in ("IS", "OOS"):
-                    selected = []
-                    for row in rows:
-                        signal_time = pd.Timestamp(row["signal_time_utc"])
-                        is_row = signal_time < split_time
-                        if (period == "IS") != is_row:
-                            continue
-                        item = dict(row)
-                        # Do not let an in-sample position use price action after
-                        # the split to determine its result.
-                        if period == "IS" and item.get("exit_time_utc"):
-                            if pd.Timestamp(item["exit_time_utc"]) >= split_time:
-                                item["outcome"], item["result_R"], item["exit_time_utc"] = "OPEN", None, ""
-                        selected.append(item)
+                period_rows = {
+                    "IS": backtest_pair(pair, is_data.copy(), spread, 0.2),
+                    "OOS": backtest_pair(pair, oos_data.copy(), spread, 0.2),
+                }
+                for period, replay_rows in period_rows.items():
+                    selected = [
+                        dict(row) for row in replay_rows
+                        if (pd.Timestamp(row["signal_time_utc"]) < split_time if period == "IS"
+                            else pd.Timestamp(row["signal_time_utc"]) >= split_time)
+                    ]
                     for candidate, rule in CANDIDATES.items():
                         filtered = [r for r in selected if rule(r)]
                         result = metrics(filtered)
@@ -119,7 +118,8 @@ def main():
                             "spread_pips": round(spread, 3), "slippage_pips_per_fill": 0.2,
                             "split_time": str(split_time), **result,
                         })
-                print(f"COMPLETED {pair} RR={rr} spread_x={spread_mult}; baseline signals={len(rows)}", flush=True)
+                oos_count = sum(pd.Timestamp(r["signal_time_utc"]) >= split_time for r in period_rows["OOS"])
+                print(f"COMPLETED {pair} RR={rr} spread_x={spread_mult}; IS signals={len(period_rows['IS'])}; OOS signals={oos_count}", flush=True)
 
     detail = pd.DataFrame(report)
     detail.to_csv(args.out_dir / "candidate_results.csv", index=False)
