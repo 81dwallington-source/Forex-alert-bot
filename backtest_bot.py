@@ -75,8 +75,11 @@ def run_pair(pair, data_dir, spread_pips, max_bars):
     original_fresh=bot.candle_is_fresh
     results=[]
     last_day_by_pair=None
+    next_available_index=260
     try:
         for i in range(260, len(m5)-2):
+            if i < next_available_index:
+                continue
             signal_open=m5.index[i]
             signal_close=signal_open+pd.Timedelta(minutes=5)
             # Only HTF bars whose full candle close was known at signal time.
@@ -135,6 +138,7 @@ def run_pair(pair, data_dir, spread_pips, max_bars):
             results.append({"time":signal_close.isoformat(),"pair":stem,"direction":direction,
                             "setup":signal["setup_type"],"result":outcome,"r":round(exit_r,4)})
             last_day_by_pair=day
+            next_available_index=j+1
     finally:
         bot.download_data=original_download
         bot.candle_is_fresh=original_fresh
