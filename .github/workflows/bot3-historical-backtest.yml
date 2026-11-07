@@ -39,8 +39,8 @@ jobs:
         run: npm install --no-save dukascopy-node@1.51.1
       - name: Download two years and backtest seven major pairs
         run: node bot3/run_historical_backtest.mjs
-      - name: Run predeclared strategy competition on seven major pairs
-        run: python -m bot3.strategy_competition --data-dir research-data --out-dir research-results/competition --pairs EURUSD,GBPUSD,USDJPY,USDCHF,USDCAD,AUDUSD,NZDUSD
+      - name: Run focused 1:1 strategy competition with stressed spreads on seven major pairs
+        run: python -m bot3.strategy_competition --data-dir research-data --out-dir research-results/competition --pairs EURUSD,GBPUSD,USDJPY,USDCHF,USDCAD,AUDUSD,NZDUSD --rr 1.0 --spread-multipliers 1.5
       - name: Upload historical data and reports
         uses: actions/upload-artifact@v4
         with:
