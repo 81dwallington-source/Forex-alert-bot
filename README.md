@@ -31,6 +31,18 @@ The workflow runs offline regression tests with `python -m unittest -v test_bot.
 - Broker-verified records are counted only when explicitly labelled VERIFIED_WIN, VERIFIED_LOSS, or VERIFIED_BREAK_EVEN. The bot does not infer these labels from public candles.
 
 
+## Automated Bot 3 historical backtesting
+
+A manual GitHub Actions workflow now downloads historical **Dukascopy** bid candles for
+the seven major pairs, builds M15 bars from complete M5 candles, downloads H1 bars,
+and runs the existing Bot 3 rules through the chronological backtest. It is not MT5
+broker data; compare broker-specific spreads and execution before drawing conclusions.
+
+Open Actions → **Bot 3 Historical Backtest** → Run workflow. Choose 1 year first;
+the 2-year option is available after the first run proves stable. The workflow uploads
+raw candles and `backtest_trades.csv` as an artifact. It does not change the live
+Telegram scanner or send trade alerts.
+
 ## Bot 3 historical backtesting
 
 A conservative historical tester is available as `backtest_bot.py`. It calls the live
