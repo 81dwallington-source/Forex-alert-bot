@@ -107,24 +107,26 @@ def run_pair(pair, data_dir, spread_pips, max_bars):
             entry=raw_entry+(half_spread if direction=="BUY" else -half_spread)
             stop=float(signal["stop"])+shift
             target=float(signal["target"])+shift
-            risk=abs(entry-stop)
+            risk=(entry-(stop-half_spread)) if direction=="BUY" else ((stop+half_spread)-entry)
             if risk<=0:
                 continue
             outcome=None; exit_r=None
             for j in range(i+1,len(m5)):
                 bar=m5.iloc[j]
                 if direction=="BUY":
-                    hit_sl=float(bar.Low)<=stop
-                    hit_tp=float(bar.High)>=target
+                    hit_sl=float(bar.Low)<=stop+half_spread
+                    hit_tp=float(bar.High)>=target+half_spread
                 else:
-                    hit_sl=float(bar.High)>=stop
-                    hit_tp=float(bar.Low)<=target
+                    hit_sl=float(bar.High)>=stop-half_spread
+                    hit_tp=float(bar.Low)<=target-half_spread
                 if hit_sl and hit_tp:
                     outcome="AMBIGUOUS_AS_LOSS"; exit_r=-1.0; break
                 if hit_sl:
                     outcome="LOSS"; exit_r=-1.0; break
                 if hit_tp:
-                    outcome="WIN"; exit_r=(abs(target-entry)/risk)
+                    outcome="WIN"
+                    reward = ((target-half_spread)-entry) if direction=="BUY" else (entry-(target+half_spread))
+                    exit_r=reward/risk
                     break
             if outcome is None:
                 continue
