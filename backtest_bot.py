@@ -112,34 +112,35 @@ def run_pair(pair, data_dir, spread_pips, max_bars):
             raw_entry=float(nxt.Open)
             shift=raw_entry-float(signal["entry"])
             direction=signal["direction"]
-            entry=raw_entry+(half_spread if direction=="BUY" else -half_spread)
+            # Dukascopy history is BID OHLC. BUYs enter at ASK (BID + full spread);
+            # SELLs enter at BID. Stops/targets are tested on the executable quote side.
+            entry=raw_entry+(spread_pips*pip if direction=="BUY" else 0.0)
             stop=float(signal["stop"])+shift
             target=float(signal["target"])+shift
-            risk=(entry-(stop-half_spread)) if direction=="BUY" else ((stop+half_spread)-entry)
+            risk=(entry-stop) if direction=="BUY" else (stop+spread_pips*pip-entry)
             if risk<=0:
                 continue
             outcome=None; exit_r=None
             for j in range(i+1,len(m5)):
                 bar=m5.iloc[j]
                 if direction=="BUY":
-                    hit_sl=float(bar.Low)<=stop+half_spread
-                    hit_tp=float(bar.High)>=target+half_spread
+                    hit_sl=float(bar.Low)<=stop
+                    hit_tp=float(bar.High)>=target
                 else:
-                    hit_sl=float(bar.High)>=stop-half_spread
-                    hit_tp=float(bar.Low)<=target-half_spread
+                    hit_sl=float(bar.High)+spread_pips*pip>=stop
+                    hit_tp=float(bar.Low)+spread_pips*pip<=target
                 if hit_sl and hit_tp:
                     outcome="AMBIGUOUS_AS_LOSS"; exit_r=-1.0; break
                 if hit_sl:
                     outcome="LOSS"; exit_r=-1.0; break
                 if hit_tp:
                     outcome="WIN"
-                    reward = ((target-half_spread)-entry) if direction=="BUY" else (entry-(target+half_spread))
+                    reward = (target-entry) if direction=="BUY" else (entry-(target-spread_pips*pip))
                     exit_r=reward/risk
                     break
             if outcome is None:
                 continue
-            # Adverse spread is charged on both sides via entry offset and exit offset.
-            # Planned SL/TP levels are shifted with next-open fill; R is price-distance based.
+            # Entry/exit quote sides are modelled against BID OHLC with the configured full spread.
             results.append({"time":signal_close.isoformat(),"pair":stem,"direction":direction,
                             "setup":signal["setup_type"],"result":outcome,"r":round(exit_r,4)})
             last_day_by_pair=day
