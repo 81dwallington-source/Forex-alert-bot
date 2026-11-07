@@ -3,7 +3,8 @@ import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 
-const pairs = ["EURUSD","GBPUSD","USDJPY","USDCHF","USDCAD","AUDUSD","NZDUSD","EURGBP","EURJPY","EURCHF","EURAUD","EURCAD","EURNZD","GBPJPY","GBPCHF","GBPAUD","GBPCAD","GBPNZD","AUDJPY","AUDCHF","AUDCAD","AUDNZD","NZDJPY","NZDCHF","NZDCAD","CADJPY","CHFJPY"];
+// Focus the longer validation on the seven liquid major pairs to keep download coverage and spread assumptions comparable.
+const pairs = ["EURUSD","GBPUSD","USDJPY","USDCHF","USDCAD","AUDUSD","NZDUSD"];
 const spreads = {
   EURUSD:1.2, GBPUSD:1.5, USDJPY:1.3, USDCHF:1.5, USDCAD:1.6, AUDUSD:1.4, NZDUSD:1.8,
   EURGBP:1.5, EURJPY:2.0, EURCHF:2.0, EURAUD:2.5, EURCAD:2.5, EURNZD:3.0,
@@ -12,7 +13,7 @@ const spreads = {
   NZDCAD:2.5, CADJPY:2.0, CHFJPY:2.5
 };
 const to = new Date().toISOString().slice(0,10);
-const fromDate = new Date(Date.now() - 183*24*60*60*1000);
+const fromDate = new Date(Date.now() - 730*24*60*60*1000);
 const from = fromDate.toISOString().slice(0,10);
 await mkdir("research-data", { recursive:true });
 await mkdir("research-results", { recursive:true });
