@@ -12,6 +12,7 @@ candle, it records a conservative SL. It never downloads data or sends Telegram.
 """
 import argparse
 import csv
+import traceback
 from pathlib import Path
 from collections import Counter
 import pandas as pd
@@ -159,17 +160,21 @@ def main():
     args=p.parse_args()
     if args.spread_pips<0: p.error("--spread-pips cannot be negative")
     all_trades=[]
+    pair_errors=[]
     for pair in [x.strip().upper() for x in args.pairs.split(",") if x.strip()]:
         try:
             trades=run_pair(pair,args.data_dir,args.spread_pips,args.max_bars)
             all_trades.extend(trades)
             print(f"{pair}: {len(trades)} resolved trades")
         except Exception as exc:
-            print(f"{pair}: NOT TESTED — {exc}")
+            pair_errors.append(pair)
+            print(f"{pair}: NOT TESTED — {type(exc).__name__}: {exc}")
+            traceback.print_exc()
+    if pair_errors:
+        raise SystemExit(f"BACKTEST INVALID: {len(pair_errors)} pair(s) could not be tested: {', '.join(pair_errors)}")
     all_trades.sort(key=lambda x:x["time"])
     if not all_trades:
-        print("NO PERFORMANCE CLAIM: no resolved trades. Supply valid historical M5/M15/H1 CSV exports.")
-        return
+        raise SystemExit("BACKTEST INVALID: no resolved trades; no performance result can be calculated.")
     split=max(1,int(len(all_trades)*0.70))
     train=all_trades[:split]; test=all_trades[split:]
     print("\nBOT 3 HISTORICAL RESULTS — NOT BROKER-VERIFIED")
