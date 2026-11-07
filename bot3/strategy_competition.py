@@ -1,12 +1,11 @@
-"""Predeclared Bot 3 filter/RR/spread competition; research only, never sends alerts."""
+"""Fast, predeclared Bot 3 candidate competition. Research only; never sends alerts."""
 from __future__ import annotations
 import argparse
 from pathlib import Path
 import pandas as pd
-from bot3 import bot3
 from bot3.backtest import load_m5, backtest_pair
 
-# Fixed hypotheses: no thresholds are fitted from the results of this run.
+# Fixed hypotheses; no thresholds are fitted from the test results.
 CANDIDATES = {
     "baseline": lambda s: True,
     "sell_only": lambda s: s.get("direction") == "SELL",
@@ -39,7 +38,6 @@ CANDIDATES = {
         s.get("confirmation_body_ratio", 0) >= 0.60
     ),
 }
-
 SPREADS = {
     "EURUSD":1.2,"GBPUSD":1.5,"USDJPY":1.3,"USDCHF":1.5,"USDCAD":1.6,
     "AUDUSD":1.4,"NZDUSD":1.8,"EURGBP":1.5,"EURJPY":2.0,"EURCHF":2.0,
@@ -79,47 +77,49 @@ def main():
     parser.add_argument("--spread-multipliers", default="1.0,1.5")
     args = parser.parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    original_build = bot3.build_signal
-    original_rr = bot3.MIN_RR
     report = []
-    try:
-        for pair in [p.strip().upper() for p in args.pairs.split(",") if p.strip()]:
-            path = args.data_dir / f"{pair}_M5.csv"
-            if not path.exists():
-                print(f"SKIP {pair}: missing {path}", flush=True)
-                continue
-            data = load_m5(path)
-            split = int(len(data) * 0.70)
-            split_time = data.index[split]
-            periods = {"IS": data.iloc[:split], "OOS": data.iloc[max(0, split - 1000):]}
-            base_spread = SPREADS.get(pair)
-            if base_spread is None:
-                print(f"SKIP {pair}: no predeclared spread", flush=True)
-                continue
-            for period, frame in periods.items():
-                for candidate, rule in CANDIDATES.items():
-                    def filtered(*a, _rule=rule, **kw):
-                        signal = original_build(*a, **kw)
-                        return signal if signal and _rule(signal) else None
-                    bot3.build_signal = filtered
-                    for rr in [float(x) for x in args.rr.split(",")]:
-                        bot3.MIN_RR = rr
-                        for spread_mult in [float(x) for x in args.spread_multipliers.split(",")]:
-                            spread = base_spread * spread_mult
-                            rows = backtest_pair(pair, frame.copy(), spread, 0.2)
-                            if period == "OOS":
-                                rows = [r for r in rows if pd.Timestamp(r["signal_time_utc"]) >= split_time]
-                            result = metrics(rows)
-                            report.append({
-                                "pair": pair, "period": period, "candidate": candidate,
-                                "rr": rr, "spread_multiplier": spread_mult,
-                                "spread_pips": round(spread, 3), "slippage_pips_per_fill": 0.2,
-                                "split_time": str(split_time), **result,
-                            })
-                            print(pair, period, candidate, "RR", rr, "spread x", spread_mult, result, flush=True)
-    finally:
-        bot3.build_signal = original_build
-        bot3.MIN_RR = original_rr
+    for pair in [p.strip().upper() for p in args.pairs.split(",") if p.strip()]:
+        path = args.data_dir / f"{pair}_M5.csv"
+        if not path.exists():
+            print(f"SKIP {pair}: missing {path}", flush=True)
+            continue
+        data = load_m5(path)
+        split_time = data.index[int(len(data) * 0.70)]
+        base_spread = SPREADS.get(pair)
+        if base_spread is None:
+            print(f"SKIP {pair}: no predeclared spread", flush=True)
+            continue
+        print(f"BASELINE REPLAY {pair}: {len(data)} bars; split {split_time}", flush=True)
+        # One expensive point-in-time replay per pair/RR/spread. Candidate filters
+        # are then applied to the recorded signal features, avoiding nine replays.
+        for rr in [float(x) for x in args.rr.split(",")]:
+            for spread_mult in [float(x) for x in args.spread_multipliers.split(",")]:
+                spread = base_spread * spread_mult
+                rows = backtest_pair(pair, data.copy(), spread, 0.2)
+                for period in ("IS", "OOS"):
+                    selected = []
+                    for row in rows:
+                        signal_time = pd.Timestamp(row["signal_time_utc"])
+                        is_row = signal_time < split_time
+                        if (period == "IS") != is_row:
+                            continue
+                        item = dict(row)
+                        # Do not let an in-sample position use price action after
+                        # the split to determine its result.
+                        if period == "IS" and item.get("exit_time_utc"):
+                            if pd.Timestamp(item["exit_time_utc"]) >= split_time:
+                                item["outcome"], item["result_R"], item["exit_time_utc"] = "OPEN", None, ""
+                        selected.append(item)
+                    for candidate, rule in CANDIDATES.items():
+                        filtered = [r for r in selected if rule(r)]
+                        result = metrics(filtered)
+                        report.append({
+                            "pair": pair, "period": period, "candidate": candidate,
+                            "rr": rr, "spread_multiplier": spread_mult,
+                            "spread_pips": round(spread, 3), "slippage_pips_per_fill": 0.2,
+                            "split_time": str(split_time), **result,
+                        })
+                print(f"COMPLETED {pair} RR={rr} spread_x={spread_mult}; baseline signals={len(rows)}", flush=True)
 
     detail = pd.DataFrame(report)
     detail.to_csv(args.out_dir / "candidate_results.csv", index=False)
@@ -132,14 +132,15 @@ def main():
         median_pair_net_R=("net_R", "median"),
     ).reset_index()
     grouped["win_rate_pct"] = 100 * grouped.wins / (grouped.wins + grouped.losses).replace(0, pd.NA)
+    minimum_profitable_pairs = (grouped["pairs"] * 0.60).apply(lambda x: int(x + 0.999))
     grouped["eligible_for_review"] = (
         (grouped["period"] == "OOS") & (grouped["trades"] >= 100) &
-        (grouped["net_R"] > 0) & (grouped["profitable_pairs"] >= (grouped["pairs"] * 0.60).apply(lambda x: int(x + 0.999)))
+        (grouped["net_R"] > 0) & (grouped["profitable_pairs"] >= minimum_profitable_pairs)
     )
     grouped["target_70pct_met"] = (
         (grouped["period"] == "OOS") & (grouped["trades"] >= 100) &
         (grouped["win_rate_pct"] >= 70.0) & (grouped["net_R"] > 0) &
-        (grouped["profitable_pairs"] >= (grouped["pairs"] * 0.60).apply(lambda x: int(x + 0.999)))
+        (grouped["profitable_pairs"] >= minimum_profitable_pairs)
     )
     grouped["not_a_live_approval"] = True
     grouped.to_csv(args.out_dir / "candidate_summary.csv", index=False)
