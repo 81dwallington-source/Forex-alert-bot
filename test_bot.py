@@ -129,6 +129,9 @@ class ForexBotRegressionTests(unittest.TestCase):
         self.assertEqual(bot.MAX_ALERTS_PER_UTC_DAY, 5)
         self.assertTrue(bot.MAX_ONE_ALERT_PER_PAIR_PER_UTC_DAY)
 
+    def test_minimum_reward_to_risk_is_1_5_to_1(self):
+        self.assertEqual(bot.MIN_RR, 1.5)
+
     def test_stop_loss_has_more_volatility_room_and_structure_buffer(self):
         self.assertEqual(bot.ATR_STOP_MULTIPLIER, 1.75)
         self.assertEqual(bot.STRUCTURE_LOOKBACK_CANDLES, 36)
