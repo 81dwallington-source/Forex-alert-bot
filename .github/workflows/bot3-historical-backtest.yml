@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: bot3-historical-backtest
+  group: bot3-research-70-validation
   cancel-in-progress: true
 
 jobs:
@@ -26,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: bot3-independent-build-v2
+          ref: bot3-research-70-validation
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
