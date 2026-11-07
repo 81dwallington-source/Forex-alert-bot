@@ -7,7 +7,7 @@
 - Rejects stale/incomplete candles and fails closed if the public feed returns missing, malformed, or insufficient candle data.
 - Requires aligned M15/H1 trends, fresh M5 continuation or pullback confirmation, and filters for RSI, ATR/volatility, EMA separation, entry extension, and candle direction.
 - Detects confirmed H1 swing highs/lows and rejects setups when the target is too close to the opposing H1 swing.
-- Uses structure/ATR stops, a minimum planned reward-to-risk of 1:1, and limits alerts to 5 per UTC day and at most 1 per pair per UTC day.
+- Uses structure/ATR stops, a minimum planned reward-to-risk of 1.5:1, and limits alerts to 5 per UTC day and at most 1 per pair per UTC day.
 - Logs alerts and estimates later outcomes from biquote public-feed M5 candles. These are candle-based estimates, not executed-trade results.
 
 ## Important limitations and safety
