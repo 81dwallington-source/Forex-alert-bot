@@ -30,6 +30,35 @@ CANDIDATES = {
         1 <= s.get("pullback_age_bars", 99) <= 3 and
         0.05 <= s.get("pullback_depth_atr", -1) <= 0.45
     ),
+    "htf_alignment_momentum": lambda s: (
+        s.get("m15_directional_trend_gap_atr", 0) >= 0.05 and
+        s.get("h1_directional_trend_gap_atr", 0) >= 0.05 and
+        s.get("directional_momentum_6_atr", 0) >= 0.20
+    ),
+    "trend_pullback_confirmation": lambda s: (
+        s.get("m15_directional_trend_gap_atr", 0) >= 0.05 and
+        s.get("h1_directional_trend_gap_atr", 0) >= 0.05 and
+        1 <= s.get("pullback_age_bars", 99) <= 4 and
+        s.get("confirmation_body_ratio", 0) >= 0.55
+    ),
+    "momentum_room_confirmation": lambda s: (
+        s.get("directional_momentum_3_atr", 0) >= 0.10 and
+        s.get("directional_momentum_6_atr", 0) >= 0.20 and
+        s.get("opposing_distance_24_atr", 0) >= 1.00 and
+        s.get("confirmation_body_ratio", 0) >= 0.55
+    ),
+    "shallow_fresh_pullback": lambda s: (
+        1 <= s.get("pullback_age_bars", 99) <= 4 and
+        0.05 <= s.get("pullback_depth_atr", -1) <= 0.30 and
+        s.get("confirmation_body_ratio", 0) >= 0.55
+    ),
+    "high_conviction_confluence": lambda s: (
+        s.get("m15_directional_trend_gap_atr", 0) >= 0.10 and
+        s.get("h1_directional_trend_gap_atr", 0) >= 0.10 and
+        s.get("directional_momentum_6_atr", 0) >= 0.25 and
+        s.get("opposing_distance_24_atr",  0) >= 0.80 and
+        s.get("confirmation_body_ratio", 0) >= 0.65
+    ),
     "combined_quality": lambda s: (
         s.get("directional_momentum_3_atr", 0) >= 0.15 and
         s.get("directional_bar_fraction_6", 0) >= 0.50 and
