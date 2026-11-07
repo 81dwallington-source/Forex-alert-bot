@@ -1,21 +1,61 @@
 name: Bot 3 multi-pair historical validation
-# Triggered on this branch by workflow-file updates; strategy and Bot 1/2 are untouched.
-# Validation rerun after allowing legitimate empty weekend/holiday data.
-
 on:
   push:
-    branches:
-      - bot3-independent-build-v2
+    branches: [bot3-independent-build-v2]
     paths:
       - '.github/workflows/bot3-backtest.yml'
       - 'bot3/**'
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
+  download:
+    name: Download ${{ matrix.pair }} M5 history
+    runs-on: ubuntu-latest
+    timeout-minutes: 210
+    strategy:
+      fail-fast: false
+      max-parallel: 7
+      matrix:
+        pair: [eurusd, gbpusd, usdjpy, usdchf, usdcad, audusd, nzdusd]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Dukascopy downloader
+        run: npm install --no-save dukascopy-node@1.51.1
+      - name: Download pair history with retries
+        timeout-minutes: 180
+        env:
+          PAIR: ${{ matrix.pair }}
+        run: |
+          set -euo pipefail
+          mkdir -p data
+          for attempt in 1 2 3 4 5 6; do
+            rm -f "data/${PAIR}_m5.csv"
+            if ./node_modules/.bin/dukascopy-node -i "$PAIR" -from 2024-01-01 -t m5 -f csv -dir data -fn "${PAIR}_m5" --batch-size 5 --batch-pause 2500 --retries 5 --retry-pause 4000 --rate-limit-retries 4 --cache; then
+              if test -s "data/${PAIR}_m5.csv"; then
+                echo "Downloaded $PAIR: $(wc -c < "data/${PAIR}_m5.csv") bytes"
+                break
+              fi
+            fi
+            if [ "$attempt" -eq 6 ]; then echo "ERROR: $PAIR download failed" >&2; exit 1; fi
+            sleep $((attempt * 20))
+          done
+          test -s "data/${PAIR}_m5.csv"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bot3-data-${{ matrix.pair }}
+          path: data/${{ matrix.pair }}_m5.csv
+          if-no-files-found: error
+          retention-days: 30
+
   backtest:
+    name: Normalize and validate Bot 3
+    needs: download
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
@@ -25,43 +65,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - uses: actions/setup-node@v4
+      - name: Install Python dependencies
+        run: python -m pip install pandas requests
+      - uses: actions/download-artifact@v4
         with:
-          node-version: '20'
-      - name: Install Python and historical-data dependencies
-        run: |
-          python -m pip install pandas requests
-          npm install --no-save dukascopy-node@1.51.1
-      - name: Download seven major-pair M5 histories
-        timeout-minutes: 180
-        run: |
-          set -euo pipefail
-          mkdir -p data
-          download_pair() {
-            pair="$1"
-            echo "===== Starting ${pair} M5 download ====="
-            # M5 requires one request per calendar day. Use small concurrent batches
-            # with a 2s pause: serial one-request batches make this 7-pair, 2024-now
-            # validation exceed the job timeout. 1.51.1 includes the WAF header fix.
-            # Retry request failures; accept legitimate empty weekend/holiday periods. Retain completed periods in cache.
-            for attempt in 1 2 3 4 5 6; do
-              rm -f "data/${pair}_m5.csv"
-              if ./node_modules/.bin/dukascopy-node -i "$pair" -from 2024-01-01 -t m5 -f csv -dir data -fn "${pair}_m5" --batch-size 5 --batch-pause 2000 --retries 5 --retry-pause 3000 --rate-limit-retries 3 --cache; then
-                if test -s "data/${pair}_m5.csv"; then
-                  echo "===== Finished ${pair}; $(wc -c < "data/${pair}_m5.csv") bytes ====="
-                  return 0
-                fi
-              fi
-              echo "Download attempt ${attempt}/6 failed for ${pair}; waiting before retry"
-              sleep $((attempt * 20))
-            done
-            echo "ERROR: Could not download ${pair} after 6 attempts" >&2
-            return 1
-          }
-          # Download sequentially: parallel requests were triggering HTTP 202 responses.
-          for pair in eurusd gbpusd usdjpy usdchf usdcad audusd nzdusd; do
-            download_pair "$pair"
-          done
+          pattern: bot3-data-*
+          path: data
+          merge-multiple: true
       - name: Normalize historical candles
         run: |
           python - <<'PY'
@@ -70,10 +80,7 @@ jobs:
           for pair in ("EURUSD", "GBPUSD", "USDJPY", "USDCHF", "USDCAD", "AUDUSD", "NZDUSD"):
               source = Path(f"data/{pair.lower()}_m5.csv")
               if not source.exists():
-                  matches = list(Path("data").glob(f"{pair.lower()}_m5*.csv"))
-                  if len(matches) != 1:
-                      raise SystemExit(f"Could not identify {pair} CSV: {matches}")
-                  source = matches[0]
+                  raise SystemExit(f"Missing downloaded data: {source}")
               df = pd.read_csv(source)
               if "timestamp" not in df.columns:
                   raise SystemExit(f"{pair}: unexpected Dukascopy columns {list(df.columns)}")
@@ -109,53 +116,32 @@ jobs:
           rows = []
           for path in sorted(Path("data").glob("results_*pips.csv")):
               df = pd.read_csv(path)
-              if df.empty:
-                  continue
+              if df.empty: continue
               df["signal_time_utc"] = pd.to_datetime(df["signal_time_utc"], utc=True)
               pair = path.name.split("_")[1]
               spread = path.name.split("_")[2].replace("pips.csv", "")
-              for label, start, end in [
-                  ("IN_SAMPLE_2024_2025", "2024-01-01", "2026-01-01"),
-                  ("OUT_OF_SAMPLE_2026", "2026-01-01", "2027-01-01"),
-              ]:
-                  part = df[(df.signal_time_utc >= pd.Timestamp(start, tz="UTC")) &
-                            (df.signal_time_utc < pd.Timestamp(end, tz="UTC"))]
-                  closed = part[part.outcome.isin(["WIN", "LOSS"])]
-                  wins = int((closed.outcome == "WIN").sum())
-                  losses = int((closed.outcome == "LOSS").sum())
-                  rows.append({
-                      "pair": pair, "spread_pips": spread, "period": label,
-                      "trades_including_ambiguous": len(part),
-                      "wins": wins, "losses": losses,
-                      "ambiguous": int((part.outcome == "AMBIGUOUS").sum()),
-                      "open_censored": int((part.outcome == "OPEN").sum()),
-                      "win_rate_pct": round(100*wins/(wins+losses), 2) if wins+losses else None,
-                      "net_R": round(float(closed.result_R.sum()), 2) if not closed.empty else 0.0,
-                  })
-          report = pd.DataFrame(rows)
-          report.to_csv("data/multi_pair_validation_summary.csv", index=False)
+              for label, start, end in [("IN_SAMPLE_2024_2025","2024-01-01","2026-01-01"),("OUT_OF_SAMPLE_2026","2026-01-01","2027-01-01")]:
+                  part = df[(df.signal_time_utc >= pd.Timestamp(start,tz="UTC")) & (df.signal_time_utc < pd.Timestamp(end,tz="UTC"))]
+                  closed = part[part.outcome.isin(["WIN","LOSS"])]
+                  wins = int((closed.outcome=="WIN").sum()); losses = int((closed.outcome=="LOSS").sum())
+                  rows.append({"pair":pair,"spread_pips":spread,"period":label,"trades_including_ambiguous":len(part),"wins":wins,"losses":losses,"ambiguous":int((part.outcome=="AMBIGUOUS").sum()),"open_censored":int((part.outcome=="OPEN").sum()),"win_rate_pct":round(100*wins/(wins+losses),2) if wins+losses else None,"net_R":round(float(closed.result_R.sum()),2) if not closed.empty else 0.0})
+          report=pd.DataFrame(rows); report.to_csv("data/multi_pair_validation_summary.csv",index=False)
           print(report.to_string(index=False))
-          print("\n2026 remains the unseen chronological test period. Do not tune rules against it.")
+          print("\\n2026 remains unseen chronological test data; do not tune rules against it.")
           PY
       - name: Enforce out-of-sample profitability gate
         run: |
           python - <<'PY'
           import pandas as pd
-          report = pd.read_csv("data/multi_pair_validation_summary.csv")
-          test = report[report.period == "OUT_OF_SAMPLE_2026"]
-          failures = []
-          for spread in (1.0, 1.5):
-              part = test[test.spread_pips.astype(float) == spread]
-              trades = int(part.trades_including_ambiguous.sum())
-              wins = int(part.wins.sum())
-              losses = int(part.losses.sum())
-              net_r = float(part.net_R.sum())
-              win_rate = 100 * wins / (wins + losses) if wins + losses else 0.0
-              print(f"OOS {spread:.1f}-pip spread: {trades} trades, {win_rate:.2f}% wins, {net_r:.2f}R net")
-              if trades < 30 or net_r <= 0:
-                  failures.append(f"{spread:.1f}-pip spread failed: trades={trades}, net_R={net_r:.2f}")
-          if failures:
-              raise SystemExit("BOT 3 NOT VALIDATED: " + "; ".join(failures))
+          report=pd.read_csv("data/multi_pair_validation_summary.csv")
+          test=report[report.period=="OUT_OF_SAMPLE_2026"]; failures=[]
+          for spread in (1.0,1.5):
+            part=test[test.spread_pips.astype(float)==spread]
+            trades=int(part.trades_including_ambiguous.sum()); wins=int(part.wins.sum()); losses=int(part.losses.sum()); net_r=float(part.net_R.sum())
+            win_rate=100*wins/(wins+losses) if wins+losses else 0.0
+            print(f"OOS {spread:.1f}-pip spread: {trades} trades, {win_rate:.2f}% wins, {net_r:.2f}R net")
+            if trades<30 or net_r<=0: failures.append(f"{spread:.1f}-pip spread failed: trades={trades}, net_R={net_r:.2f}")
+          if failures: raise SystemExit("BOT 3 NOT VALIDATED: "+"; ".join(failures))
           print("PASS: both unseen-data spread tests are profitable with at least 30 trades")
           PY
       - name: Upload historical data and results
