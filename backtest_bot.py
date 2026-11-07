@@ -69,6 +69,7 @@ def metrics(trades):
             "expectancy_r":round(sum(rs)/n,3),"max_dd_r":round(dd,2)}
 
 def run_pair(pair, data_dir, spread_pips, max_bars):
+    data_dir = Path(data_dir)
     stem=pair.replace("/","").upper()
     m5=load_csv(data_dir/f"{stem}_M5.csv",5)
     m15=load_csv(data_dir/f"{stem}_M15.csv",15)
