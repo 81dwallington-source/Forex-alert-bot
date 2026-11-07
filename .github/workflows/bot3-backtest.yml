@@ -1,0 +1,75 @@
+name: Bot 3 historical backtest
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "backtest_bot.py"
+      - ".github/workflows/bot3-backtest.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  historical-backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Check out Bot 3
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Install Dukascopy historical data downloader
+        run: npm install --global dukascopy-node
+
+      - name: Download 2025-2026 M5, M15 and H1 history
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p historical_data download
+          start=2025-01-01
+          end="$(date -u +%Y-%m-%d)"
+          for pair in eurusd gbpusd usdjpy usdchf usdcad audusd nzdusd; do
+            for tf in m5 m15 h1; do
+              echo "Downloading $pair $tf: $start to $end"
+              dukascopy-node -i "$pair" -from "$start" -to "$end" -t "$tf" -f csv -v
+              file="$(find download -maxdepth 1 -type f -name "$pair-$tf-bid-*.csv" -print -quit)"
+              if [ -z "$file" ]; then
+                echo "No CSV produced for $pair $tf"
+                exit 1
+              fi
+              suffix="$(echo "$tf" | tr '[:lower:]' '[:upper:]')"
+              cp "$file" "historical_data/${pair^^}_${suffix}.csv"
+            done
+          done
+
+      - name: Run conservative Bot 3 backtest
+        run: |
+          python -m unittest -v test_bot.py
+          python backtest_bot.py --data-dir historical_data --pairs EUR/USD,GBP/USD,USD/JPY,USD/CHF,USD/CAD,AUD/USD,NZD/USD --spread-pips 1.2
+
+      - name: Upload historical data and trade-level results
+        uses: actions/upload-artifact@v4
+        with:
+          name: bot3-historical-backtest-2025-to-current
+          path: |
+            backtest_trades.csv
+            historical_data/
+          retention-days: 14
