@@ -31,7 +31,12 @@ def load_csv(path, duration):
             raise ValueError(f"{path}: missing {name} column")
         rename[lower[name.lower()]] = name
     df = df.rename(columns=rename)
-    df.index = pd.to_datetime(df[time_col], utc=True, errors="raise")
+    raw_time = df[time_col]
+    if pd.api.types.is_numeric_dtype(raw_time):
+        # Dukascopy CSV exports use Unix epoch milliseconds.
+        df.index = pd.to_datetime(raw_time, unit="ms", utc=True, errors="raise")
+    else:
+        df.index = pd.to_datetime(raw_time, utc=True, errors="raise")
     df = df[["Open", "High", "Low", "Close"]].astype(float).sort_index()
     df = df[~df.index.duplicated(keep="last")]
     if len(df) < 100:
