@@ -79,66 +79,110 @@ def main():
     parser.add_argument("--spread-multipliers", default="1.0,1.5")
     args = parser.parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    original_build = bot3.build_signal
-    original_rr = bot3.MIN_RR
-    report = []
+    original_build, original_rr = bot3.build_signal, bot3.MIN_RR
+    detail_rows, test_rows = [], []
+    configs = [(name, rule, float(rr), float(mult))
+               for name, rule in CANDIDATES.items()
+               for rr in args.rr.split(",")
+               for mult in args.spread_multipliers.split(",")]
     try:
         for pair in [p.strip().upper() for p in args.pairs.split(",") if p.strip()]:
             path = args.data_dir / f"{pair}_M5.csv"
             if not path.exists():
-                print(f"SKIP {pair}: missing {path}", flush=True)
-                continue
+                raise FileNotFoundError(f"Required pair history missing: {path}")
             data = load_m5(path)
-            split = int(len(data) * 0.70)
-            split_time = data.index[split]
-            periods = {"IS": data.iloc[:split], "OOS": data.iloc[max(0, split - 1000):]}
-            base_spread = SPREADS.get(pair)
-            if base_spread is None:
-                print(f"SKIP {pair}: no predeclared spread", flush=True)
-                continue
-            for period, frame in periods.items():
-                for candidate, rule in CANDIDATES.items():
+            if len(data) < 30000:
+                raise ValueError(f"{pair}: only {len(data)} candles; insufficient for chronological train/validation/test")
+            n = len(data)
+            train_end, validation_end = int(n * .60), int(n * .80)
+            boundaries = {
+                "TRAIN": (0, train_end),
+                "VALIDATION": (train_end, validation_end),
+                "FINAL_TEST": (validation_end, n),
+            }
+            base_spread = SPREADS[pair]
+            # Candidate choice is made only on the middle validation block.
+            for period in ("TRAIN", "VALIDATION"):
+                start, end = boundaries[period]
+                warm_start = max(0, start - 1000)
+                frame = data.iloc[warm_start:end].copy()
+                period_start = data.index[start]
+                for candidate, rule, rr, spread_mult in configs:
                     def filtered(*a, _rule=rule, **kw):
                         signal = original_build(*a, **kw)
                         return signal if signal and _rule(signal) else None
-                    bot3.build_signal = filtered
-                    for rr in [float(x) for x in args.rr.split(",")]:
-                        bot3.MIN_RR = rr
-                        for spread_mult in [float(x) for x in args.spread_multipliers.split(",")]:
-                            spread = base_spread * spread_mult
-                            rows = backtest_pair(pair, frame.copy(), spread, 0.2)
-                            if period == "OOS":
-                                rows = [r for r in rows if pd.Timestamp(r["signal_time_utc"]) >= split_time]
-                            result = metrics(rows)
-                            report.append({
-                                "pair": pair, "period": period, "candidate": candidate,
-                                "rr": rr, "spread_multiplier": spread_mult,
-                                "spread_pips": round(spread, 3), "slippage_pips_per_fill": 0.2,
-                                "split_time": str(split_time), **result,
-                            })
-                            print(pair, period, candidate, "RR", rr, "spread x", spread_mult, result, flush=True)
+                    bot3.build_signal, bot3.MIN_RR = filtered, rr
+                    rows = backtest_pair(pair, frame, base_spread * spread_mult, 0.2)
+                    rows = [r for r in rows if pd.Timestamp(r["signal_time_utc"]) >= period_start]
+                    detail_rows.append({
+                        "pair":pair, "period":period, "candidate":candidate, "rr":rr,
+                        "spread_multiplier":spread_mult, "spread_pips":round(base_spread*spread_mult,3),
+                        "slippage_pips_per_fill":0.2, **metrics(rows)
+                    })
+                    print(pair, period, candidate, "RR", rr, "spread x", spread_mult,
+                          metrics(rows), flush=True)
     finally:
-        bot3.build_signal = original_build
-        bot3.MIN_RR = original_rr
+        bot3.build_signal, bot3.MIN_RR = original_build, original_rr
 
-    detail = pd.DataFrame(report)
-    detail.to_csv(args.out_dir / "candidate_results.csv", index=False)
+    detail = pd.DataFrame(detail_rows)
     if detail.empty:
-        raise RuntimeError("No candidate results produced")
-    grouped = detail.groupby(["period", "candidate", "rr", "spread_multiplier"], dropna=False).agg(
-        pairs=("pair", "nunique"), trades=("trades", "sum"), wins=("wins", "sum"),
-        losses=("losses", "sum"), net_R=("net_R", "sum"),
-        profitable_pairs=("net_R", lambda s: int((s > 0).sum())),
-        median_pair_net_R=("net_R", "median"),
+        raise RuntimeError("No train/validation candidate results produced")
+    detail.to_csv(args.out_dir / "candidate_train_validation.csv", index=False)
+    val = detail[detail.period == "VALIDATION"].copy()
+    grouped = val.groupby(["candidate","rr","spread_multiplier"], dropna=False).agg(
+        pairs=("pair","nunique"), trades=("trades","sum"), wins=("wins","sum"),
+        losses=("losses","sum"), net_R=("net_R","sum"),
+        profitable_pairs=("net_R",lambda s:int((s>0).sum())),
+        max_pair_drawdown_R=("max_drawdown_R","max"),
     ).reset_index()
     grouped["win_rate_pct"] = 100 * grouped.wins / (grouped.wins + grouped.losses).replace(0, pd.NA)
-    grouped["eligible_for_review"] = (
-        (grouped["period"] == "OOS") & (grouped["trades"] >= 100) &
-        (grouped["net_R"] > 0) & (grouped["profitable_pairs"] >= (grouped["pairs"] * 0.60).apply(lambda x: int(x + 0.999)))
+    # Predeclared selection: sufficient sample, positive expectancy, PF proxy
+    # (net R) and broad pair participation. No final-test values influence ranking.
+    grouped["eligible_on_validation"] = (
+        (grouped.trades >= 50) & (grouped.net_R > 0) &
+        (grouped.profitable_pairs >= (grouped.pairs * .60).apply(lambda x:int(x + .999)))
     )
-    grouped["not_a_live_approval"] = True
-    grouped.to_csv(args.out_dir / "candidate_summary.csv", index=False)
-    print("Research complete. Eligibility is a screening gate only; no candidate is automatically deployed.", flush=True)
+    eligible = grouped[grouped.eligible_on_validation].sort_values(
+        ["net_R","win_rate_pct","trades"], ascending=[False,False,False])
+    grouped.to_csv(args.out_dir / "validation_candidate_ranking.csv", index=False)
+    if eligible.empty:
+        print("NO CANDIDATE PASSED VALIDATION. Final test intentionally not opened.", flush=True)
+        raise SystemExit("BOT 3 NOT VALIDATED: no predeclared candidate met validation gates")
+
+    winner = eligible.iloc[0]
+    chosen_name, chosen_rr, chosen_mult = str(winner.candidate), float(winner.rr), float(winner.spread_multiplier)
+    chosen_rule = CANDIDATES[chosen_name]
+    print(f"LOCKED candidate from validation only: {chosen_name}, RR={chosen_rr}, spread multiplier={chosen_mult}", flush=True)
+
+    # One locked candidate is evaluated once on the final chronological 20%.
+    for pair in [p.strip().upper() for p in args.pairs.split(",") if p.strip()]:
+        data = load_m5(args.data_dir / f"{pair}_M5.csv")
+        start = int(len(data) * .80)
+        frame = data.iloc[max(0,start-1000):].copy()
+        period_start = data.index[start]
+        def filtered(*a, _rule=chosen_rule, **kw):
+            signal = original_build(*a, **kw)
+            return signal if signal and _rule(signal) else None
+        bot3.build_signal, bot3.MIN_RR = filtered, chosen_rr
+        for spread_mult in (chosen_mult,):
+            rows = backtest_pair(pair, frame, SPREADS[pair] * spread_mult, 0.2)
+            rows = [r for r in rows if pd.Timestamp(r["signal_time_utc"]) >= period_start]
+            test_rows.append({"pair":pair,"period":"FINAL_UNTOUCHED_TEST",
+                "candidate":chosen_name,"rr":chosen_rr,"spread_multiplier":spread_mult,
+                "spread_pips":round(SPREADS[pair]*spread_mult,3),
+                "slippage_pips_per_fill":0.2,**metrics(rows)})
+            print("FINAL TEST", pair, metrics(rows), flush=True)
+    bot3.build_signal, bot3.MIN_RR = original_build, original_rr
+    final = pd.DataFrame(test_rows)
+    final.to_csv(args.out_dir / "locked_candidate_final_test.csv", index=False)
+    trades, wins, losses = int(final.trades.sum()), int(final.wins.sum()), int(final.losses.sum())
+    net_r = float(final.net_R.sum())
+    win_rate = 100*wins/(wins+losses) if wins+losses else 0.0
+    profitable_pairs = int((final.net_R > 0).sum())
+    print(f"LOCKED FINAL TEST: {trades} closed trades, {win_rate:.2f}% wins, {net_r:.2f}R net, {profitable_pairs}/{len(final)} profitable pairs", flush=True)
+    if trades < 30 or net_r <= 0 or profitable_pairs < max(1,int(len(final)*.60 + .999)):
+        raise SystemExit("BOT 3 NOT VALIDATED: locked final test failed sample/profitability/diversification gate")
+    print("PASS: locked candidate passed final chronological test. This is research validation, not a guarantee of live performance.", flush=True)
 
 if __name__ == "__main__":
     main()
