@@ -39,24 +39,54 @@ jobs:
       - name: Install Dukascopy historical data downloader
         run: npm install --global dukascopy-node
 
-      - name: Download 2025-2026 M5, M15 and H1 history
+      - name: Download 2025-2026 M5, M15 and H1 history in quarterly chunks
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p historical_data download
-          start=2025-01-01
-          end="$(date -u +%Y-%m-%d)"
+          overall_start=2025-01-01
+          overall_end="$(date -u +%Y-%m-%d)"
           for pair in eurusd gbpusd usdjpy usdchf usdcad audusd nzdusd; do
             for tf in m5 m15 h1; do
-              echo "Downloading $pair $tf: $start to $end"
-              dukascopy-node -i "$pair" -from "$start" -to "$end" -t "$tf" -f csv -v
-              file="$(find download -maxdepth 1 -type f -name "$pair-$tf-bid-*.csv" -print -quit)"
-              if [ -z "$file" ]; then
-                echo "No CSV produced for $pair $tf"
+              echo "Building $pair $tf history: $overall_start to $overall_end"
+              combined="historical_data/${pair^^}_${tf^^}.csv"
+              : > "$combined"
+              header_written=false
+              chunk_start="$overall_start"
+              while [[ "$chunk_start" < "$overall_end" || "$chunk_start" == "$overall_end" ]]; do
+                chunk_end="$(date -u -d "$chunk_start + 3 months - 1 day" +%Y-%m-%d)"
+                if [[ "$chunk_end" > "$overall_end" ]]; then chunk_end="$overall_end"; fi
+                echo "Downloading $pair $tf: $chunk_start to $chunk_end"
+                rm -f download/*
+                success=false
+                for attempt in 1 2 3; do
+                  if dukascopy-node -i "$pair" -from "$chunk_start" -to "$chunk_end" -t "$tf" -f csv -v; then
+                    success=true
+                    break
+                  fi
+                  echo "Attempt $attempt failed for $pair $tf $chunk_start; retrying"
+                  sleep $((attempt * 5))
+                done
+                if [[ "$success" != true ]]; then
+                  echo "Download failed after 3 attempts: $pair $tf $chunk_start to $chunk_end"
+                  exit 1
+                fi
+                file="$(find download -maxdepth 1 -type f -name "$pair-$tf-bid-*.csv" -print -quit)"
+                if [[ -z "$file" ]]; then
+                  echo "No CSV produced for $pair $tf $chunk_start to $chunk_end"
+                  exit 1
+                fi
+                if [[ "$header_written" == false ]]; then
+                  head -n 1 "$file" > "$combined"
+                  header_written=true
+                fi
+                tail -n +2 "$file" >> "$combined"
+                chunk_start="$(date -u -d "$chunk_end + 1 day" +%Y-%m-%d)"
+              done
+              if [[ "$header_written" != true || ! -s "$combined" ]]; then
+                echo "Combined history file is empty: $combined"
                 exit 1
               fi
-              suffix="$(echo "$tf" | tr '[:lower:]' '[:upper:]')"
-              cp "$file" "historical_data/${pair^^}_${suffix}.csv"
             done
           done
 
