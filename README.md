@@ -29,3 +29,37 @@ The workflow runs offline regression tests with `python -m unittest -v test_bot.
 - Each scan reports public-candle estimate TP/SL counts, estimated hit rate, average/expectancy in R, maximum drawdown in R, pending and ambiguous counts.
 - These estimates are not broker fills, verified trade outcomes, or proof of profitability. Ambiguous candles are excluded.
 - Broker-verified records are counted only when explicitly labelled VERIFIED_WIN, VERIFIED_LOSS, or VERIFIED_BREAK_EVEN. The bot does not infer these labels from public candles.
+
+
+## Bot 3 historical backtesting
+
+A conservative historical tester is available as `backtest_bot.py`. It calls the live
+Bot 3 `analyse_pair()` rules against rolling historical candles; it does not send
+Telegram messages or download market data.
+
+Export **UTC** candle-open timestamps and OHLC columns from MT5 (or another trusted
+source) into these files under `historical_data/`:
+
+- `EURUSD_M5.csv`, `EURUSD_M15.csv`, `EURUSD_H1.csv`
+- Repeat for each pair being tested (for example `GBPUSD_M5.csv`).
+
+Run:
+
+```bash
+python -m pip install -r requirements.txt
+python backtest_bot.py --data-dir historical_data --pairs EUR/USD,GBP/USD,USD/JPY --spread-pips 1.2
+```
+
+The runner uses the next M5 candle open for entry, applies an assumed constant
+spread adversely on entry and exit, counts same-candle SL/TP collisions as losses,
+and reports the chronological first 70% separately from the final 30%.
+It also writes `backtest_trades.csv`.
+
+**Important limitations:** results are historical simulations, not broker fills.
+The default 1.2-pip spread is only an assumption and should be replaced with
+broker/session-specific values. Commissions, swaps, variable spreads, latency,
+and slippage beyond the configured spread are not modelled. The report is not
+a 70% win-rate claim. Use enough history across different market conditions and
+keep the final out-of-sample period untouched while refining rules. The public
+biquote live feed currently provides only a short rolling candle window, which
+is not enough by itself to establish a reliable multi-month win rate.
