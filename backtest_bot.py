@@ -169,7 +169,7 @@ def main():
         except Exception as exc:
             pair_errors.append(pair)
             print(f"{pair}: NOT TESTED — {type(exc).__name__}: {exc}")
-            traceback.print_exc()
+            print(traceback.format_exc())
     if pair_errors:
         raise SystemExit(f"BACKTEST INVALID: {len(pair_errors)} pair(s) could not be tested: {', '.join(pair_errors)}")
     all_trades.sort(key=lambda x:x["time"])
