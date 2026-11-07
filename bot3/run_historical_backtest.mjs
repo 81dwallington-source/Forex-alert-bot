@@ -53,8 +53,20 @@ for (const pair of pairs) {
   }
   const missingWeekdays = expectedWeekdays.filter(day => !coveredDays.has(day));
   console.log(`${pair} coverage: ${candles.length} bars; ${missingWeekdays.length} missing weekdays`);
+
   if (missingWeekdays.length > 4) {
     throw new Error(`${pair}: refusing incomplete history; missing weekdays: ${missingWeekdays.slice(0,12).join(", ")}`);
+  }
+  const firstCandle = new Date(candles[0].timestamp);
+  const lastCandle = new Date(candles[candles.length - 1].timestamp);
+  const requestedStart = new Date(from + "T00:00:00Z");
+  const requestedEnd = new Date(to + "T23:59:59Z");
+  const actualSpanDays = (lastCandle - firstCandle) / 86400000;
+  const startLagDays = (firstCandle - requestedStart) / 86400000;
+  const endLagDays = (requestedEnd - lastCandle) / 86400000;
+  console.log(`${pair} actual date coverage: ${firstCandle.toISOString()} to ${lastCandle.toISOString()} (${actualSpanDays.toFixed(1)} days)`);
+  if (actualSpanDays < 700 || startLagDays > 4 || endLagDays > 4) {
+    throw new Error(`${pair}: refusing to label this a two-year test; actual coverage is only ${actualSpanDays.toFixed(1)} days (start lag ${startLagDays.toFixed(1)}, end lag ${endLagDays.toFixed(1)})`);
   }
   const csv = ["time,Open,High,Low,Close", ...candles.map(c =>
     [new Date(c.timestamp).toISOString(), c.open, c.high, c.low, c.close].join(",")
