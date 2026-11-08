@@ -81,6 +81,7 @@ def run_pair(pair, data_dir, spread_pips, max_bars):
     original_download=bot.download_data
     original_fresh=bot.candle_is_fresh
     results=[]
+    rejection_counts=Counter()
     last_day_by_pair=None
     next_available_index=260
     try:
@@ -108,6 +109,7 @@ def run_pair(pair, data_dir, spread_pips, max_bars):
             bot.candle_is_fresh=lambda data,*args,**kwargs:(True,0.0)
             signal, reason=bot.analyse_pair(stem+"=X")
             if not signal:
+                rejection_counts[str(reason)] += 1
                 continue
             # Alert is formed at the signal close; simulated fill is next candle open.
             nxt=m5.iloc[i+1]
@@ -150,7 +152,7 @@ def run_pair(pair, data_dir, spread_pips, max_bars):
     finally:
         bot.download_data=original_download
         bot.candle_is_fresh=original_fresh
-    return results
+    return results, rejection_counts
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
@@ -164,9 +166,11 @@ def main():
     pair_errors=[]
     for pair in [x.strip().upper() for x in args.pairs.split(",") if x.strip()]:
         try:
-            trades=run_pair(pair,args.data_dir,args.spread_pips,args.max_bars)
+            trades,rejections=run_pair(pair,args.data_dir,args.spread_pips,args.max_bars)
             all_trades.extend(trades)
             print(f"{pair}: {len(trades)} resolved trades")
+            if rejections:
+                print("  Top rejection reasons: " + "; ".join(f"{reason} ({count})" for reason,count in rejections.most_common(8)))
         except Exception as exc:
             pair_errors.append(pair)
             print(f"{pair}: NOT TESTED — {type(exc).__name__}: {exc}")
