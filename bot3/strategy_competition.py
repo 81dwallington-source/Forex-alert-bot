@@ -141,6 +141,10 @@ def main():
                 start, end = boundaries[period]
                 warm_start = max(0, start - 1000)
                 frame = data.iloc[warm_start:end].copy()
+                # Indicator values depend only on this period's chronological
+                # candle history, not on candidate, RR, or spread settings.
+                # Prepare once and share the frames across every simulation.
+                prepared = prepare_backtest_data(frame)
                 period_start = data.index[start]
                 signal_cache = {}
                 cache_hits = 0
@@ -165,7 +169,7 @@ def main():
                         signal = cached_build(*a, **kw)
                         return signal if signal and _rule(signal) else None
                     bot3.build_signal, bot3.MIN_RR = filtered, rr
-                    rows = backtest_pair(pair, frame, base_spread * spread_mult, 0.2)
+                    rows = backtest_pair(pair, frame, base_spread * spread_mult, 0.2, prepared=prepared)
                     rows = [r for r in rows if pd.Timestamp(r["signal_time_utc"]) >= period_start]
                     detail_rows.append({
                         "pair":pair, "period":period, "candidate":candidate, "rr":rr,
