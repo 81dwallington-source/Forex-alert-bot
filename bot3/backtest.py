@@ -62,18 +62,27 @@ def bid_stop_to_executable(stop_bid: float, direction: str, full_spread: float) 
     raise ValueError(f"Unsupported direction: {direction}")
 
 
-def backtest_pair(pair: str, m5: pd.DataFrame, spread_pips: float, slippage_pips: float = 0.2) -> list[dict]:
+def prepare_backtest_data(m5: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Prepare immutable M5/M15/H1 indicator frames once for repeated simulations."""
+    m5_ind = bot3.add_indicators(m5)
+    m15_ind = bot3.add_indicators(resample_ohlc(m5_ind, "15min"))
+    h1_ind = bot3.add_indicators(resample_ohlc(m5_ind, "1h"))
+    return m5_ind, m15_ind, h1_ind
+
+
+def backtest_pair(pair: str, m5: pd.DataFrame, spread_pips: float, slippage_pips: float = 0.2, prepared: tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame] | None = None) -> list[dict]:
     """Dukascopy input is BID OHLC. Model ASK as BID + full spread; apply adverse slippage on fills."""
     if spread_pips <= 0 or slippage_pips < 0:
         raise ValueError("spread_pips must be positive and slippage_pips cannot be negative")
     pip = 0.01 if "JPY" in pair else 0.0001
     spread = spread_pips * pip
     slippage = slippage_pips * pip
-    # Calculate indicators once per timeframe. The signal engine recognises
-    # these prepared columns and reuses them for every historical decision.
-    m5 = bot3.add_indicators(m5)
-    m15_all = bot3.add_indicators(resample_ohlc(m5, "15min"))
-    h1_all = bot3.add_indicators(resample_ohlc(m5, "1h"))
+    # Reuse one prepared set across all candidate/RR/spread simulations in a
+    # competition period. Standalone backtests still prepare their own frames.
+    if prepared is None:
+        m5, m15_all, h1_all = prepare_backtest_data(m5)
+    else:
+        m5, m15_all, h1_all = prepared
     results = []
     i = 800
     while i < len(m5) - 2:
