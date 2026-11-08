@@ -131,14 +131,38 @@ def main():
             }
             base_spread = SPREADS[pair]
             # Candidate choice is made only on the middle validation block.
+            # Signal generation is the expensive part of this competition. The
+            # market inputs and signal features are identical across filter
+            # candidates and RR targets at a given candle/spread. Cache the
+            # unfiltered point-in-time signal once, then apply each predeclared
+            # candidate rule to that immutable result. Spread remains in the
+            # cache key because live bid/ask eligibility is spread-sensitive.
             for period in ("TRAIN", "VALIDATION"):
                 start, end = boundaries[period]
                 warm_start = max(0, start - 1000)
                 frame = data.iloc[warm_start:end].copy()
                 period_start = data.index[start]
+                signal_cache = {}
+                cache_hits = 0
+                cache_misses = 0
+
+                def cached_build(*a, **kw):
+                    nonlocal cache_hits, cache_misses
+                    pair_key = str(a[0])
+                    history = a[1]
+                    bid = float(a[6]) if len(a) > 6 and a[6] is not None else None
+                    ask = float(a[7]) if len(a) > 7 and a[7] is not None else None
+                    key = (pair_key, history.index[-1], bid, ask)
+                    if key not in signal_cache:
+                        signal_cache[key] = original_build(*a, **kw)
+                        cache_misses += 1
+                    else:
+                        cache_hits += 1
+                    return signal_cache[key]
+
                 for candidate, rule, rr, spread_mult in configs:
                     def filtered(*a, _rule=rule, **kw):
-                        signal = original_build(*a, **kw)
+                        signal = cached_build(*a, **kw)
                         return signal if signal and _rule(signal) else None
                     bot3.build_signal, bot3.MIN_RR = filtered, rr
                     rows = backtest_pair(pair, frame, base_spread * spread_mult, 0.2)
@@ -150,6 +174,8 @@ def main():
                     })
                     print(pair, period, candidate, "RR", rr, "spread x", spread_mult,
                           metrics(rows), flush=True)
+                print(f"{pair} {period} signal-cache: {cache_misses} misses, {cache_hits} hits, "
+                      f"{len(signal_cache)} cached point-in-time signals", flush=True)
     finally:
         bot3.build_signal, bot3.MIN_RR = original_build, original_rr
 
