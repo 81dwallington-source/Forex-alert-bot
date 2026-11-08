@@ -5,7 +5,7 @@ import pandas as pd
 import tempfile
 from pathlib import Path
 from bot3.bot3 import in_session, trend_direction, confirmed_pivots, fetch_live_quote, evaluate_trade_outcome
-from bot3.backtest import bid_stop_to_executable, load_m5
+from bot3.backtest import bid_stop_to_executable, load_m5, prepare_backtest_data, backtest_pair
 
 class Bot3Tests(unittest.TestCase):
     def test_backtest_loader_preserves_zero_range_candle_timestamps(self):
@@ -25,6 +25,23 @@ class Bot3Tests(unittest.TestCase):
         self.assertEqual(loaded.attrs["raw_rows"], 805)
         self.assertEqual(loaded.attrs["flat_rows"], 3)
         self.assertEqual(loaded.attrs["flat_rows_removed"], 0)
+
+
+    def test_competition_can_reuse_prepared_indicators_without_recalculation(self):
+        index = pd.date_range("2026-01-01", periods=1200, freq="5min", tz="UTC")
+        close = [1.10 + i * 0.000001 for i in range(len(index))]
+        frame = pd.DataFrame({
+            "Open": close,
+            "High": [x + 0.0002 for x in close],
+            "Low": [x - 0.0002 for x in close],
+            "Close": close,
+        }, index=index)
+        prepared = prepare_backtest_data(frame)
+        with patch("bot3.backtest.bot3.add_indicators", side_effect=AssertionError("indicators recalculated")):
+            with patch("bot3.backtest.bot3.in_session", return_value=True):
+                with patch("bot3.backtest.bot3.build_signal", return_value=None):
+                    rows = backtest_pair("EURUSD", frame, 1.2, prepared=prepared)
+        self.assertEqual(rows, [])
 
     def test_bid_stop_converts_to_correct_executable_side(self):
         full_spread = 0.00015
