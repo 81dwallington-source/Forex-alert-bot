@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - "download_historical_data.py"
+      - "backtest_bot.py"
       - ".github/workflows/historical-backtest.yml"
   workflow_dispatch:
     inputs:
