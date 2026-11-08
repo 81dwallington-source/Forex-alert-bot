@@ -12,7 +12,8 @@ const spreads = {
   NZDCAD:2.5, CADJPY:2.0, CHFJPY:2.5
 };
 const to = new Date().toISOString().slice(0,10);
-const fromDate = new Date(Date.now() - 183*24*60*60*1000);
+// Use 18 months so the chronological validation block has enough observations.
+const fromDate = new Date(Date.now() - 548*24*60*60*1000);
 const from = fromDate.toISOString().slice(0,10);
 await mkdir("research-data", { recursive:true });
 await mkdir("research-results", { recursive:true });
