@@ -49,7 +49,7 @@ def build_m15(m5_path: Path) -> None:
     # Force nanosecond resolution before converting to Unix milliseconds.
     # Pandas may retain datetime64[s] after resampling; astype("int64") alone
     # would then emit Unix seconds, which the backtester would misread as ms.
-    timestamp_ms = grouped.index.astype("datetime64[ns]").astype("int64") // 10**6
+    timestamp_ms = grouped.index.tz_convert("UTC").tz_localize(None).asi8 // 10**6
     grouped.insert(0, "timestamp", timestamp_ms)
     out = m5_path.with_name(m5_path.stem.replace("_M5", "_M15") + ".csv")
     grouped.reset_index(drop=True).to_csv(out, index=False)
