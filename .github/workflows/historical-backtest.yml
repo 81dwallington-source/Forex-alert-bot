@@ -1,6 +1,10 @@
 name: Bot 3 Historical Backtest
 
 on:
+  push:
+    paths:
+      - "download_historical_data.py"
+      - ".github/workflows/historical-backtest.yml"
   workflow_dispatch:
     inputs:
       years:
