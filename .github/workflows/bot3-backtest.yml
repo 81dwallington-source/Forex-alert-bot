@@ -1,10 +1,5 @@
-name: Bot 3 multi-pair historical validation
+name: Bot 3 legacy seven-pair diagnostic (manual only)
 on:
-  push:
-    branches: [bot3-independent-build-v2]
-    paths:
-      - '.github/workflows/bot3-backtest.yml'
-      - 'bot3/**'
   workflow_dispatch:
 permissions:
   contents: read
