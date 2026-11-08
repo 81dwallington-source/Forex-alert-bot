@@ -46,7 +46,9 @@ jobs:
         run: python -m pip install --upgrade pip pandas requests
 
       - name: Download and validate historical candles
-        run: python download_historical_data.py --years "${{ inputs.years }}" --data-dir historical_data
+        env:
+          YEARS: ${{ inputs.years || '1' }}
+        run: python download_historical_data.py --years "$YEARS" --data-dir historical_data
 
       - name: Run Bot 3 historical backtest
         run: python backtest_bot.py --data-dir historical_data --pairs EUR/USD,GBP/USD,USD/JPY,USD/CHF,USD/CAD,AUD/USD,NZD/USD --spread-pips 1.2
