@@ -1,0 +1,108 @@
+name: Bot 3 training-only path diagnostics
+
+on:
+  push:
+    branches:
+      - bot3-research-v3
+    paths:
+      - 'bot3/training_path_diagnostics.py'
+      - '.github/workflows/bot3-training-diagnostics.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  download:
+    name: Download ${{ matrix.pair }} M5 history
+    runs-on: ubuntu-latest
+    timeout-minutes: 210
+    strategy:
+      fail-fast: false
+      max-parallel: 7
+      matrix:
+        pair: [eurusd, gbpusd, usdjpy, usdchf, usdcad, audusd, nzdusd, eurgbp, eurjpy, eurchf, euraud, eurcad, eurnzd, gbpjpy, gbpchf, gbaud, gbpcad, gbpnzd, audjpy, audchf, audcad, audnzd, nzdjpy, nzdchf, nzdcad, cadjpy, chfjpy]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: bot3-research-v3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Dukascopy downloader
+        run: npm install --no-save dukascopy-node@1.51.1
+      - name: Download pair history with retries
+        timeout-minutes: 180
+        env:
+          PAIR: ${{ matrix.pair }}
+        run: |
+          set -euo pipefail
+          mkdir -p data
+          for attempt in 1 2 3 4 5 6; do
+            rm -f "data/${PAIR}_m5.csv"
+            if ./node_modules/.bin/dukascopy-node -i "$PAIR" -from 2024-01-01 -t m5 -f csv -dir data -fn "${PAIR}_m5" --batch-size 5 --batch-pause 2500 --retries 5 --retry-pause 4000 --rate-limit-retries 4 --cache; then
+              if test -s "data/${PAIR}_m5.csv"; then
+                echo "Downloaded $PAIR: $(wc -c < "data/${PAIR}_m5.csv") bytes"
+                break
+              fi
+            fi
+            if [ "$attempt" -eq 6 ]; then echo "ERROR: $PAIR download failed" >&2; exit 1; fi
+            sleep $((attempt * 20))
+          done
+          test -s "data/${PAIR}_m5.csv"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bot3-training-data-${{ matrix.pair }}
+          path: data/${{ matrix.pair }}_m5.csv
+          if-no-files-found: error
+          retention-days: 30
+
+  training-diagnostics:
+    name: Run training-only diagnostics
+    needs: download
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: bot3-research-v3
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Python dependencies
+        run: python -m pip install pandas requests
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bot3-training-data-*
+          path: data/raw
+          merge-multiple: true
+      - name: Normalize historical candles
+        run: |
+          python - <<'PY'
+          import pandas as pd
+          from pathlib import Path
+          pairs = "eurusd gbpusd usdjpy usdchf usdcad audusd nzdusd eurgbp eurjpy eurchf euraud eurcad eurnzd gbpjpy gbpchf gbaud gbpcad gbpnzd audjpy audchf audcad audnzd nzdjpy nzdchf nzdcad cadjpy chfjpy".split()
+          for pair in pairs:
+              source = Path(f"data/raw/{pair.lower()}_m5.csv")
+              if not source.exists():
+                  raise SystemExit(f"Missing downloaded data: {source}")
+              df = pd.read_csv(source)
+              if "timestamp" not in df.columns:
+                  raise SystemExit(f"{pair}: unexpected Dukascopy columns {list(df.columns)}")
+              df["time"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True).astype(str)
+              df = df.rename(columns={"open":"Open","high":"High","low":"Low","close":"Close"})
+              out = Path(f"data/{pair}_M5.csv")
+              df[["time","Open","High","Low","Close"]].to_csv(out, index=False)
+              print(f"{pair}: {len(df):,} M5 bars; {df.time.iloc[0]} to {df.time.iloc[-1]}")
+          PY
+      - name: Run diagnostics on chronological training blocks only
+        run: |
+          python -m bot3.training_path_diagnostics --data-dir data --out-dir data/training-diagnostics --pairs eurusd,gbpusd,usdjpy,usdchf,usdcad,audusd,nzdusd,eurgbp,eurjpy,eurchf,euraud,eurcad,eurnzd,gbpjpy,gbpchf,gbaud,gbpcad,gbpnzd,audjpy,audchf,audcad,audnzd,nzdjpy,nzdchf,nzdcad,cadjpy,chfjpy --spread-multipliers 1.0,1.5 --slippage-pips 0.2
+      - name: Upload training-only reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bot3-training-only-diagnostics
+          path: data/training-diagnostics/
+          if-no-files-found: warn
+          retention-days: 30
