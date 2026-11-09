@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 import pandas as pd
 from bot3 import bot3
-from bot3.backtest import load_m5, backtest_pair
+from bot3.backtest import load_m5, backtest_pair, prepare_backtest_context
 
 # Fixed hypotheses: no thresholds are fitted from the results of this run.
 CANDIDATES = {
@@ -142,6 +142,9 @@ def main():
                 warm_start = max(0, start - 1000)
                 frame = data.iloc[warm_start:end].copy()
                 period_start = data.index[start]
+                # Shared, immutable market timeline/indicator context: it does not
+                # depend on candidate rules, RR, or spread assumptions.
+                prepared_context = prepare_backtest_context(frame)
                 signal_cache = {}
                 cache_hits = 0
                 cache_misses = 0
@@ -165,7 +168,10 @@ def main():
                         signal = cached_build(*a, **kw)
                         return signal if signal and _rule(signal) else None
                     bot3.build_signal, bot3.MIN_RR = filtered, rr
-                    rows = backtest_pair(pair, frame, base_spread * spread_mult, 0.2)
+                    rows = backtest_pair(
+                        pair, frame, base_spread * spread_mult, 0.2,
+                        prepared=prepared_context,
+                    )
                     rows = [r for r in rows if pd.Timestamp(r["signal_time_utc"]) >= period_start]
                     detail_rows.append({
                         "pair":pair, "period":period, "candidate":candidate, "rr":rr,
