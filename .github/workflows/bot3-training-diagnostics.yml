@@ -21,7 +21,7 @@ jobs:
       fail-fast: false
       max-parallel: 7
       matrix:
-        pair: [eurusd, gbpusd, usdjpy, usdchf, usdcad, audusd, nzdusd, eurgbp, eurjpy, eurchf, euraud, eurcad, eurnzd, gbpjpy, gbpchf, gbaud, gbpcad, gbpnzd, audjpy, audchf, audcad, audnzd, nzdjpy, nzdchf, nzdcad, cadjpy, chfjpy]
+        pair: [eurusd, gbpusd, usdjpy, usdchf, usdcad, audusd, nzdusd, eurgbp, eurjpy, eurchf, euraud, eurcad, eurnzd, gbpjpy, gbpchf, gbpaud, gbpcad, gbpnzd, audjpy, audchf, audcad, audnzd, nzdjpy, nzdchf, nzdcad, cadjpy, chfjpy]
     steps:
       - uses: actions/checkout@v4
         with:
