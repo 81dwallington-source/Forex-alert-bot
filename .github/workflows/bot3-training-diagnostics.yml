@@ -81,7 +81,7 @@ jobs:
           python - <<'PY'
           import pandas as pd
           from pathlib import Path
-          pairs = "eurusd gbpusd usdjpy usdchf usdcad audusd nzdusd eurgbp eurjpy eurchf euraud eurcad eurnzd gbpjpy gbpchf gbaud gbpcad gbpnzd audjpy audchf audcad audnzd nzdjpy nzdchf nzdcad cadjpy chfjpy".split()
+          pairs = "eurusd gbpusd usdjpy usdchf usdcad audusd nzdusd eurgbp eurjpy eurchf euraud eurcad eurnzd gbpjpy gbpchf gbpaud gbpcad gbpnzd audjpy audchf audcad audnzd nzdjpy nzdchf nzdcad cadjpy chfjpy".split()
           for pair in pairs:
               source = Path(f"data/raw/{pair.lower()}_m5.csv")
               if not source.exists():
@@ -97,7 +97,7 @@ jobs:
           PY
       - name: Run diagnostics on chronological training blocks only
         run: |
-          python -m bot3.training_path_diagnostics --data-dir data --out-dir data/training-diagnostics --pairs eurusd,gbpusd,usdjpy,usdchf,usdcad,audusd,nzdusd,eurgbp,eurjpy,eurchf,euraud,eurcad,eurnzd,gbpjpy,gbpchf,gbaud,gbpcad,gbpnzd,audjpy,audchf,audcad,audnzd,nzdjpy,nzdchf,nzdcad,cadjpy,chfjpy --spread-multipliers 1.0,1.5 --slippage-pips 0.2
+          python -m bot3.training_path_diagnostics --data-dir data --out-dir data/training-diagnostics --pairs eurusd,gbpusd,usdjpy,usdchf,usdcad,audusd,nzdusd,eurgbp,eurjpy,eurchf,euraud,eurcad,eurnzd,gbpjpy,gbpchf,gbpaud,gbpcad,gbpnzd,audjpy,audchf,audcad,audnzd,nzdjpy,nzdchf,nzdcad,cadjpy,chfjpy --spread-multipliers 1.0,1.5 --slippage-pips 0.2
       - name: Upload training-only reports
         if: always()
         uses: actions/upload-artifact@v4
