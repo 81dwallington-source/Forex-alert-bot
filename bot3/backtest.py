@@ -49,6 +49,30 @@ def resample_ohlc(m5: pd.DataFrame, rule: str) -> pd.DataFrame:
     return out.loc[counts == expected].dropna()
 
 
+
+def prepare_backtest_context(m5: pd.DataFrame):
+    """Prepare candidate-independent indicators and eligible decision timeline once."""
+    prepared_m5 = bot3.add_indicators(m5)
+    m15_all = bot3.add_indicators(resample_ohlc(prepared_m5, "15min"))
+    h1_all = bot3.add_indicators(resample_ohlc(prepared_m5, "1h"))
+    decisions = []
+    for i in range(800, len(prepared_m5) - 2):
+        candle_time = prepared_m5.index[i]
+        decision_time = candle_time + pd.Timedelta(minutes=5)
+        if not bot3.in_session(decision_time.to_pydatetime()):
+            continue
+        if prepared_m5.index[i + 1] != candle_time + pd.Timedelta(minutes=5):
+            continue
+        m15_end = m15_all.index.searchsorted(
+            decision_time - pd.Timedelta(minutes=15), side="right"
+        )
+        h1_end = h1_all.index.searchsorted(
+            decision_time - pd.Timedelta(hours=1), side="right"
+        )
+        if m15_end >= 60 and h1_end >= 60:
+            decisions.append((i, m15_end, h1_end))
+    return prepared_m5, m15_all, h1_all, decisions
+
 def bid_stop_to_executable(stop_bid: float, direction: str, full_spread: float) -> float:
     """Convert BID-candle structure levels to the side on which the stop executes.
 
@@ -62,38 +86,26 @@ def bid_stop_to_executable(stop_bid: float, direction: str, full_spread: float) 
     raise ValueError(f"Unsupported direction: {direction}")
 
 
-def backtest_pair(pair: str, m5: pd.DataFrame, spread_pips: float, slippage_pips: float = 0.2) -> list[dict]:
+def backtest_pair(pair: str, m5: pd.DataFrame, spread_pips: float, slippage_pips: float = 0.2, prepared=None) -> list[dict]:
     """Dukascopy input is BID OHLC. Model ASK as BID + full spread; apply adverse slippage on fills."""
     if spread_pips <= 0 or slippage_pips < 0:
         raise ValueError("spread_pips must be positive and slippage_pips cannot be negative")
     pip = 0.01 if "JPY" in pair else 0.0001
     spread = spread_pips * pip
     slippage = slippage_pips * pip
-    # Calculate indicators once per timeframe. The signal engine recognises
-    # these prepared columns and reuses them for every historical decision.
-    m5 = bot3.add_indicators(m5)
-    m15_all = bot3.add_indicators(resample_ohlc(m5, "15min"))
-    h1_all = bot3.add_indicators(resample_ohlc(m5, "1h"))
+    # Reuse candidate-independent indicators and the eligible M5 decision
+    # timeline across every filter/RR/spread candidate in this period.
+    if prepared is None:
+        prepared = prepare_backtest_context(m5)
+    m5, m15_all, h1_all, decisions = prepared
     results = []
-    i = 800
-    while i < len(m5) - 2:
+    next_allowed_i = 800
+    for i, m15_end, h1_end in decisions:
+        # Preserve the original one-open-trade-per-pair rule after an exit.
+        if i < next_allowed_i:
+            continue
         candle_time = m5.index[i]
         decision_time = candle_time + pd.Timedelta(minutes=5)
-        if not bot3.in_session(decision_time.to_pydatetime()):
-            i += 1
-            continue
-        # Never enter across a missing/closed M5 interval.
-        if m5.index[i + 1] != candle_time + pd.Timedelta(minutes=5):
-            i += 1
-            continue
-        # Use searchsorted to locate the latest fully closed higher-timeframe
-        # candles, then pass only the indicator-ready tail needed by the rules.
-        # This avoids copying an ever-growing history on every M5 iteration.
-        m15_end = m15_all.index.searchsorted(decision_time - pd.Timedelta(minutes=15), side="right")
-        h1_end = h1_all.index.searchsorted(decision_time - pd.Timedelta(hours=1), side="right")
-        if m15_end < 60 or h1_end < 60:
-            i += 1
-            continue
         m15 = m15_all.iloc[m15_end - 60:m15_end]
         h1 = h1_all.iloc[h1_end - 60:h1_end]
         history = m5.iloc[max(0, i - 59):i + 1]
@@ -105,7 +117,6 @@ def backtest_pair(pair: str, m5: pd.DataFrame, spread_pips: float, slippage_pips
             synthetic_bid, synthetic_ask, decision_time,
         )
         if not signal:
-            i += 1
             continue
 
         # Executable fill at next BID candle open: BUY pays full spread; SELL receives bid.
@@ -114,14 +125,12 @@ def backtest_pair(pair: str, m5: pd.DataFrame, spread_pips: float, slippage_pips
         # Both next_open and signal.entry are BID prices. Comparing their
         # difference keeps spread from artificially changing signal eligibility.
         if abs(next_open - signal["entry"]) > bot3.MAX_ENTRY_DRIFT_ATR * signal["atr"]:
-            i += 1
             continue
         # Signal structure is calculated from BID OHLC. BUY stops execute on BID;
         # SELL stops execute on ASK and therefore need the FULL spread added.
         stop = bid_stop_to_executable(float(signal["stop"]), signal["direction"], spread)
         risk = fill - stop if signal["direction"] == "BUY" else stop - fill
         if risk <= 0 or risk > bot3.MAX_STOP_ATR * signal["atr"]:
-            i += 1
             continue
         target = fill + risk * bot3.MIN_RR if signal["direction"] == "BUY" else fill - risk * bot3.MIN_RR
 
@@ -187,7 +196,7 @@ def backtest_pair(pair: str, m5: pd.DataFrame, spread_pips: float, slippage_pips
         # One trade at a time per pair to avoid overlapping trade accounting.
         if outcome in ("WIN", "LOSS", "AMBIGUOUS") and exit_time:
             exit_idx = m5.index.get_loc(pd.Timestamp(exit_time))
-            i = max(i + 1, exit_idx + 1)
+            next_allowed_i = max(i + 1, exit_idx + 1)
         else:
             break
     return results
