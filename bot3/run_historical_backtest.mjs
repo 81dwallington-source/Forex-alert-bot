@@ -57,6 +57,12 @@ for (const pair of pairs) {
     data_file:dataPath});
 
 }
+// CSV-escape summary fields so the completed download stage cannot fail
+// after all 27 pairs have been downloaded.
+const csvEscape = value => {
+  const text = String(value ?? "");
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+};
 const cols=Object.keys(summary[0]);
 await writeFile("research-results/summary.csv",
   [cols.join(","),...summary.map(r=>cols.map(c=>csvEscape(r[c])).join(","))].join("\n")+"\n");
