@@ -4,8 +4,9 @@ import path from "node:path";
 
 const pairs = ["EURUSD","GBPUSD","USDJPY","USDCHF","USDCAD","AUDUSD","NZDUSD","EURGBP","EURJPY","EURCHF","EURAUD","EURCAD","EURNZD","GBPJPY","GBPCHF","GBPAUD","GBPCAD","GBPNZD","AUDJPY","AUDCHF","AUDCAD","AUDNZD","NZDJPY","NZDCHF","NZDCAD","CADJPY","CHFJPY"];
 const to = new Date().toISOString().slice(0,10);
-// Use 18 months so the chronological validation block has enough observations.
-const fromDate = new Date(Date.now() - 548*24*60*60*1000);
+// Use 36 months to give the chronological validation block a materially larger
+// sample while preserving a fully untouched final 20% of the timeline.
+const fromDate = new Date(Date.now() - 1096*24*60*60*1000);
 const from = fromDate.toISOString().slice(0,10);
 await mkdir("research-data", { recursive:true });
 await mkdir("research-results", { recursive:true });
