@@ -134,37 +134,42 @@ def backtest_pair(pair: str, m5: pd.DataFrame, spread_pips: float, slippage_pips
             continue
         target = fill + risk * bot3.MIN_RR if signal["direction"] == "BUY" else fill - risk * bot3.MIN_RR
 
+        # Vectorised first-hit scan: identical candle-by-candle precedence,
+        # but avoids millions of Python-level pandas row iterations.
         outcome, exit_time, pnl_r = "OPEN", "", None
-        for j in range(i + 1, len(m5)):
-            bar = m5.iloc[j]
-            # BUY exits execute on BID; SELL exits execute on ASK = BID + full spread.
-            # stop/target are already expressed on the appropriate executable side.
-            if signal["direction"] == "BUY":
-                stop_hit = float(bar.Low) <= stop
-                target_hit = float(bar.High) >= target
-                gap_stop = float(bar.Open) <= stop
-                gap_target = float(bar.Open) >= target
-            else:
-                stop_hit = float(bar.High) + spread >= stop
-                target_hit = float(bar.Low) + spread <= target
-                gap_stop = float(bar.Open) + spread >= stop
-                gap_target = float(bar.Open) + spread <= target
+        future = m5.iloc[i + 1:]
+        opens = future["Open"].to_numpy(dtype=float)
+        highs = future["High"].to_numpy(dtype=float)
+        lows = future["Low"].to_numpy(dtype=float)
+        if signal["direction"] == "BUY":
+            stop_hits = lows <= stop
+            target_hits = highs >= target
+            gap_stops = opens <= stop
+            gap_targets = opens >= target
+            executable_opens = opens
+        else:
+            executable_opens = opens + spread
+            stop_hits = highs + spread >= stop
+            target_hits = lows + spread <= target
+            gap_stops = executable_opens >= stop
+            gap_targets = executable_opens <= target
 
-            if stop_hit and target_hit:
-                outcome, exit_time, pnl_r = "AMBIGUOUS", m5.index[j].isoformat(), None
-                break
-            if gap_stop or stop_hit:
-                exit_px = (float(bar.Open) if signal["direction"] == "BUY" else float(bar.Open) + spread) if gap_stop else stop
-                exit_px = exit_px - slippage if signal["direction"] == "BUY" else exit_px + slippage
+        hit_positions = __import__("numpy").flatnonzero(stop_hits | target_hits)
+        if len(hit_positions):
+            k = int(hit_positions[0])
+            hit_time = future.index[k].isoformat()
+            if stop_hits[k] and target_hits[k]:
+                outcome, exit_time, pnl_r = "AMBIGUOUS", hit_time, None
+            elif gap_stops[k] or stop_hits[k]:
+                raw_exit = executable_opens[k] if gap_stops[k] else stop
+                exit_px = raw_exit - slippage if signal["direction"] == "BUY" else raw_exit + slippage
                 pnl = (exit_px - fill) if signal["direction"] == "BUY" else (fill - exit_px)
-                outcome, exit_time, pnl_r = "LOSS", m5.index[j].isoformat(), pnl / risk
-                break
-            if gap_target or target_hit:
-                exit_px = (float(bar.Open) if signal["direction"] == "BUY" else float(bar.Open) + spread) if gap_target else target
-                exit_px = exit_px - slippage if signal["direction"] == "BUY" else exit_px + slippage
+                outcome, exit_time, pnl_r = "LOSS", hit_time, pnl / risk
+            else:
+                raw_exit = executable_opens[k] if gap_targets[k] else target
+                exit_px = raw_exit - slippage if signal["direction"] == "BUY" else raw_exit + slippage
                 pnl = (exit_px - fill) if signal["direction"] == "BUY" else (fill - exit_px)
-                outcome, exit_time, pnl_r = "WIN", m5.index[j].isoformat(), pnl / risk
-                break
+                outcome, exit_time, pnl_r = "WIN", hit_time, pnl / risk
 
         results.append({
             "pair": pair, "direction": signal["direction"],
