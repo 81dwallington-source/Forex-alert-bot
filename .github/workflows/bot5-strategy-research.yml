@@ -1,0 +1,71 @@
+name: Bot 5 independent strategy research
+
+on:
+  push:
+    branches:
+      - bot5-independent-strategy-lab
+    paths:
+      - 'bot5/**'
+      - 'bot3/**'
+      - '.github/workflows/bot5-strategy-research.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bot5-strategy-research
+  cancel-in-progress: false
+
+jobs:
+  download-history:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: bot5-independent-strategy-lab
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install historical data client
+        run: npm install --no-save dukascopy-node@1.51.1
+      - name: Download 36 months of M5 history for all 27 pairs
+        run: node bot3/run_historical_backtest.mjs
+      - name: Upload historical inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: bot5-research-inputs
+          path: |
+            research-data/
+            research-results/summary.csv
+          if-no-files-found: error
+          retention-days: 7
+
+  compete:
+    needs: download-history
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: bot5-independent-strategy-lab
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Download historical inputs
+        uses: actions/download-artifact@v4
+        with:
+          name: bot5-research-inputs
+      - name: Run Bot 5 predeclared strategy competition
+        run: python -m bot5.strategy_competition --data-dir research-data --out-dir research-results/bot5
+      - name: Upload Bot 5 reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bot5-strategy-reports
+          path: research-results/bot5/
+          if-no-files-found: warn
+          retention-days: 30
