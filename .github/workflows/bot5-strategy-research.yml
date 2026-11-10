@@ -12,38 +12,14 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: bot5-strategy-research
   cancel-in-progress: false
 
 jobs:
-  download-history:
-    runs-on: ubuntu-latest
-    timeout-minutes: 360
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: bot5-independent-strategy-lab
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Install historical data client
-        run: npm install --no-save dukascopy-node@1.51.1
-      - name: Download 36 months of M5 history for all 27 pairs
-        run: node bot3/run_historical_backtest.mjs
-      - name: Upload historical inputs
-        uses: actions/upload-artifact@v4
-        with:
-          name: bot5-research-inputs
-          path: |
-            research-data/
-            research-results/summary.csv
-          if-no-files-found: error
-          retention-days: 7
-
   compete:
-    needs: download-history
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
@@ -55,10 +31,23 @@ jobs:
           python-version: '3.12'
       - name: Install Python dependencies
         run: python -m pip install -r requirements.txt
-      - name: Download historical inputs
+      - name: Reuse the verified 36-month historical input artifact
         uses: actions/download-artifact@v4
         with:
-          name: bot5-research-inputs
+          name: bot3-research-inputs
+          repository: 81dwallington-source/Forex-alert-bot
+          run-id: 42768895828
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify all 27 pair files are present
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          pairs = "EURUSD GBPUSD USDJPY USDCHF USDCAD AUDUSD NZDUSD EURGBP EURJPY EURCHF EURAUD EURCAD EURNZD GBPJPY GBPCHF GBPAUD GBPCAD GBPNZD AUDJPY AUDCHF AUDCAD AUDNZD NZDJPY NZDCHF NZDCAD CADJPY CHFJPY".split()
+          missing = [p for p in pairs if not (Path("research-data") / f"{p}_M5.csv").is_file()]
+          if missing:
+              raise SystemExit(f"Shared history artifact is incomplete; missing: {missing}")
+          print(f"Verified {len(pairs)} M5 pair files from the existing Bot 3 download")
+          PY
       - name: Run Bot 5 predeclared strategy competition
         run: python -m bot5.strategy_competition --data-dir research-data --out-dir research-results/bot5
       - name: Upload Bot 5 reports
