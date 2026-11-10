@@ -95,7 +95,7 @@ def _run_pair_train_validation(pair, data_dir, rr_values, spread_values):
                for rr in rr_values
                for mult in spread_values]
     try:
-                path = args.data_dir / f"{pair}_M5.csv"
+        path = data_dir / f"{pair}_M5.csv"
         if not path.exists():
             raise FileNotFoundError(f"Required pair history missing: {path}")
         data = load_m5(path)
