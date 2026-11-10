@@ -20,7 +20,32 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  backtest:
+  download-history:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: bot3-independent-build-v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install historical data client
+        run: npm install --no-save dukascopy-node@1.51.1
+      - name: Download 36 months of M5 history for all 27 Bot 3 pairs
+        run: node bot3/run_historical_backtest.mjs
+      - name: Upload validated historical inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: bot3-research-inputs
+          path: |
+            research-data/
+            research-results/summary.csv
+          if-no-files-found: error
+          retention-days: 7
+
+  strategy-competition:
+    needs: download-history
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
@@ -30,22 +55,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
       - name: Install Python dependencies
         run: python -m pip install -r requirements.txt
-      - name: Install historical data client
-        run: npm install --no-save dukascopy-node@1.51.1
-      - name: Download six months and backtest all Bot 3 pairs
-        run: node bot3/run_historical_backtest.mjs
+      - name: Download validated historical inputs
+        uses: actions/download-artifact@v4
+        with:
+          name: bot3-research-inputs
       - name: Run predeclared strategy competition on all 27 pairs
         run: python -m bot3.strategy_competition --data-dir research-data --out-dir research-results/competition
-      - name: Upload historical data and reports
+      - name: Upload competition reports, including validation failures
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: bot3-six-month-backtest
-          path: |
-            research-results/
-            research-data/
+          name: bot3-competition-reports
+          path: research-results/competition/
+          if-no-files-found: warn
           retention-days: 30
