@@ -18,7 +18,7 @@ RR_VALUES = (1.0, 1.25)
 
 def build_signal(pair,m5,m15,h1,live_price=None,live_stamp=None,live_bid=None,live_ask=None,now=None):
     """Breakout-after-pullback entry, with mandatory M15/H1 agreement."""
-    if len(m5)<80 or len(m15)<60 or len(h1)<60:
+    if len(m5)<60 or len(m15)<60 or len(h1)<60:
         return None
     direction=bot3.trend_direction(h1)
     if not direction or bot3.trend_direction(m15)!=direction:
