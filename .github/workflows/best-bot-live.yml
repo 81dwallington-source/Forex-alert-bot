@@ -57,5 +57,7 @@ jobs:
           git add best_bot/live_state.json best_bot/live_signals.csv 2>/dev/null || true
           if ! git diff --cached --quiet; then
             git commit -m "Update Best Bot live signal and outcome ledger"
+            # Rebase any concurrent main-branch commit before persisting the ledger.
+            git pull --rebase origin main
             git push
           fi
