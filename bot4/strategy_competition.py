@@ -135,7 +135,7 @@ def metrics(rows):
 
 def _run_pair_train_validation(pair, data_dir, rr_values, spread_values):
     """Run one independent pair in its own process; preserve per-pair chronology."""
-    original_build, original_rr = bot4.build_signal, bot3.MIN_RR
+    original_build, original_rr = bot4.build_signal, bot4.MIN_RR
     detail_rows = []
     selected_names = {"baseline", "momentum_confirmed", "strong_htf_trend", "clean_confirmation", "room_to_target", "high_conviction_confluence", "combined_quality", "breakout_with_room"}
     configs = [(name, rule, float(rr), float(mult))
@@ -194,7 +194,7 @@ def _run_pair_train_validation(pair, data_dir, rr_values, spread_values):
                 def filtered(*a, _rule=rule, **kw):
                     signal = cached_build(*a, **kw)
                     return signal if signal and _rule(signal) else None
-                bot3.build_signal, bot3.MIN_RR = filtered, rr
+                bot4.build_signal, bot4.MIN_RR = filtered, rr
                 rows = backtest_pair(
                     pair, frame, base_spread * spread_mult, 0.2,
                     prepared=prepared_context,
@@ -211,7 +211,7 @@ def _run_pair_train_validation(pair, data_dir, rr_values, spread_values):
                   f"{len(signal_cache)} cached point-in-time signals", flush=True)
 
     finally:
-        bot3.build_signal, bot3.MIN_RR = original_build, original_rr
+        bot4.build_signal, bot4.MIN_RR = original_build, original_rr
     return detail_rows
 
 def main():
@@ -223,7 +223,7 @@ def main():
     parser.add_argument("--spread-multipliers", default="1.0,1.5")
     args = parser.parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    original_build, original_rr = bot3.build_signal, bot3.MIN_RR
+    original_build, original_rr = bot4.build_signal, bot4.MIN_RR
     detail_rows, test_rows = [], []
     selected_names = {"baseline", "momentum_confirmed", "strong_htf_trend", "fresh_pullback", "high_conviction_confluence", "combined_quality", "tight_pullback_strong_trend", "balanced_confluence"}
     configs = [(name, rule, float(rr), float(mult))
@@ -241,7 +241,7 @@ def main():
             for job in jobs:
                 detail_rows.extend(job.result())
     finally:
-        bot3.build_signal, bot3.MIN_RR = original_build, original_rr
+        bot4.build_signal, bot4.MIN_RR = original_build, original_rr
 
     detail = pd.DataFrame(detail_rows)
     if detail.empty:
@@ -282,7 +282,7 @@ def main():
         def filtered(*a, _rule=chosen_rule, **kw):
             signal = original_build(*a, **kw)
             return signal if signal and _rule(signal) else None
-        bot3.build_signal, bot3.MIN_RR = filtered, chosen_rr
+        bot4.build_signal, bot4.MIN_RR = filtered, chosen_rr
         for spread_mult in (chosen_mult,):
             rows = backtest_pair(pair, frame, SPREADS[pair] * spread_mult, 0.2)
             rows = [r for r in rows if pd.Timestamp(r["signal_time_utc"]) >= period_start]
@@ -291,7 +291,7 @@ def main():
                 "spread_pips":round(SPREADS[pair]*spread_mult,3),
                 "slippage_pips_per_fill":0.2,**metrics(rows)})
             print("FINAL TEST", pair, metrics(rows), flush=True)
-    bot3.build_signal, bot3.MIN_RR = original_build, original_rr
+    bot4.build_signal, bot4.MIN_RR = original_build, original_rr
     final = pd.DataFrame(test_rows)
     final.to_csv(args.out_dir / "locked_candidate_final_test.csv", index=False)
     trades, wins, losses = int(final.trades.sum()), int(final.wins.sum()), int(final.losses.sum())
