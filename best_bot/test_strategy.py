@@ -61,3 +61,19 @@ def test_staircase_direction_comparison():
     sell_highs, sell_lows = [1.20, 1.10], [1.05, 1.00]
     assert buy_highs[1] > buy_highs[0] and buy_lows[1] > buy_lows[0]
     assert sell_highs[1] < sell_highs[0] and sell_lows[1] < sell_lows[0]
+
+
+def test_staircase_confirmed_recognises_bullish_structure():
+    from strategy import staircase_confirmed
+    highs = [1,2,3,5,3,2,4,3,2,6,4,3,5,4,3]
+    lows  = [5,4,3,2,3,4,3,4,5,3,4,5,4,2,3]
+    frame = pd.DataFrame({"high": highs, "low": lows})
+    assert staircase_confirmed(frame, "BUY", lookback=15)
+    assert not staircase_confirmed(frame, "SELL", lookback=15)
+
+
+def test_staircase_confirmed_rejects_missing_structure():
+    from strategy import staircase_confirmed
+    frame = pd.DataFrame({"high": range(15), "low": range(15)})
+    assert not staircase_confirmed(frame, "BUY", lookback=15)
+    assert not staircase_confirmed(frame, "SELL", lookback=15)
