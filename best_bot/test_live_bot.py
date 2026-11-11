@@ -26,6 +26,36 @@ class LiveBotTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             live_bot.validate_freshness("EURUSD", old, "5m", 10)
 
+
+    def test_trade_log_updates_pending_row_instead_of_duplicating(self):
+        import csv
+        import tempfile
+        from pathlib import Path
+
+        original = live_bot.LOG_PATH
+        try:
+            with tempfile.TemporaryDirectory() as folder:
+                live_bot.LOG_PATH = Path(folder) / "signals.csv"
+                trade = {
+                    "signal_time_utc":"2026-11-11T17:20:00+00:00",
+                    "pair":"EURJPY","direction":"BUY","entry_reference":177.3365,
+                    "stop_loss":177.29221,"take_profit":177.40294,
+                    "risk_pips":4.4,"planned_rr":1.5,"outcome":"PENDING",
+                    "data_source":"test"
+                }
+                live_bot.append_log(trade)
+                resolved = dict(trade, outcome="WIN", outcome_time_utc="2026-11-11T18:00:00+00:00",
+                                outcome_note="Target touched")
+                live_bot.append_log(resolved)
+                with live_bot.LOG_PATH.open(newline="", encoding="utf-8") as f:
+                    rows = list(csv.DictReader(f))
+                self.assertEqual(len(rows), 1)
+                self.assertEqual(rows[0]["outcome"], "WIN")
+                self.assertEqual(rows[0]["stop_loss"], "177.29221")
+                self.assertEqual(rows[0]["take_profit"], "177.40294")
+        finally:
+            live_bot.LOG_PATH = original
+
     def test_live_bot_requires_telegram_secrets(self):
         with patch.object(live_bot, "TOKEN", ""), patch.object(live_bot, "CHAT_ID", ""):
             with self.assertRaises(RuntimeError):
