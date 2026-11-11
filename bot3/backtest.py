@@ -130,7 +130,9 @@ def backtest_pair(pair: str, m5: pd.DataFrame, spread_pips: float, slippage_pips
         # SELL stops execute on ASK and therefore need the FULL spread added.
         stop = bid_stop_to_executable(float(signal["stop"]), signal["direction"], spread)
         risk = fill - stop if signal["direction"] == "BUY" else stop - fill
-        if risk <= 0 or risk > bot3.MAX_STOP_ATR * signal["atr"]:
+        # Reject structurally tiny stops: require at least 0.45 ATR while
+        # retaining the confirmed swing-based stop from the signal builder.
+        if risk < 0.45 * signal["atr"] or risk > bot3.MAX_STOP_ATR * signal["atr"]:
             continue
         target = fill + risk * bot3.MIN_RR if signal["direction"] == "BUY" else fill - risk * bot3.MIN_RR
 
