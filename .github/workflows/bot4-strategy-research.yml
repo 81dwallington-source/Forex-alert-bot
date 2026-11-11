@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - bot4-strategy-research
+      - bot4-independent-breakout-v1
     paths:
       - 'bot4/**'
       - 'bot3/**'
@@ -25,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: bot4-strategy-research
+          ref: bot4-independent-breakout-v1
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
