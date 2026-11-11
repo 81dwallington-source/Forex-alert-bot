@@ -223,7 +223,7 @@ def main():
     # Predeclared selection: sufficient sample, positive expectancy, PF proxy
     # (net R) and broad pair participation. No final-test values influence ranking.
     grouped["eligible_on_validation"] = (
-        (grouped.trades >= 50) & (grouped.net_R > 0) &
+        (grouped.trades >= 50) & (grouped.win_rate_pct >= 60) & (grouped.net_R > 0) &
         (grouped.profitable_pairs >= (grouped.pairs * .60).apply(lambda x:int(x + .999)))
     )
     eligible = grouped[grouped.eligible_on_validation].sort_values(
@@ -264,7 +264,7 @@ def main():
     win_rate = 100*wins/(wins+losses) if wins+losses else 0.0
     profitable_pairs = int((final.net_R > 0).sum())
     print(f"LOCKED FINAL TEST: {trades} closed trades, {win_rate:.2f}% wins, {net_r:.2f}R net, {profitable_pairs}/{len(final)} profitable pairs", flush=True)
-    if trades < 30 or net_r <= 0 or profitable_pairs < max(1,int(len(final)*.60 + .999)):
+    if trades < 30 or win_rate < 60.0 or net_r <= 0 or profitable_pairs < max(1,int(len(final)*.60 + .999)):
         raise SystemExit("BOT 3 NOT VALIDATED: locked final test failed sample/profitability/diversification gate")
     print("PASS: locked candidate passed final chronological test. This is research validation, not a guarantee of live performance.", flush=True)
 
