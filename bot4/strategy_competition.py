@@ -137,8 +137,9 @@ def _run_pair_train_validation(pair, data_dir, rr_values, spread_values):
     """Run one independent pair in its own process; preserve per-pair chronology."""
     original_build, original_rr = bot3.build_signal, bot3.MIN_RR
     detail_rows = []
+    selected_names = {"baseline", "momentum_confirmed", "strong_htf_trend", "fresh_pullback", "high_conviction_confluence", "combined_quality", "tight_pullback_strong_trend", "balanced_confluence"}
     configs = [(name, rule, float(rr), float(mult))
-               for name, rule in CANDIDATES.items()
+               for name, rule in CANDIDATES.items() if name in selected_names
                for rr in rr_values
                for mult in spread_values]
     try:
@@ -224,8 +225,9 @@ def main():
     args.out_dir.mkdir(parents=True, exist_ok=True)
     original_build, original_rr = bot3.build_signal, bot3.MIN_RR
     detail_rows, test_rows = [], []
+    selected_names = {"baseline", "momentum_confirmed", "strong_htf_trend", "fresh_pullback", "high_conviction_confluence", "combined_quality", "tight_pullback_strong_trend", "balanced_confluence"}
     configs = [(name, rule, float(rr), float(mult))
-               for name, rule in CANDIDATES.items()
+               for name, rule in CANDIDATES.items() if name in selected_names
                for rr in args.rr.split(",")
                for mult in args.spread_multipliers.split(",")]
     try:
