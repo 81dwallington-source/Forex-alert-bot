@@ -1,10 +1,10 @@
-"""Predeclared Bot 3 filter/RR/spread competition; research only, never sends alerts."""
+"""Predeclared independent Bot 4 compression-breakout competition; research only."""
 from __future__ import annotations
 import argparse
 from pathlib import Path
 import pandas as pd
-from bot3 import bot3
-from bot3.backtest import load_m5, backtest_pair, prepare_backtest_context
+from bot4 import bot4
+from bot4.backtest import load_m5, backtest_pair, prepare_backtest_context
 
 # Fixed hypotheses: no thresholds are fitted from the results of this run.
 CANDIDATES = {
@@ -135,9 +135,9 @@ def metrics(rows):
 
 def _run_pair_train_validation(pair, data_dir, rr_values, spread_values):
     """Run one independent pair in its own process; preserve per-pair chronology."""
-    original_build, original_rr = bot3.build_signal, bot3.MIN_RR
+    original_build, original_rr = bot4.build_signal, bot3.MIN_RR
     detail_rows = []
-    selected_names = {"baseline", "momentum_confirmed", "strong_htf_trend", "fresh_pullback", "high_conviction_confluence", "combined_quality", "tight_pullback_strong_trend", "balanced_confluence"}
+    selected_names = {"baseline", "momentum_confirmed", "strong_htf_trend", "clean_confirmation", "room_to_target", "high_conviction_confluence", "combined_quality", "breakout_with_room"}
     configs = [(name, rule, float(rr), float(mult))
                for name, rule in CANDIDATES.items() if name in selected_names
                for rr in rr_values
