@@ -43,6 +43,25 @@ def trend(df: pd.DataFrame) -> str | None:
     return None
 
 
+def confirmed_swing(df: pd.DataFrame, side: str, lookback: int = 36) -> float:
+    """Latest confirmed two-bars-left/two-bars-right M5 swing; conservative fallback."""
+    window = df.iloc[-lookback:]
+    pivots = []
+    for i in range(2, len(window) - 2):
+        if side == "LOW":
+            value = float(window.low.iloc[i])
+            if value < float(window.low.iloc[i-2:i].min()) and value < float(window.low.iloc[i+1:i+3].min()):
+                pivots.append(value)
+        else:
+            value = float(window.high.iloc[i])
+            if value > float(window.high.iloc[i-2:i].max()) and value > float(window.high.iloc[i+1:i+3].max()):
+                pivots.append(value)
+    if pivots:
+        return pivots[-1]
+    tail = df.iloc[-(SWING_LOOKBACK+1):-1]
+    return float(tail.low.min() if side == "LOW" else tail.high.max())
+
+
 def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: float) -> dict | None:
     # M5 requires EMA200 history; higher timeframes use the independently
     # aligned EMA21/50 trend filter above.
@@ -62,13 +81,13 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: floa
         return None
     if direction == "BUY":
         confirmed = cur.close > cur.open and cur.close > prev.high and cur.close > cur.ema21
-        swing = float(a.low.iloc[-(SWING_LOOKBACK+1):-1].min())
+        swing = confirmed_swing(a, "LOW")
         stop = swing - max(0.15 * float(cur.atr), 0.5 * pip)
         risk = float(cur.close) - stop
         target = float(cur.close) + MIN_RR * risk
     else:
         confirmed = cur.close < cur.open and cur.close < prev.low and cur.close < cur.ema21
-        swing = float(a.high.iloc[-(SWING_LOOKBACK+1):-1].max())
+        swing = confirmed_swing(a, "HIGH")
         stop = swing + max(0.15 * float(cur.atr), 0.5 * pip)
         risk = stop - float(cur.close)
         target = float(cur.close) - MIN_RR * risk
