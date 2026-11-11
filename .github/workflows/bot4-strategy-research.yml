@@ -15,7 +15,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: bot4-strategy-research
+  group: bot4-strategy-research-v2
   cancel-in-progress: true
 
 jobs:
