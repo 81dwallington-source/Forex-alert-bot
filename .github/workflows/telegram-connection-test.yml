@@ -1,0 +1,52 @@
+name: Telegram connection test
+
+on:
+  push:
+    paths:
+      - ".github/workflows/telegram-connection-test.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  send-test-message:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Send one Telegram test message
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+          chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+          if not token or not chat_id:
+              raise SystemExit("Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID repository secret.")
+
+          payload = json.dumps({
+              "chat_id": chat_id,
+              "text": "✅ Telegram connection test successful. Your Forex bot's Telegram delivery is working."
+          }).encode()
+          request = urllib.request.Request(
+              f"https://api.telegram.org/bot{token}/sendMessage",
+              data=payload,
+              headers={"Content-Type": "application/json"},
+              method="POST",
+          )
+          try:
+              with urllib.request.urlopen(request, timeout=20) as response:
+                  result = json.loads(response.read().decode())
+          except urllib.error.HTTPError as exc:
+              detail = exc.read().decode(errors="replace")
+              raise SystemExit(f"Telegram rejected the test message (HTTP {exc.code}): {detail}")
+          if not result.get("ok"):
+              raise SystemExit(f"Telegram API returned an unsuccessful response: {result}")
+          print("Telegram API accepted the test message.")
+          PY
