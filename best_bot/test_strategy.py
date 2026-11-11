@@ -19,4 +19,4 @@ def test_trend_returns_direction_for_aligned_uptrend():
 
 
 def test_trend_rejects_insufficient_history():
-    assert trend(sample_frame(100)) is None
+    assert trend(sample_frame(40)) is None
