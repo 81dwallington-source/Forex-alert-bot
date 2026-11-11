@@ -1,6 +1,13 @@
 name: Best Bot — live M5 scanner
 
 on:
+  push:
+    paths:
+      - ".github/workflows/best-bot-live.yml"
+      - "best_bot/live_bot.py"
+      - "best_bot/strategy.py"
+      - "best_bot/test_live_bot.py"
+      - "best_bot/test_strategy.py"
   schedule:
     - cron: "*/5 * * * 1-5"
     - cron: "*/5 21-23 * * 0"
@@ -34,7 +41,7 @@ jobs:
 
       - name: Run strategy regression tests
         working-directory: best_bot
-        run: python -m unittest -v test_strategy.py
+        run: python -m unittest -v test_strategy.py test_live_bot.py
 
       - name: Run live scanner and Telegram alerts
         env:
