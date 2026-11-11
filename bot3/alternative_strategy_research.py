@@ -140,13 +140,13 @@ def main():
     val=df[df.period=="VALIDATION"].groupby("rr").agg(trades=("trades","sum"),wins=("wins","sum"),losses=("losses","sum"),net_R=("net_R","sum"),profitable_pairs=("net_R",lambda s:int((s>0).sum())),pairs=("pair","nunique")).reset_index()
     val["win_rate_pct"]=100*val.wins/(val.wins+val.losses).replace(0,pd.NA)
     val.to_csv(a.out_dir/"validation_summary.csv",index=False)
-    eligible=val[(val.trades>=50)&(val.net_R>0)&(val.profitable_pairs>=((val.pairs*.60).apply(lambda x:int(x+0.999))))]
+    eligible=val[(val.trades>=50)&(val.win_rate_pct>=60)&(val.net_R>0)&(val.profitable_pairs>=((val.pairs*.60).apply(lambda x:int(x+0.999))))]
     if eligible.empty: raise SystemExit("ALTERNATIVE STRATEGY FAILED VALIDATION; no live deployment")
     winner=eligible.sort_values(["net_R","win_rate_pct"],ascending=False).iloc[0]
     final=df[(df.period=="FINAL_TEST")&(df.rr==float(winner.rr))]
     total=int(final.trades.sum()); wins=int(final.wins.sum()); net=float(final.net_R.sum())
     winrate=100*wins/total if total else 0
-    if total<30 or net<=0 or int((final.net_R>0).sum())<max(1,int(len(final)*.60+0.999)):
+    if total<30 or winrate<60 or net<=0 or int((final.net_R>0).sum())<max(1,int(len(final)*.60+0.999)):
       raise SystemExit(f"LOCKED FINAL TEST FAILED: {total} trades, {winrate:.2f}% wins, {net:.2f}R")
     print(f"PASS RESEARCH ONLY: RR {winner.rr}; final {total} trades, {winrate:.2f}% wins, {net:.2f}R",flush=True)
 
