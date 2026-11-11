@@ -100,6 +100,13 @@ def backtest_pair(pair: str, m5: pd.DataFrame, spread_pips: float, slippage_pips
     m5, m15_all, h1_all, decisions = prepared
     results = []
     next_allowed_i = 800
+    # Convert the full OHLC columns once. The old loop repeatedly created
+    # pandas slices and copied the entire remaining history for every trade.
+    # NumPy slices below are views, preserving the exact candle ordering and
+    # first-hit logic while avoiding repeated full-tail conversions.
+    all_opens = m5["Open"].to_numpy(dtype=float)
+    all_highs = m5["High"].to_numpy(dtype=float)
+    all_lows = m5["Low"].to_numpy(dtype=float)
     for i, m15_end, h1_end in decisions:
         # Preserve the original one-open-trade-per-pair rule after an exit.
         if i < next_allowed_i:
@@ -137,10 +144,9 @@ def backtest_pair(pair: str, m5: pd.DataFrame, spread_pips: float, slippage_pips
         # Vectorised first-hit scan: identical candle-by-candle precedence,
         # but avoids millions of Python-level pandas row iterations.
         outcome, exit_time, pnl_r = "OPEN", "", None
-        future = m5.iloc[i + 1:]
-        opens = future["Open"].to_numpy(dtype=float)
-        highs = future["High"].to_numpy(dtype=float)
-        lows = future["Low"].to_numpy(dtype=float)
+        opens = all_opens[i + 1:]
+        highs = all_highs[i + 1:]
+        lows = all_lows[i + 1:]
         if signal["direction"] == "BUY":
             stop_hits = lows <= stop
             target_hits = highs >= target
@@ -157,7 +163,7 @@ def backtest_pair(pair: str, m5: pd.DataFrame, spread_pips: float, slippage_pips
         hit_positions = __import__("numpy").flatnonzero(stop_hits | target_hits)
         if len(hit_positions):
             k = int(hit_positions[0])
-            hit_time = future.index[k].isoformat()
+            hit_time = m5.index[i + 1 + k].isoformat()
             if stop_hits[k] and target_hits[k]:
                 outcome, exit_time, pnl_r = "AMBIGUOUS", hit_time, None
             elif gap_stops[k] or stop_hits[k]:
