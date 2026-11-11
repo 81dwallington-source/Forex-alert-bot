@@ -26,20 +26,27 @@ def indicators(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def trend(df: pd.DataFrame) -> str | None:
-    x = indicators(df).dropna()
-    if len(x) < 5:
+    # M15/H1 provider windows contain about 190 candles. Use EMA21/50 alignment
+    # and EMA21 slope so those real feed windows can confirm trend without
+    # pretending a 200-period EMA exists in the returned history.
+    if len(df) < 55:
         return None
-    a, b = x.iloc[-1], x.iloc[-2]
-    if a.close > a.ema21 > a.ema50 > a.ema200 and a.ema21 > b.ema21:
+    close = pd.to_numeric(df["close"], errors="coerce")
+    ema21 = close.ewm(span=EMA_FAST, adjust=False).mean()
+    ema50 = close.ewm(span=EMA_MID, adjust=False).mean()
+    if close.isna().any():
+        return None
+    if close.iloc[-1] > ema21.iloc[-1] > ema50.iloc[-1] and ema21.iloc[-1] > ema21.iloc[-2]:
         return "BUY"
-    if a.close < a.ema21 < a.ema50 < a.ema200 and a.ema21 < b.ema21:
+    if close.iloc[-1] < ema21.iloc[-1] < ema50.iloc[-1] and ema21.iloc[-1] < ema21.iloc[-2]:
         return "SELL"
     return None
 
 
 def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: float) -> dict | None:
-    # Input frames must end at the latest fully closed candle available at signal time.
-    if min(len(m5), len(m15), len(h1)) < 210:
+    # M5 requires EMA200 history; higher timeframes use the independently
+    # aligned EMA21/50 trend filter above.
+    if len(m5) < 210 or len(m15) < 55 or len(h1) < 55:
         return None
     a = indicators(m5).dropna()
     if len(a) < 3:
@@ -49,8 +56,6 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: floa
     if not direction or trend(h1) != direction:
         return None
 
-    # Price must have pulled back to EMA21 recently, then close back through
-    # the prior candle's extreme in the direction of the aligned higher trend.
     recent = a.iloc[-4:-1]
     touched = (recent.low <= recent.ema21 * 1.0015).any() if direction == "BUY" else (recent.high >= recent.ema21 * 0.9985).any()
     if not touched:
