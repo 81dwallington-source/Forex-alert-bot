@@ -1,77 +1,29 @@
-# Forex Alert Bot
+# Forex Alert Bot — Best Bot live scanner
 
-## Current behaviour
-- Signal-only Telegram alerts; no automatic trading. Telegram is reserved for qualifying trade alerts and outcome-tracking notices; routine scan summaries remain in GitHub Actions logs, and no watchlist/candidate alerts are sent.
-- Scans 27 major and cross-currency pairs using completed M5 candles, with M15 and H1 trend confirmation.
-- Uses a third-party public biquote OHLC endpoint. The provider's underlying market-data provenance is not independently verified; it is **not broker-verified** and may be delayed, unavailable, rate-limited, or differ from MT4 broker prices.
-- Rejects stale/incomplete candles and fails closed if the public feed returns missing, malformed, or insufficient candle data.
-- Requires aligned M15/H1 trends, fresh M5 continuation or pullback confirmation, and filters for RSI, ATR/volatility, EMA separation, entry extension, and candle direction.
-- Detects confirmed H1 swing highs/lows and rejects setups when the target is too close to the opposing H1 swing.
-- Uses structure/ATR stops, a minimum planned reward-to-risk of 1.5:1, and limits alerts to 5 per UTC day and at most 1 per pair per UTC day.
-- Logs alerts and estimates later outcomes from biquote public-feed M5 candles. These are candle-based estimates, not executed-trade results.
+The default branch now runs one active signal-only scanner: **Best Bot**.
 
-## Important limitations and safety
-- Public-feed prices are not your broker's bid/ask or execution prices. Spreads, slippage, commissions, broker candle differences and feed delays can change whether a setup is tradable.
-- Check every alert against MT4 before entry. Skip it if the broker price has moved more than 0.20 ATR from the reference or the signal is older than 10 minutes.
-- An alert is a rule-based candidate, not a prediction or guarantee. A score of 6/6 is a filter score, not a win probability.
-- If stop and target are both touched in one candle, the result is marked ambiguous rather than guessed.
-- The bot cannot read account equity, executed trades, commissions, broker pip values, or enforce position size or drawdown limits.
-- No automatic execution is enabled.
+## Live operation
+- GitHub Actions scans every 5 minutes on weekdays and during the Sunday forex reopen window (UTC). GitHub scheduling is best-effort, not a guaranteed real-time service.
+- Scans 27 major and cross-currency pairs.
+- Uses completed M5 candles for entries; M15 and H1 must independently confirm the same direction.
+- Strategy: EMA21/EMA50/EMA200 context on M5, EMA21/EMA50 trend alignment and slope on M15/H1, fresh EMA21 pullback, then a close beyond the prior M5 candle extreme.
+- Stops sit beyond the latest confirmed M5 swing (two candles on each side to confirm) with an ATR buffer. Rejects stops under 4 pips or above 2.5 ATR. Target is 1.5R.
+- Maximum 5 new alerts per UTC day and one per pair per UTC day. No watchlist alerts and no automatic trading.
+- Every signal is logged in `best_bot/live_signals.csv`; pending outcomes are tracked in `best_bot/live_state.json`. Public-candle TP/SL outcomes are estimates, not broker-verified executions.
 
-## GitHub Actions secrets
-Configure `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` under repository Settings → Secrets and variables → Actions. No market-data API key is required for this public feed. Never commit bot credentials.
+## Telegram
+Repository Actions secrets must be named `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`. A one-off Telegram test succeeded on 11 November 2026. The live scanner's first run also successfully sent a qualifying EURJPY BUY alert. [View that successful scan](https://github.com/81dwallington-source/Forex-alert-bot/actions/runs/43068374733).
 
-## Running and validation
-The workflow runs offline regression tests with `python -m unittest -v test_bot.py`, then runs `python Forex_alert.py`. It is scheduled every five minutes on weekdays and around the Sunday forex reopen (UTC coverage for both UK daylight-saving and standard time), and can also be started manually. GitHub Actions cron is best-effort, so start times can be delayed or skipped during platform load; it is not a guaranteed real-time scheduler.
+## Data and execution warning
+The scanner currently uses the public BiQuote OHLC endpoint. Its prices are **not broker-verified** and may differ from MT4 bid/ask prices, spread, slippage and execution. Check every alert against your broker before entry; skip it if the broker price has moved more than 0.20 ATR from the reference or the alert is older than 10 minutes. Risk no more than 0.25% per trade. The bot cannot size positions or enforce account risk.
 
+## Performance status
+A successful live scan and Telegram delivery prove the code path is operating; they do **not** prove the strategy is profitable. No 60% win rate is claimed. The historical backtest in `best_bot/backtest.py` is a separate research gate and must pass an adequately sized untouched out-of-sample sample with realistic broker-specific costs before any performance claim. The current live feed is not broker history.
 
-## Performance reporting
-- Each scan reports public-candle estimate TP/SL counts, estimated hit rate, average/expectancy in R, maximum drawdown in R, pending and ambiguous counts.
-- These estimates are not broker fills, verified trade outcomes, or proof of profitability. Ambiguous candles are excluded.
-- Broker-verified records are counted only when explicitly labelled VERIFIED_WIN, VERIFIED_LOSS, or VERIFIED_BREAK_EVEN. The bot does not infer these labels from public candles.
+## Files
+- `best_bot/strategy.py` — entry, confirmation and structural stop rules.
+- `best_bot/live_bot.py` — live scanner, Telegram delivery and outcome ledger.
+- `.github/workflows/best-bot-live.yml` — 5-minute schedule and manual trigger.
+- `best_bot/backtest.py` — historical research simulator; not a live signal source.
 
-
-## Automated Bot 3 historical backtesting
-
-A manual GitHub Actions workflow now downloads historical **Dukascopy** bid candles for
-the seven major pairs, builds M15 bars from complete M5 candles, downloads H1 bars,
-and runs the existing Bot 3 rules through the chronological backtest. It is not MT5
-broker data; compare broker-specific spreads and execution before drawing conclusions.
-
-Open Actions → **Bot 3 Historical Backtest** → Run workflow. Choose 1 year first;
-the 2-year option is available after the first run proves stable. The workflow uploads
-raw candles and `backtest_trades.csv` as an artifact. It does not change the live
-Telegram scanner or send trade alerts.
-
-## Bot 3 historical backtesting
-
-A conservative historical tester is available as `backtest_bot.py`. It calls the live
-Bot 3 `analyse_pair()` rules against rolling historical candles; it does not send
-Telegram messages or download market data.
-
-Export **UTC** candle-open timestamps and OHLC columns from MT5 (or another trusted
-source) into these files under `historical_data/`:
-
-- `EURUSD_M5.csv`, `EURUSD_M15.csv`, `EURUSD_H1.csv`
-- Repeat for each pair being tested (for example `GBPUSD_M5.csv`).
-
-Run:
-
-```bash
-python -m pip install -r requirements.txt
-python backtest_bot.py --data-dir historical_data --pairs EUR/USD,GBP/USD,USD/JPY --spread-pips 1.2
-```
-
-The runner uses the next M5 candle open for entry, applies an assumed constant
-spread adversely on entry and exit, counts same-candle SL/TP collisions as losses,
-and reports the chronological first 70% separately from the final 30%.
-It also writes `backtest_trades.csv`.
-
-**Important limitations:** results are historical simulations, not broker fills.
-The default 1.2-pip spread is only an assumption and should be replaced with
-broker/session-specific values. Commissions, swaps, variable spreads, latency,
-and slippage beyond the configured spread are not modelled. The report is not
-a 70% win-rate claim. Use enough history across different market conditions and
-keep the final out-of-sample period untouched while refining rules. The public
-biquote live feed currently provides only a short rolling candle window, which
-is not enough by itself to establish a reliable multi-month win rate.
+Old Bot 3 historical workflow has been retired from the default branch. Historical source files and past logs are retained for audit; they are not scheduled as active bots.
