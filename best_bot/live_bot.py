@@ -134,16 +134,32 @@ def save_state(state):
 
 
 def append_log(row):
+    """Upsert one CSV row per trade: PENDING is replaced by its final outcome."""
     fields = [
         "signal_time_utc","pair","direction","entry_reference","stop_loss","take_profit",
         "risk_pips","planned_rr","outcome","outcome_time_utc","outcome_note","data_source",
     ]
-    exists = LOG_PATH.exists()
-    with LOG_PATH.open("a", newline="", encoding="utf-8") as f:
+    key = (str(row.get("signal_time_utc", "")), str(row.get("pair", "")), str(row.get("direction", "")))
+    rows = []
+    if LOG_PATH.exists():
+        with LOG_PATH.open("r", newline="", encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+    clean = {k: row.get(k, "") for k in fields}
+    replaced = False
+    for i, existing in enumerate(rows):
+        existing_key = (existing.get("signal_time_utc", ""), existing.get("pair", ""), existing.get("direction", ""))
+        if existing_key == key:
+            rows[i] = clean
+            replaced = True
+            break
+    if not replaced:
+        rows.append(clean)
+    temp = LOG_PATH.with_suffix(".csv.tmp")
+    with temp.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fields)
-        if not exists:
-            writer.writeheader()
-        writer.writerow({k: row.get(k, "") for k in fields})
+        writer.writeheader()
+        writer.writerows(rows)
+    temp.replace(LOG_PATH)
 
 
 def outcome_updates(state, candle_cache):
