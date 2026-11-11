@@ -63,6 +63,14 @@ def confirmed_swing(df: pd.DataFrame, side: str, lookback: int = 36) -> float:
     return float(tail.low.min() if side == "LOW" else tail.high.max())
 
 
+def valid_stop_distance(risk: float, pip: float, atr: float) -> bool:
+    """Require structural room while rejecting stops too wide for current volatility."""
+    if pip <= 0 or atr <= 0 or risk <= 0:
+        return False
+    minimum = max(MIN_STOP_PIPS * pip, MIN_STOP_ATR * atr)
+    return minimum <= risk <= MAX_STOP_ATR * atr
+
+
 def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: float) -> dict | None:
     # M5 requires EMA200 history; higher timeframes use the independently
     # aligned EMA21/50 trend filter above.
@@ -95,8 +103,7 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: floa
     if not confirmed or risk <= 0:
         return None
     stop_pips = risk / pip
-    minimum_risk = max(MIN_STOP_PIPS * pip, MIN_STOP_ATR * float(cur.atr))
-    if risk < minimum_risk or risk > MAX_STOP_ATR * float(cur.atr):
+    if not valid_stop_distance(risk, pip, float(cur.atr)):
         return None
     return {
         "direction": direction, "signal_close": float(cur.close),
