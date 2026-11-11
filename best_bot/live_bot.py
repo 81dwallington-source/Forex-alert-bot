@@ -80,14 +80,15 @@ def fetch_bars(pair: str, interval: str, limit: int = 1000):
             (live if bar.get("isOpen") is True else completed).append(row)
         except (KeyError, TypeError, ValueError):
             continue
-    if len(completed) < MIN_CANDLES:
-        raise ValueError(f"{pair} {interval}: only {len(completed)} valid completed candles")
+    required = MIN_CANDLES if interval == "5m" else 55
+    if len(completed) < required:
+        raise ValueError(f"{pair} {interval}: only {len(completed)} valid completed candles (need {required})")
     frame = pd.DataFrame(completed).set_index("time").sort_index()
     frame = frame[~frame.index.duplicated(keep="last")]
     frame = frame.rename(columns=str.lower)
     frame = frame[["open","high","low","close"]]
-    if len(frame) < MIN_CANDLES:
-        raise ValueError(f"{pair} {interval}: insufficient unique candles")
+    if len(frame) < required:
+        raise ValueError(f"{pair} {interval}: insufficient unique candles (need {required})")
     return frame, live
 
 
