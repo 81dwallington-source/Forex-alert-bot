@@ -47,3 +47,10 @@ def test_stop_filter_rejects_tight_eurjpy_style_stop():
 def test_stop_filter_rejects_excessively_wide_stop():
     from strategy import valid_stop_distance
     assert not valid_stop_distance(0.40, 0.01, 0.10)
+
+
+def test_stop_filter_rejects_invalid_inputs():
+    from strategy import valid_stop_distance
+    assert not valid_stop_distance(0.08, 0.0, 0.10)
+    assert not valid_stop_distance(0.08, 0.01, 0.0)
+    assert not valid_stop_distance(-0.08, 0.01, 0.10)
