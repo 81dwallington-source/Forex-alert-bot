@@ -6,8 +6,9 @@ EMA_FAST, EMA_MID, EMA_SLOW = 21, 50, 200
 ATR_PERIOD = 14
 SWING_LOOKBACK = 8
 MIN_RR = 1.5
-MIN_STOP_PIPS = 4.0
-MAX_STOP_ATR = 2.5
+MIN_STOP_PIPS = 8.0
+MIN_STOP_ATR = 0.65
+MAX_STOP_ATR = 3.0
 
 
 def indicators(df: pd.DataFrame) -> pd.DataFrame:
@@ -82,19 +83,20 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: floa
     if direction == "BUY":
         confirmed = cur.close > cur.open and cur.close > prev.high and cur.close > cur.ema21
         swing = confirmed_swing(a, "LOW")
-        stop = swing - max(0.15 * float(cur.atr), 0.5 * pip)
+        stop = swing - max(0.25 * float(cur.atr), 1.0 * pip)
         risk = float(cur.close) - stop
         target = float(cur.close) + MIN_RR * risk
     else:
         confirmed = cur.close < cur.open and cur.close < prev.low and cur.close < cur.ema21
         swing = confirmed_swing(a, "HIGH")
-        stop = swing + max(0.15 * float(cur.atr), 0.5 * pip)
+        stop = swing + max(0.25 * float(cur.atr), 1.0 * pip)
         risk = stop - float(cur.close)
         target = float(cur.close) - MIN_RR * risk
     if not confirmed or risk <= 0:
         return None
     stop_pips = risk / pip
-    if stop_pips < MIN_STOP_PIPS or risk > MAX_STOP_ATR * float(cur.atr):
+    minimum_risk = max(MIN_STOP_PIPS * pip, MIN_STOP_ATR * float(cur.atr))
+    if risk < minimum_risk or risk > MAX_STOP_ATR * float(cur.atr):
         return None
     return {
         "direction": direction, "signal_close": float(cur.close),
