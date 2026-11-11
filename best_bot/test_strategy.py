@@ -54,3 +54,10 @@ def test_stop_filter_rejects_invalid_inputs():
     assert not valid_stop_distance(0.08, 0.0, 0.10)
     assert not valid_stop_distance(0.08, 0.01, 0.0)
     assert not valid_stop_distance(-0.08, 0.01, 0.10)
+
+
+def test_staircase_direction_comparison():
+    buy_highs, buy_lows = [1.10, 1.20], [1.00, 1.05]
+    sell_highs, sell_lows = [1.20, 1.10], [1.05, 1.00]
+    assert buy_highs[1] > buy_highs[0] and buy_lows[1] > buy_lows[0]
+    assert sell_highs[1] < sell_highs[0] and sell_lows[1] < sell_lows[0]
