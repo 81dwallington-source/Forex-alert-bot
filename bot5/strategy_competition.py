@@ -134,7 +134,7 @@ def _run_pair_train_validation(pair, data_dir, rr_values, spread_values):
                 history = a[1]
                 bid = float(a[6]) if len(a) > 6 and a[6] is not None else None
                 ask = float(a[7]) if len(a) > 7 and a[7] is not None else None
-                key = (pair_key, history.index[-1], bid, ask)
+                key = (pair_key, history.index[-1], bid, ask, float(bot3.MIN_RR))
                 if key not in signal_cache:
                     signal_cache[key] = original_build(*a, **kw)
                     cache_misses += 1
