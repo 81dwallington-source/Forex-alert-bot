@@ -16,7 +16,7 @@ permissions:
 
 concurrency:
   group: bot4-strategy-research
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   compete:
