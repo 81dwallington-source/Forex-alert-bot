@@ -16,7 +16,7 @@ PAIRS = ["EURUSD","GBPUSD","USDJPY","USDCHF","USDCAD","AUDUSD","NZDUSD",
 UK = ZoneInfo("Europe/London")
 SESSION_START_HOUR, SESSION_END_HOUR = 5, 23
 MAX_ALERTS_PER_UK_DAY, MAX_ONE_ALERT_PER_PAIR_PER_UK_DAY = 15, True
-MIN_RR, MAX_STOP_ATR, MAX_ENTRY_DRIFT_ATR = 1.0, 3.5, 0.20
+MIN_RR, MIN_STOP_ATR, MAX_STOP_ATR, MAX_ENTRY_DRIFT_ATR = 1.0, 0.45, 3.5, 0.20
 MAX_M5_AGE_MINUTES, RISK_ADVISORY_PERCENT = 8, 0.25
 STATE_FILE, LOG_FILE = Path("bot3_state.json"), Path("bot3_signal_log.csv")
 TOKEN, CHAT_ID = os.getenv("TELEGRAM_BOT_TOKEN","").strip(), os.getenv("TELEGRAM_CHAT_ID","").strip()
@@ -128,7 +128,7 @@ def build_signal(pair,m5,m15,h1,live_price=None,live_stamp=None,live_bid=None,li
         if not pivots: return None
         swing=pivots[-1][1]; entry=float(last.Close); stop=swing-0.15*atr
         risk=entry-stop
-        if risk<=0 or risk>MAX_STOP_ATR*atr: return None
+        if risk<MIN_STOP_ATR*atr or risk>MAX_STOP_ATR*atr: return None
         target=entry+risk*MIN_RR
     else:
         if not (last.Close<last.Open and last.Close<min(float(prev.Low),float(pullback_candle.Low)) and last.Close<last.EMA21 and location<=0.25): return None
@@ -136,7 +136,7 @@ def build_signal(pair,m5,m15,h1,live_price=None,live_stamp=None,live_bid=None,li
         if not pivots: return None
         swing=pivots[-1][1]; entry=float(last.Close); stop=swing+0.15*atr
         risk=stop-entry
-        if risk<=0 or risk>MAX_STOP_ATR*atr: return None
+        if risk<MIN_STOP_ATR*atr or risk>MAX_STOP_ATR*atr: return None
         target=entry-risk*MIN_RR
     if live_price is None or live_stamp is None or live_bid is None or live_ask is None: return None
     live_time=pd.Timestamp(live_stamp)
