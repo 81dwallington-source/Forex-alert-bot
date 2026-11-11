@@ -17,7 +17,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: bot3-historical-backtest
+  group: bot3-historical-backtest-v2
   cancel-in-progress: false
 
 jobs:
