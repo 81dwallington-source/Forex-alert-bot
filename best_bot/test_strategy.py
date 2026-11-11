@@ -36,3 +36,14 @@ def test_confirmed_swing_falls_back_to_recent_structure():
         "low":  [1.00,0.99,0.98,0.97,0.96,0.95,0.94,0.93,0.92],
     })
     assert confirmed_swing(frame, "LOW", lookback=9) == 0.93
+
+
+def test_stop_filter_rejects_tight_eurjpy_style_stop():
+    from strategy import valid_stop_distance
+    assert not valid_stop_distance(0.044, 0.01, 0.10)
+    assert valid_stop_distance(0.080, 0.01, 0.10)
+
+
+def test_stop_filter_rejects_excessively_wide_stop():
+    from strategy import valid_stop_distance
+    assert not valid_stop_distance(0.40, 0.01, 0.10)
