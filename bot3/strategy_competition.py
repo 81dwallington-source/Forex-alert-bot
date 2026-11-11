@@ -104,8 +104,9 @@ def _run_pair_train_validation(pair, data_dir, rr_values, spread_values):
     """Run one independent pair in its own process; preserve per-pair chronology."""
     original_build, original_rr = bot3.build_signal, bot3.MIN_RR
     detail_rows = []
+    selected_names = {"baseline", "momentum_confirmed", "strong_htf_trend", "fresh_pullback", "high_conviction_confluence", "combined_quality"}
     configs = [(name, rule, float(rr), float(mult))
-               for name, rule in CANDIDATES.items()
+               for name, rule in CANDIDATES.items() if name in selected_names
                for rr in rr_values
                for mult in spread_values]
     try:
@@ -148,7 +149,7 @@ def _run_pair_train_validation(pair, data_dir, rr_values, spread_values):
                 history = a[1]
                 bid = float(a[6]) if len(a) > 6 and a[6] is not None else None
                 ask = float(a[7]) if len(a) > 7 and a[7] is not None else None
-                key = (pair_key, history.index[-1], bid, ask)
+                key = (pair_key, history.index[-1], bid, ask, float(bot3.MIN_RR))
                 if key not in signal_cache:
                     signal_cache[key] = original_build(*a, **kw)
                     cache_misses += 1
@@ -191,8 +192,9 @@ def main():
     args.out_dir.mkdir(parents=True, exist_ok=True)
     original_build, original_rr = bot3.build_signal, bot3.MIN_RR
     detail_rows, test_rows = [], []
+    selected_names = {"baseline", "momentum_confirmed", "strong_htf_trend", "fresh_pullback", "high_conviction_confluence", "combined_quality"}
     configs = [(name, rule, float(rr), float(mult))
-               for name, rule in CANDIDATES.items()
+               for name, rule in CANDIDATES.items() if name in selected_names
                for rr in args.rr.split(",")
                for mult in args.spread_multipliers.split(",")]
     try:
