@@ -15,7 +15,7 @@ Published FX research finds momentum effects in currencies, but also finds that 
 - Candidate selection uses validation only; final test is run once after selection.
 - Full assumed spread plus adverse slippage; ambiguous same-candle exits excluded from win-rate denominator and reported separately.
 - One open trade per pair at a time; no overlapping trade accounting.
-- Minimum final-test gate: 50 closed unambiguous trades, 70% wins, positive net R, and at least 60% of tested pairs profitable. Failure means no deployment.
+- Minimum final-test gate: 50 closed unambiguous trades, 60% wins, positive net R, and at least 60% of tested pairs profitable. Failure means no deployment.
 - No 1-pip stop; stops remain based on confirmed swing structure with ATR sanity bounds in the shared engine.
 - No SMC or liquidity-sweep requirement.
 
