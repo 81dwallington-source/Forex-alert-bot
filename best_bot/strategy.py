@@ -130,6 +130,81 @@ def valid_stop_distance(risk: float, pip: float, atr: float) -> bool:
     return minimum <= risk <= MAX_STOP_ATR * atr
 
 
+
+def find_origin_retest(df: pd.DataFrame, side: str, range_bars: int = 12,
+                       max_pattern_bars: int = 30) -> dict | None:
+    """Find a two-sided consolidation sweep, displacement, then origin-candle retest.
+
+    Uses completed candles only. A BUY requires both range edges to be swept,
+    then a bullish displacement through range high and a confirmed retest of
+    the last bearish candle before displacement. SELL is the exact inverse.
+    """
+    if side not in ("BUY", "SELL") or len(df) < range_bars + 8:
+        return None
+    x = df.reset_index(drop=True)
+    start = max(range_bars + 2, len(x) - max_pattern_bars)
+    # Search the most recent candidate pattern first.
+    for breakout_i in range(len(x) - 2, start, -1):
+        base = x.iloc[breakout_i-range_bars-2:breakout_i-2]
+        if len(base) != range_bars:
+            continue
+        rh, rl = float(base.high.max()), float(base.low.min())
+        atr_series = indicators(x.iloc[:breakout_i+1])["atr"]
+        atr = float(atr_series.iloc[-1])
+        if not atr or atr <= 0 or (rh-rl) > 4.0*atr:
+            continue
+        prior = x.iloc[breakout_i-2:breakout_i]
+        # Both edges must have been taken during the pattern before displacement.
+        swept_high = bool((prior.high > rh).any())
+        swept_low = bool((prior.low < rl).any())
+        if not (swept_high and swept_low):
+            continue
+        impulse = x.iloc[breakout_i]
+        body = abs(float(impulse.close)-float(impulse.open))
+        if side == "BUY":
+            displacement = (impulse.close > rh and impulse.close > impulse.open
+                            and body >= 0.60*atr)
+            opposite = [j for j in range(max(start, breakout_i-4), breakout_i)
+                        if x.open.iloc[j] > x.close.iloc[j]]
+            if not displacement or not opposite:
+                continue
+            origin_i = opposite[-1]
+            origin = x.iloc[origin_i]
+            zone_low, zone_high = sorted((float(origin.open), float(origin.close)))
+            sweep_extreme = float(x.iloc[breakout_i-2:breakout_i].low.min())
+            retest = x.iloc[breakout_i+1:]
+            if retest.empty:
+                continue
+            for _, bar in retest.iterrows():
+                touched = float(bar.low) <= zone_high and float(bar.high) >= zone_low
+                confirmed = float(bar.close) > float(bar.open) and float(bar.close) > zone_high
+                if touched and confirmed and bar.name == retest.index[-1]:
+                    return {"entry":float(bar.close),"origin_low":float(origin.low),
+                            "origin_high":float(origin.high),"sweep_extreme":sweep_extreme,
+                            "atr":atr,"range_high":rh,"range_low":rl}
+        else:
+            displacement = (impulse.close < rl and impulse.close < impulse.open
+                            and body >= 0.60*atr)
+            opposite = [j for j in range(max(start, breakout_i-4), breakout_i)
+                        if x.open.iloc[j] < x.close.iloc[j]]
+            if not displacement or not opposite:
+                continue
+            origin_i = opposite[-1]
+            origin = x.iloc[origin_i]
+            zone_low, zone_high = sorted((float(origin.open), float(origin.close)))
+            sweep_extreme = float(x.iloc[breakout_i-2:breakout_i].high.max())
+            retest = x.iloc[breakout_i+1:]
+            if retest.empty:
+                continue
+            for _, bar in retest.iterrows():
+                touched = float(bar.high) >= zone_low and float(bar.low) <= zone_high
+                confirmed = float(bar.close) < float(bar.open) and float(bar.close) < zone_low
+                if touched and confirmed and bar.name == retest.index[-1]:
+                    return {"entry":float(bar.close),"origin_low":float(origin.low),
+                            "origin_high":float(origin.high),"sweep_extreme":sweep_extreme,
+                            "atr":atr,"range_high":rh,"range_low":rl}
+    return None
+
 def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: float) -> dict | None:
     if len(m5) < 210 or len(m15) < 55 or len(h1) < 55:
         return None
@@ -147,33 +222,23 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: floa
     if not staircase_confirmed(a, direction, lookback=36):
         return None
 
-    # The pullback must be recent, and the confirmation candle must not be
-    # an already-extended breakout far away from EMA21.
-    pullback = a.iloc[-(PULLBACK_LOOKBACK+1):-1]
-    touched = (
-        (pullback.low <= pullback.ema21 * 1.0015).any()
-        if direction == "BUY"
-        else (pullback.high >= pullback.ema21 * 0.9985).any()
-    )
-    if not touched:
+    # New entry model: both consolidation edges swept, displacement, then
+    # confirmed retest of the candle that initiated the displacement.
+    pattern = find_origin_retest(a, direction)
+    if not pattern:
         return None
-    atr = float(cur.atr)
-    if atr <= 0 or abs(float(cur.close) - float(cur.ema21)) > MAX_CONFIRMATION_EXTENSION_ATR * atr:
-        return None
-
+    atr = float(pattern["atr"])
+    entry = float(pattern["entry"])
+    buffer = max(0.25 * atr, 1.0 * pip)
     if direction == "BUY":
-        confirmed = cur.close > cur.open and cur.close > prev.high and cur.close > cur.ema21
-        structure = pullback_structure_extreme(a, "LOW")
-        stop = structure - max(0.25 * atr, 1.0 * pip)
-        risk = float(cur.close) - stop
-        target = float(cur.close) + MIN_RR * risk
+        stop = min(float(pattern["sweep_extreme"]), float(pattern["origin_low"])) - buffer
+        risk = entry - stop
+        target = entry + MIN_RR * risk
     else:
-        confirmed = cur.close < cur.open and cur.close < prev.low and cur.close < cur.ema21
-        structure = pullback_structure_extreme(a, "HIGH")
-        stop = structure + max(0.25 * atr, 1.0 * pip)
-        risk = stop - float(cur.close)
-        target = float(cur.close) - MIN_RR * risk
-    if not confirmed or risk <= 0:
+        stop = max(float(pattern["sweep_extreme"]), float(pattern["origin_high"])) + buffer
+        risk = stop - entry
+        target = entry - MIN_RR * risk
+    if risk <= 0:
         return None
     stop_pips = risk / pip
     # If the proper structural stop is too wide, reject the trade; never
@@ -181,7 +246,7 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: floa
     if not valid_stop_distance(risk, pip, atr):
         return None
     return {
-        "direction": direction, "signal_close": float(cur.close),
+        "direction": direction, "signal_close": entry,
         "stop": float(stop), "target": float(target), "risk_pips": round(stop_pips, 1),
         "rr": MIN_RR, "ema21": float(cur.ema21), "atr": atr,
     }
