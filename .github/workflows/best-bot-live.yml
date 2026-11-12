@@ -5,12 +5,13 @@ on:
     paths:
       - ".github/workflows/best-bot-live.yml"
       - "best_bot/live_bot.py"
+      - "best_bot/run_loop.py"
       - "best_bot/strategy.py"
       - "best_bot/test_live_bot.py"
       - "best_bot/test_strategy.py"
-  # Run every five minutes; the scanner itself skips closed/stale markets.
+  # Start a long-running scanner every six hours; each runner scans every five minutes.
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "3 */6 * * *"
   workflow_dispatch:
 
 permissions:
@@ -23,7 +24,7 @@ concurrency:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 350
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -43,11 +44,11 @@ jobs:
         working-directory: best_bot
         run: python -m pytest -q test_strategy.py test_live_bot.py
 
-      - name: Run live scanner and Telegram alerts
+      - name: Run live scanner every five minutes
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python best_bot/live_bot.py
+        run: python best_bot/run_loop.py
 
       - name: Persist signal log and outcome state
         if: always()
