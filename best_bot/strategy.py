@@ -208,6 +208,62 @@ def find_origin_retest(df: pd.DataFrame, side: str, range_bars: int = 12,
                             "atr":atr,"range_high":rh,"range_low":rl}
     return None
 
+
+def find_impulse_origin_retest(df: pd.DataFrame, side: str,
+                              max_pattern_bars: int = 28) -> dict | None:
+    """Find a directional impulse, pullback to its launch candle, then rejection.
+
+    The latest completed candle must retest the launch candle body and close
+    back in the direction of the impulse. BUY/SELL are exact mirrors.
+    """
+    if side not in ("BUY", "SELL") or len(df) < 18:
+        return None
+    x = df.reset_index(drop=True)
+    latest = len(x) - 1
+    first_origin = max(2, latest - max_pattern_bars)
+    # Most recent launch zones first; require a completed pullback after the impulse.
+    for origin_i in range(latest - 5, first_origin - 1, -1):
+        origin = x.iloc[origin_i]
+        if side == "BUY" and float(origin.close) >= float(origin.open):
+            continue
+        if side == "SELL" and float(origin.close) <= float(origin.open):
+            continue
+        zone_low, zone_high = sorted((float(origin.open), float(origin.close)))
+        for impulse_end in range(origin_i + 3, latest):
+            impulse = x.iloc[origin_i + 1:impulse_end + 1]
+            if len(impulse) < 3:
+                continue
+            atr = float(indicators(x.iloc[:impulse_end + 1])["atr"].iloc[-1])
+            if not pd.notna(atr) or atr <= 0:
+                continue
+            if side == "BUY":
+                impulse_size = float(impulse.high.max()) - float(origin.close)
+                made_progress = float(impulse.close.iloc[-1]) > float(origin.high)
+                pullback_low = float(x.low.iloc[impulse_end + 1:].min())
+                latest_bar = x.iloc[latest]
+                touched = float(latest_bar.low) <= zone_high and float(latest_bar.high) >= zone_low
+                rejected = float(latest_bar.close) > float(latest_bar.open) and float(latest_bar.close) > zone_high
+                if (impulse_size >= 1.5 * atr and made_progress and touched and rejected
+                        and pullback_low >= float(origin.low) - 0.35 * atr):
+                    return {"entry": float(latest_bar.close), "origin_low": float(origin.low),
+                            "origin_high": float(origin.high),
+                            "sweep_extreme": float(x.low.iloc[origin_i:latest + 1].min()),
+                            "atr": atr, "setup": "IMPULSE_ORIGIN_RETEST"}
+            else:
+                impulse_size = float(origin.close) - float(impulse.low.min())
+                made_progress = float(impulse.close.iloc[-1]) < float(origin.low)
+                pullback_high = float(x.high.iloc[impulse_end + 1:].max())
+                latest_bar = x.iloc[latest]
+                touched = float(latest_bar.high) >= zone_low and float(latest_bar.low) <= zone_high
+                rejected = float(latest_bar.close) < float(latest_bar.open) and float(latest_bar.close) < zone_low
+                if (impulse_size >= 1.5 * atr and made_progress and touched and rejected
+                        and pullback_high <= float(origin.high) + 0.35 * atr):
+                    return {"entry": float(latest_bar.close), "origin_low": float(origin.low),
+                            "origin_high": float(origin.high),
+                            "sweep_extreme": float(x.high.iloc[origin_i:latest + 1].max()),
+                            "atr": atr, "setup": "IMPULSE_ORIGIN_RETEST"}
+    return None
+
 def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: float) -> dict | None:
     if len(m5) < 210 or len(m15) < 55 or len(h1) < 55:
         return None
@@ -224,6 +280,8 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: floa
     # Required sequence: consolidation -> both edges swept -> displacement
     # through one edge -> retest and rejection of the displacement-origin candle.
     pattern = find_origin_retest(a, direction)
+    if not pattern:
+        pattern = find_impulse_origin_retest(a, direction)
     if not pattern:
         return None
     atr = float(pattern["atr"])
