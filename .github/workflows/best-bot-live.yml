@@ -8,10 +8,9 @@ on:
       - "best_bot/strategy.py"
       - "best_bot/test_live_bot.py"
       - "best_bot/test_strategy.py"
-  # Standard five-minute schedule; GitHub may start scheduled jobs a little late.
+  # Run every five minutes; the scanner itself skips closed/stale markets.
   schedule:
-    - cron: "*/5 * * * 1-5"
-    - cron: "*/5 21-23 * * 0"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 permissions:
