@@ -1,9 +1,9 @@
 import pandas as pd
-from strategy import confirmed_swing, indicators, trend
+from strategy import confirmed_swing, indicators, trend, m5_trend_aligned
 
 
-def sample_frame(n=260, slope=0.0002):
-    close = [1.0 + i*slope for i in range(n)]
+def sample_frame(n=260, slope=0.0002, start=1.0):
+    close = [start + i*slope for i in range(n)]
     return pd.DataFrame({"open":close,"high":[x+0.0001 for x in close],
                          "low":[x-0.0001 for x in close],"close":close})
 
@@ -20,6 +20,17 @@ def test_trend_returns_direction_for_aligned_uptrend():
 
 def test_trend_rejects_insufficient_history():
     assert trend(sample_frame(40)) is None
+
+
+def test_m5_filter_requires_full_bullish_ema_alignment():
+    assert m5_trend_aligned(sample_frame(), "BUY")
+    assert not m5_trend_aligned(sample_frame(), "SELL")
+
+
+def test_m5_filter_requires_full_bearish_ema_alignment():
+    falling = sample_frame(slope=-0.0002, start=2.0)
+    assert m5_trend_aligned(falling, "SELL")
+    assert not m5_trend_aligned(falling, "BUY")
 
 
 def test_confirmed_swing_uses_pivot_with_two_right_bars():
@@ -54,13 +65,6 @@ def test_stop_filter_rejects_invalid_inputs():
     assert not valid_stop_distance(0.08, 0.0, 0.10)
     assert not valid_stop_distance(0.08, 0.01, 0.0)
     assert not valid_stop_distance(-0.08, 0.01, 0.10)
-
-
-def test_staircase_direction_comparison():
-    buy_highs, buy_lows = [1.10, 1.20], [1.00, 1.05]
-    sell_highs, sell_lows = [1.20, 1.10], [1.05, 1.00]
-    assert buy_highs[1] > buy_highs[0] and buy_lows[1] > buy_lows[0]
-    assert sell_highs[1] < sell_highs[0] and sell_lows[1] < sell_lows[0]
 
 
 def test_staircase_confirmed_recognises_bullish_structure():
