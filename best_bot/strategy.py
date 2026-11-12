@@ -9,6 +9,9 @@ MIN_RR = 1.5
 MIN_STOP_PIPS = 8.0
 MIN_STOP_ATR = 0.65
 MAX_STOP_ATR = 3.0
+MAX_CONFIRMATION_EXTENSION_ATR = 0.50
+PULLBACK_LOOKBACK = 5
+STOP_STRUCTURE_LOOKBACK = 12
 
 
 def indicators(df: pd.DataFrame) -> pd.DataFrame:
@@ -85,6 +88,18 @@ def confirmed_swing(df: pd.DataFrame, side: str, lookback: int = 36) -> float:
     return float(tail.low.min() if side == "LOW" else tail.high.max())
 
 
+def pullback_structure_extreme(df: pd.DataFrame, side: str, lookback: int = STOP_STRUCTURE_LOOKBACK) -> float:
+    """Use the full recent pullback/confirmation structure, not a tiny local pivot."""
+    window = df.iloc[-lookback:]
+    if len(window) < lookback:
+        raise ValueError("Insufficient candles for pullback stop structure")
+    if side == "HIGH":
+        return float(window.high.max())
+    if side == "LOW":
+        return float(window.low.min())
+    raise ValueError("side must be HIGH or LOW")
+
+
 def staircase_confirmed(df: pd.DataFrame, side: str, lookback: int = 36) -> bool:
     """Require actual swing pivots plus improving recent price structure."""
     w = df.iloc[-lookback:].reset_index(drop=True)
@@ -126,35 +141,47 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: floa
     if not direction or trend(h1) != direction:
         return None
 
-    # New hard filter: M5 must independently agree with M15 and H1.
+    # All three timeframes must agree before looking for an entry.
     if not m5_trend_aligned(a, direction):
         return None
     if not staircase_confirmed(a, direction, lookback=36):
         return None
 
-    recent = a.iloc[-4:-1]
-    touched = (recent.low <= recent.ema21 * 1.0015).any() if direction == "BUY" else (recent.high >= recent.ema21 * 0.9985).any()
+    # The pullback must be recent, and the confirmation candle must not be
+    # an already-extended breakout far away from EMA21.
+    pullback = a.iloc[-(PULLBACK_LOOKBACK+1):-1]
+    touched = (
+        (pullback.low <= pullback.ema21 * 1.0015).any()
+        if direction == "BUY"
+        else (pullback.high >= pullback.ema21 * 0.9985).any()
+    )
     if not touched:
         return None
+    atr = float(cur.atr)
+    if atr <= 0 or abs(float(cur.close) - float(cur.ema21)) > MAX_CONFIRMATION_EXTENSION_ATR * atr:
+        return None
+
     if direction == "BUY":
         confirmed = cur.close > cur.open and cur.close > prev.high and cur.close > cur.ema21
-        swing = confirmed_swing(a, "LOW")
-        stop = swing - max(0.25 * float(cur.atr), 1.0 * pip)
+        structure = pullback_structure_extreme(a, "LOW")
+        stop = structure - max(0.25 * atr, 1.0 * pip)
         risk = float(cur.close) - stop
         target = float(cur.close) + MIN_RR * risk
     else:
         confirmed = cur.close < cur.open and cur.close < prev.low and cur.close < cur.ema21
-        swing = confirmed_swing(a, "HIGH")
-        stop = swing + max(0.25 * float(cur.atr), 1.0 * pip)
+        structure = pullback_structure_extreme(a, "HIGH")
+        stop = structure + max(0.25 * atr, 1.0 * pip)
         risk = stop - float(cur.close)
         target = float(cur.close) - MIN_RR * risk
     if not confirmed or risk <= 0:
         return None
     stop_pips = risk / pip
-    if not valid_stop_distance(risk, pip, float(cur.atr)):
+    # If the proper structural stop is too wide, reject the trade; never
+    # pull the stop inside the swing just to force an alert.
+    if not valid_stop_distance(risk, pip, atr):
         return None
     return {
         "direction": direction, "signal_close": float(cur.close),
         "stop": float(stop), "target": float(target), "risk_pips": round(stop_pips, 1),
-        "rr": MIN_RR, "ema21": float(cur.ema21), "atr": float(cur.atr),
+        "rr": MIN_RR, "ema21": float(cur.ema21), "atr": atr,
     }
