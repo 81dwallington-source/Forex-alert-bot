@@ -37,11 +37,11 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: python -m pip install --upgrade pip pandas requests
+        run: python -m pip install --upgrade pip pandas requests pytest
 
-      - name: Run strategy regression tests
+      - name: Run all strategy and live-bot regression tests
         working-directory: best_bot
-        run: python -m unittest -v test_strategy.py test_live_bot.py
+        run: python -m pytest -q test_strategy.py test_live_bot.py
 
       - name: Run live scanner and Telegram alerts
         env:
@@ -57,7 +57,6 @@ jobs:
           git add best_bot/live_state.json best_bot/live_signals.csv 2>/dev/null || true
           if ! git diff --cached --quiet; then
             git commit -m "Update Best Bot live signal and outcome ledger"
-            # Rebase any concurrent main-branch commit before persisting the ledger.
             git pull --rebase origin main
             git push
           fi
