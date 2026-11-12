@@ -13,9 +13,7 @@
       "outcome_time_utc": "2026-11-11T18:15:00+00:00",
       "outcome_note": "Public-feed M5 candle touched stop",
       "data_source": "BiQuote public FX OHLC; not broker-verified"
-    }
-  ],
-  "pending": [
+    },
     {
       "signal_time_utc": "2026-11-12T03:10:00+00:00",
       "pair": "EURJPY",
@@ -25,9 +23,9 @@
       "take_profit": 176.63883928571425,
       "risk_pips": 15.9,
       "planned_rr": 1.5,
-      "outcome": "PENDING",
-      "outcome_time_utc": "",
-      "outcome_note": "",
+      "outcome": "LOSS",
+      "outcome_time_utc": "2026-11-12T06:10:00+00:00",
+      "outcome_note": "Public-feed M5 candle touched stop",
       "data_source": "BiQuote public FX OHLC; not broker-verified"
     },
     {
@@ -39,11 +37,12 @@
       "take_profit": 191.52667857142856,
       "risk_pips": 12.9,
       "planned_rr": 1.5,
-      "outcome": "PENDING",
-      "outcome_time_utc": "",
-      "outcome_note": "",
+      "outcome": "LOSS",
+      "outcome_time_utc": "2026-11-12T06:10:00+00:00",
+      "outcome_note": "Public-feed M5 candle touched stop",
       "data_source": "BiQuote public FX OHLC; not broker-verified"
     }
   ],
-  "last_scan_utc": "2026-11-12T05:18:28.874084+00:00"
+  "pending": [],
+  "last_scan_utc": "2026-11-12T06:20:28.302802+00:00"
 }
