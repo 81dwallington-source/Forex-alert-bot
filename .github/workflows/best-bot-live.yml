@@ -8,10 +8,10 @@ on:
       - "best_bot/strategy.py"
       - "best_bot/test_live_bot.py"
       - "best_bot/test_strategy.py"
-  # Offset away from the busiest minute marks to reduce GitHub schedule delays.
+  # Standard five-minute schedule; GitHub may start scheduled jobs a little late.
   schedule:
-    - cron: "2-59/5 * * * 1-5"
-    - cron: "2-59/5 21-23 * * 0"
+    - cron: "*/5 * * * 1-5"
+    - cron: "*/5 21-23 * * 0"
   workflow_dispatch:
 
 permissions:
