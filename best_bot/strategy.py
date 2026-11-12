@@ -1,4 +1,4 @@
-"""Selective M5 trend-pullback strategy. Uses completed candles only."""
+"""M5 two-sided sweep, displacement and origin-candle retest strategy."""
 from __future__ import annotations
 import pandas as pd
 
@@ -219,14 +219,10 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: floa
     if not direction or trend(h1) != direction:
         return None
 
-    # All three timeframes must agree before looking for an entry.
-    if not m5_trend_aligned(a, direction):
-        return None
-    if not staircase_confirmed(a, direction, lookback=36):
-        return None
-
-    # New entry model: both consolidation edges swept, displacement, then
-    # confirmed retest of the candle that initiated the displacement.
+    # M15 and H1 must agree. M5 entry is decided by the requested pattern,
+    # not by a separate EMA-stack or staircase filter.
+    # Required sequence: consolidation -> both edges swept -> displacement
+    # through one edge -> retest and rejection of the displacement-origin candle.
     pattern = find_origin_retest(a, direction)
     if not pattern:
         return None
