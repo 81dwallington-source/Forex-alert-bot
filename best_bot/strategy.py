@@ -264,6 +264,57 @@ def find_impulse_origin_retest(df: pd.DataFrame, side: str,
                             "atr": atr, "setup": "IMPULSE_ORIGIN_RETEST"}
     return None
 
+
+def find_trend_consolidation_break_retest(df: pd.DataFrame, side: str,
+                                          range_bars: int = 10,
+                                          max_break_bars: int = 5) -> dict | None:
+    """Trend-aligned consolidation break followed by a retest of the range edge.
+
+    BUY mirrors SELL: EMA stack establishes direction, a compact pause forms,
+    price closes out of the pause, then the latest completed candle retests
+    the broken edge and rejects it in the trend direction.
+    """
+    if side not in ("BUY", "SELL") or len(df) < 210:
+        return None
+    x = indicators(df).dropna().reset_index(drop=True)
+    if len(x) < range_bars + max_break_bars + 3:
+        return None
+    cur = x.iloc[-1]
+    if side == "SELL":
+        aligned = cur.close < cur.ema21 < cur.ema50 < cur.ema200
+    else:
+        aligned = cur.close > cur.ema21 > cur.ema50 > cur.ema200
+    if not aligned:
+        return None
+
+    # A breakout must have occurred shortly before the current retest candle.
+    for break_i in range(len(x)-2, max(10, len(x)-max_break_bars-1), -1):
+        base = x.iloc[break_i-range_bars:break_i]
+        if len(base) != range_bars:
+            continue
+        rh, rl = float(base.high.max()), float(base.low.min())
+        atr = float(x.atr.iloc[break_i])
+        if not pd.notna(atr) or atr <= 0 or rh-rl > 2.5*atr:
+            continue
+        impulse = x.iloc[break_i]
+        if side == "SELL":
+            broke = float(impulse.close) < rl and float(impulse.close) < float(impulse.open)
+            retest = float(cur.high) >= rl and float(cur.low) <= rl + 0.20*atr
+            rejected = float(cur.close) < rl and float(cur.close) < float(cur.open)
+            if broke and retest and rejected:
+                return {"entry":float(cur.close), "origin_low":rl,
+                        "origin_high":rh, "sweep_extreme":float(x.high.iloc[break_i: ].max()),
+                        "atr":atr, "setup":"TREND_CONSOLIDATION_BREAK_RETEST"}
+        else:
+            broke = float(impulse.close) > rh and float(impulse.close) > float(impulse.open)
+            retest = float(cur.low) <= rh and float(cur.high) >= rh - 0.20*atr
+            rejected = float(cur.close) > rh and float(cur.close) > float(cur.open)
+            if broke and retest and rejected:
+                return {"entry":float(cur.close), "origin_low":rl,
+                        "origin_high":rh, "sweep_extreme":float(x.low.iloc[break_i:].min()),
+                        "atr":atr, "setup":"TREND_CONSOLIDATION_BREAK_RETEST"}
+    return None
+
 def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: float) -> dict | None:
     if len(m5) < 210 or len(m15) < 55 or len(h1) < 55:
         return None
@@ -282,6 +333,8 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: floa
     pattern = find_origin_retest(a, direction)
     if not pattern:
         pattern = find_impulse_origin_retest(a, direction)
+    if not pattern:
+        pattern = find_trend_consolidation_break_retest(a, direction)
     if not pattern:
         return None
     atr = float(pattern["atr"])
