@@ -145,15 +145,18 @@ def find_origin_retest(df: pd.DataFrame, side: str, range_bars: int = 12,
     start = max(range_bars + 2, len(x) - max_pattern_bars)
     # Search the most recent candidate pattern first.
     for breakout_i in range(len(x) - 2, start, -1):
-        base = x.iloc[breakout_i-range_bars-2:breakout_i-2]
-        if len(base) != range_bars:
+        # Build the range before an eight-candle sweep window. This allows
+        # the two liquidity grabs to occur separately, not only in two bars.
+        sweep_start = breakout_i - 8
+        base = x.iloc[sweep_start-range_bars:sweep_start]
+        if len(base) != range_bars or sweep_start < range_bars:
             continue
         rh, rl = float(base.high.max()), float(base.low.min())
         atr_series = indicators(x.iloc[:breakout_i+1])["atr"]
         atr = float(atr_series.iloc[-1])
         if not atr or atr <= 0 or (rh-rl) > 4.0*atr:
             continue
-        prior = x.iloc[breakout_i-2:breakout_i]
+        prior = x.iloc[sweep_start:breakout_i]
         # Both edges must have been taken during the pattern before displacement.
         swept_high = bool((prior.high > rh).any())
         swept_low = bool((prior.low < rl).any())
@@ -171,7 +174,7 @@ def find_origin_retest(df: pd.DataFrame, side: str, range_bars: int = 12,
             origin_i = opposite[-1]
             origin = x.iloc[origin_i]
             zone_low, zone_high = sorted((float(origin.open), float(origin.close)))
-            sweep_extreme = float(x.iloc[breakout_i-2:breakout_i].low.min())
+            sweep_extreme = float(prior.low.min())
             retest = x.iloc[breakout_i+1:]
             if retest.empty:
                 continue
@@ -192,7 +195,7 @@ def find_origin_retest(df: pd.DataFrame, side: str, range_bars: int = 12,
             origin_i = opposite[-1]
             origin = x.iloc[origin_i]
             zone_low, zone_high = sorted((float(origin.open), float(origin.close)))
-            sweep_extreme = float(x.iloc[breakout_i-2:breakout_i].high.max())
+            sweep_extreme = float(prior.high.max())
             retest = x.iloc[breakout_i+1:]
             if retest.empty:
                 continue
