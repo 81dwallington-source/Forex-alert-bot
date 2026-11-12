@@ -5,9 +5,10 @@ The active live signal bot is `live_bot.py`, run by `.github/workflows/best-bot-
 ## Live strategy
 - M5 entry on completed candles only.
 - M15 and H1 must both agree using EMA21/EMA50 alignment and EMA21 slope.
-- M5 requires EMA21/EMA50/EMA200 context, a recent EMA21 pullback and a bullish/bearish close beyond the previous M5 candle extreme.
-- Stop beyond the latest confirmed M5 swing, confirmed by two bars on each side, plus a volatility buffer. Conservative recent-structure fallback if no confirmed pivot exists.
-- Reject stop distances below 4 pips or above 2.5 ATR; target 1.5R.
+- M5 must independently agree: price above EMA21 > EMA50 > EMA200 for BUY, or below EMA21 < EMA50 < EMA200 for SELL; the EMA slopes must also agree.
+- Requires a confirmed M5 swing-structure progression as well as a recent EMA21 pullback and a bullish/bearish close beyond the previous M5 candle extreme.
+- Stop beyond the latest confirmed M5 swing, plus a volatility buffer.
+- Reject stop distances below 8 pips (or 0.65 ATR if larger) and above 3 ATR; target 1.5R.
 - 27 major/cross pairs; maximum five alerts per UTC day and one per pair per day.
 - Signal-only. No automatic execution, no watchlists, no 1-minute entries.
 
@@ -22,5 +23,5 @@ The scanner uses BiQuote public OHLC data, not broker-verified prices. Check MT4
 ## Files
 - `strategy.py` — strategy logic.
 - `live_bot.py` — live data scan, Telegram alerts, signal/outcome ledger.
-- `test_strategy.py` and `test_live_bot.py` — regression tests.
+- `test_strategy.py` and `test_live_bot.py` — regression tests, both executed by pytest before each scheduled live scan.
 - `backtest.py` — historical research only.
