@@ -1,4 +1,4 @@
-"""Fresh M5 trend-pullback strategy. Signals use completed candles only."""
+"""Selective M5 trend-pullback strategy. Uses completed candles only."""
 from __future__ import annotations
 import pandas as pd
 
@@ -27,9 +27,6 @@ def indicators(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def trend(df: pd.DataFrame) -> str | None:
-    # M15/H1 provider windows contain about 190 candles. Use EMA21/50 alignment
-    # and EMA21 slope so those real feed windows can confirm trend without
-    # pretending a 200-period EMA exists in the returned history.
     if len(df) < 55:
         return None
     close = pd.to_numeric(df["close"], errors="coerce")
@@ -42,6 +39,31 @@ def trend(df: pd.DataFrame) -> str | None:
     if close.iloc[-1] < ema21.iloc[-1] < ema50.iloc[-1] and ema21.iloc[-1] < ema21.iloc[-2]:
         return "SELL"
     return None
+
+
+def m5_trend_aligned(df: pd.DataFrame, side: str) -> bool:
+    """Require price and all three M5 EMAs to agree; reject countertrend entries."""
+    if len(df) < EMA_SLOW + 3:
+        return False
+    x = indicators(df).dropna()
+    if len(x) < 3:
+        return False
+    cur, prev = x.iloc[-1], x.iloc[-2]
+    if side == "BUY":
+        return bool(
+            cur.close > cur.ema21 > cur.ema50 > cur.ema200
+            and cur.ema21 > prev.ema21
+            and cur.ema50 > prev.ema50
+            and cur.ema200 >= prev.ema200
+        )
+    if side == "SELL":
+        return bool(
+            cur.close < cur.ema21 < cur.ema50 < cur.ema200
+            and cur.ema21 < prev.ema21
+            and cur.ema50 < prev.ema50
+            and cur.ema200 <= prev.ema200
+        )
+    return False
 
 
 def confirmed_swing(df: pd.DataFrame, side: str, lookback: int = 36) -> float:
@@ -63,8 +85,30 @@ def confirmed_swing(df: pd.DataFrame, side: str, lookback: int = 36) -> float:
     return float(tail.low.min() if side == "LOW" else tail.high.max())
 
 
+def staircase_confirmed(df: pd.DataFrame, side: str, lookback: int = 36) -> bool:
+    """Require actual swing pivots plus improving recent price structure."""
+    w = df.iloc[-lookback:].reset_index(drop=True)
+    if len(w) < 12:
+        return False
+    highs, lows = [], []
+    for i in range(2, len(w)-2):
+        if w.high.iloc[i] > w.high.iloc[i-2:i].max() and w.high.iloc[i] > w.high.iloc[i+1:i+3].max():
+            highs.append(float(w.high.iloc[i]))
+        if w.low.iloc[i] < w.low.iloc[i-2:i].min() and w.low.iloc[i] < w.low.iloc[i+1:i+3].min():
+            lows.append(float(w.low.iloc[i]))
+    if len(highs) < 2 or len(lows) < 2:
+        return False
+    mid = len(w)//2
+    old, recent = w.iloc[:mid], w.iloc[mid:]
+    if side == "BUY":
+        return bool(max(recent.high) > max(old.high) and recent.low.mean() > old.low.mean())
+    if side == "SELL":
+        return bool(min(recent.low) < min(old.low) and recent.high.mean() < old.high.mean())
+    return False
+
+
 def valid_stop_distance(risk: float, pip: float, atr: float) -> bool:
-    """Require structural room while rejecting stops too wide for current volatility."""
+    """Reject tight stops and stops too wide for current volatility."""
     if pip <= 0 or atr <= 0 or risk <= 0:
         return False
     minimum = max(MIN_STOP_PIPS * pip, MIN_STOP_ATR * atr)
@@ -72,8 +116,6 @@ def valid_stop_distance(risk: float, pip: float, atr: float) -> bool:
 
 
 def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: float) -> dict | None:
-    # M5 requires EMA200 history; higher timeframes use the independently
-    # aligned EMA21/50 trend filter above.
     if len(m5) < 210 or len(m15) < 55 or len(h1) < 55:
         return None
     a = indicators(m5).dropna()
@@ -82,6 +124,12 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: floa
     cur, prev = a.iloc[-1], a.iloc[-2]
     direction = trend(m15)
     if not direction or trend(h1) != direction:
+        return None
+
+    # New hard filter: M5 must independently agree with M15 and H1.
+    if not m5_trend_aligned(a, direction):
+        return None
+    if not staircase_confirmed(a, direction, lookback=36):
         return None
 
     recent = a.iloc[-4:-1]
