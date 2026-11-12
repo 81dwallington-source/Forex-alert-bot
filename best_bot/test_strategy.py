@@ -1,5 +1,5 @@
 import pandas as pd
-from strategy import confirmed_swing, indicators, trend, m5_trend_aligned
+from strategy import confirmed_swing, indicators, trend, m5_trend_aligned, pullback_structure_extreme
 
 
 def sample_frame(n=260, slope=0.0002, start=1.0):
@@ -81,3 +81,19 @@ def test_staircase_confirmed_rejects_missing_structure():
     frame = pd.DataFrame({"high": range(15), "low": range(15)})
     assert not staircase_confirmed(frame, "BUY", lookback=15)
     assert not staircase_confirmed(frame, "SELL", lookback=15)
+
+
+def test_sell_stop_uses_recent_pullback_high_not_small_local_pivot():
+    frame = pd.DataFrame({
+        "high": [1.10,1.11,1.12,1.13,1.15,1.14,1.13,1.12,1.11,1.12,1.11,1.10],
+        "low":  [1.08,1.09,1.10,1.11,1.12,1.11,1.10,1.09,1.08,1.09,1.08,1.07],
+    })
+    assert pullback_structure_extreme(frame, "HIGH") == 1.15
+
+
+def test_buy_stop_uses_recent_pullback_low_not_small_local_pivot():
+    frame = pd.DataFrame({
+        "high": [1.12,1.13,1.14,1.15,1.16,1.15,1.14,1.13,1.12,1.13,1.12,1.11],
+        "low":  [1.10,1.09,1.08,1.07,1.05,1.06,1.07,1.08,1.09,1.08,1.09,1.10],
+    })
+    assert pullback_structure_extreme(frame, "LOW") == 1.05
