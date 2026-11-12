@@ -15,6 +15,35 @@
       "data_source": "BiQuote public FX OHLC; not broker-verified"
     }
   ],
-  "pending": [],
-  "last_scan_utc": "2026-11-12T02:27:47.759839+00:00"
+  "pending": [
+    {
+      "signal_time_utc": "2026-11-12T03:10:00+00:00",
+      "pair": "EURJPY",
+      "direction": "SELL",
+      "entry_reference": 176.8775,
+      "stop_loss": 177.03660714285715,
+      "take_profit": 176.63883928571425,
+      "risk_pips": 15.9,
+      "planned_rr": 1.5,
+      "outcome": "PENDING",
+      "outcome_time_utc": "",
+      "outcome_note": "",
+      "data_source": "BiQuote public FX OHLC; not broker-verified"
+    },
+    {
+      "signal_time_utc": "2026-11-12T03:10:00+00:00",
+      "pair": "CHFJPY",
+      "direction": "SELL",
+      "entry_reference": 191.7205,
+      "stop_loss": 191.84971428571427,
+      "take_profit": 191.52667857142856,
+      "risk_pips": 12.9,
+      "planned_rr": 1.5,
+      "outcome": "PENDING",
+      "outcome_time_utc": "",
+      "outcome_note": "",
+      "data_source": "BiQuote public FX OHLC; not broker-verified"
+    }
+  ],
+  "last_scan_utc": "2026-11-12T03:18:05.355058+00:00"
 }
