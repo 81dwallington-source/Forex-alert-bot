@@ -137,7 +137,7 @@ def append_log(row):
     """Upsert one CSV row per trade: PENDING is replaced by its final outcome."""
     fields = [
         "signal_time_utc","pair","direction","entry_reference","stop_loss","take_profit",
-        "risk_pips","planned_rr","outcome","outcome_time_utc","outcome_note","data_source",
+        "risk_pips","planned_rr","setup_type","origin_candle_low","origin_candle_high","outcome","outcome_time_utc","outcome_note","data_source",
     ]
     key = (str(row.get("signal_time_utc", "")), str(row.get("pair", "")), str(row.get("direction", "")))
     rows = []
@@ -216,13 +216,15 @@ def outcome_updates(state, candle_cache):
     return changed
 
 
-def format_signal(pair, direction, entry, stop, target, risk_pips, stamp, rr, atr):
+def format_signal(pair, direction, entry, stop, target, risk_pips, stamp, rr, atr, setup, origin_low, origin_high):
     return (
         f"📣 BEST BOT — {direction} {pair}\n"
         f"Entry reference: {entry:.5f}\n"
         f"Stop loss: {stop:.5f}\n"
         f"Take profit: {target:.5f}\n"
         f"Planned R:R: 1:{rr:.1f} | Stop: {risk_pips:.1f} pips\n"
+        f"Setup: {setup}\n"
+        f"Origin candle body: {origin_low:.5f}–{origin_high:.5f}\n"
         f"M5 entry + M15/H1 trend aligned\n"
         f"Completed candle: {stamp.strftime('%Y-%m-%d %H:%M UTC')}\n"
         f"Public BiQuote feed — NOT broker-verified. Check MT4 spread and price before entry; "
@@ -279,12 +281,14 @@ def scan():
                 "direction":sig["direction"], "entry_reference":entry,
                 "stop_loss":float(sig["stop"]), "take_profit":float(sig["target"]),
                 "risk_pips":float(sig["risk_pips"]), "planned_rr":float(sig["rr"]),
+                "setup_type":sig["setup"], "origin_candle_low":float(sig["origin_low"]),
+                "origin_candle_high":float(sig["origin_high"]),
                 "outcome":"PENDING", "outcome_time_utc":"", "outcome_note":"",
                 "data_source":"BiQuote public FX OHLC; not broker-verified",
             }
             message = format_signal(pair, sig["direction"], entry, row["stop_loss"],
                                     row["take_profit"], row["risk_pips"], stamp,
-                                    row["planned_rr"], atr)
+                                    row["planned_rr"], atr, sig["setup"], sig["origin_low"], sig["origin_high"])
             send_telegram(message)
             state["pending"].append(row)
             append_log(row)
