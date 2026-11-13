@@ -1,29 +1,43 @@
-# Best Bot — live scanner and research
+# Best Bot — three-pattern live scanner
 
-The active live signal bot is `live_bot.py`, run by `.github/workflows/best-bot-live.yml`.
+The active signal-only scanner is `live_bot.py`, run by `.github/workflows/best-bot-live.yml`.
 
-## Live strategy
-- M5 entry on completed candles only.
-- M15 and H1 must both agree using EMA21/EMA50 alignment and EMA21 slope.
-- M5 must independently agree: price above EMA21 > EMA50 > EMA200 for BUY, or below EMA21 < EMA50 < EMA200 for SELL; the EMA slopes must also agree.
-- Requires confirmed M5 swing structure and a recent EMA21 pullback within the last five completed candles.
-- The confirmation candle must close beyond the previous candle extreme, in the trade direction, while remaining within 0.50 ATR of EMA21. This rejects late, over-extended entries after the move has already run.
-- Stop is placed beyond the highest high / lowest low of the latest 12 completed M5 candles (the pullback and confirmation structure), plus a 0.25 ATR or one-pip buffer, whichever is larger.
-- If that proper structural stop is wider than 3 ATR, reject the setup. Never squeeze the stop inside the swing to force an alert.
-- Minimum stop distance is 8 pips (or 0.65 ATR if larger); target 1.5R.
-- 27 major/cross pairs; maximum five alerts per UTC day and one per pair per day.
-- Signal-only. No automatic execution, no watchlists, no 1-minute entries.
+## Mandatory chart patterns
 
-## Operation
-The GitHub Actions workflow scans every five minutes on weekdays and during the Sunday reopen window. Actions scheduling is best-effort and can be delayed. It uses repository secrets `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`. Every alert is written to `live_signals.csv`; state and pending outcome tracking are in `live_state.json`.
+Every alert must be classified as exactly one of these completed-candle M5 patterns. Indicator alignment alone is never a setup and must never create a signal.
 
-The scanner uses BiQuote public OHLC data, not broker-verified prices. Check MT4 spread and price before acting. Skip an alert if the live broker price has moved more than 0.20 ATR or the signal is older than 10 minutes. Suggested risk ceiling is 0.25% per trade.
+1. **Two-sided liquidity sweep + origin-candle retest** — price takes both edges of a compact range and closes back inside after each sweep; a decisive displacement candle breaks out; price returns to the last opposing candle's body and rejects it.
+2. **Strong impulse + origin-candle retest** — a clear multi-candle directional impulse moves at least 1.5 ATR from its launch candle, with meaningful directional candle bodies and a close near the impulse extreme; price later returns to the launch candle body and rejects it.
+3. **Trend + consolidation + breakout + retest** — M5 EMA21/50/200 stack and EMA21/50 slope agree; a compact consolidation breaks with a decisive candle; price retests the broken range edge and closes back in the breakout direction.
 
-## Research and performance
-`backtest.py` evaluates historical Dukascopy candles with an explicit assumed spread, next-M5-open entries and stop-first same-candle handling. It separates the first 70% development period from the final 30% untouched holdout and requires at least 30 holdout trades. It does not establish future profitability. No win-rate claim is made until independently demonstrated on a sufficiently large, realistic out-of-sample sample with broker-specific costs.
+All three patterns have BUY and SELL versions. The bot calculates its own entry, structural stop and 1.5R target. If the pattern is incomplete, unclear, unclassified, stale, too extended, or requires an invalid stop distance, it rejects the trade. No generic EMA-only fallback is permitted.
+
+## Confirmation and risk controls
+
+- M5 entries use completed candles only.
+- M15 and H1 trend must agree; neither timeframe can override the other.
+- M5 pattern is mandatory. M5 EMA alignment by itself is not a trigger.
+- Stops remain beyond the relevant sweep/origin structure plus a volatility buffer. Stops that are too tight or too wide are rejected rather than squeezed.
+- Maximum entry drift is 0.20 ATR from the signal close.
+- Public BiQuote OHLC data is not broker-verified. Confirm broker price and spread before any manual trade; suggested risk ceiling is 0.25%.
+- Signal-only: no automatic execution, no watchlists, no 1-minute entries.
+
+## Operation and records
+
+- 27 major/cross pairs.
+- Each runner scans on five-minute intervals; GitHub scheduled starts are best-effort and can be delayed.
+- Maximum five alerts per UTC day and one per pair per UTC day.
+- Every alert must display its exact recognised pattern and origin candle body.
+- Every signal is written to `live_signals.csv`; pending and resolved outcomes are stored in `live_state.json`.
+- Outcome tracking uses later completed public-feed M5 candles. If SL and TP are touched in the same candle, the result is marked ambiguous rather than guessed.
+
+## Research
+
+`backtest.py` evaluates historical Dukascopy candles with an explicit assumed spread, next-M5-open entries and stop-first same-candle handling. It separates development data from an untouched holdout. Historical results do not establish future profitability; no win-rate claim is made without a sufficiently large, realistic out-of-sample sample using broker-specific costs.
 
 ## Files
-- `strategy.py` — strategy logic.
+
+- `strategy.py` — three pattern detectors and signal construction.
 - `live_bot.py` — live data scan, Telegram alerts, signal/outcome ledger.
-- `test_strategy.py` and `test_live_bot.py` — regression tests, both executed by pytest before each scheduled live scan.
+- `test_strategy.py` and `test_live_bot.py` — regression tests run before each scheduled scan.
 - `backtest.py` — historical research only.
