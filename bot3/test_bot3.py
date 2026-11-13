@@ -4,7 +4,7 @@ from unittest.mock import patch, Mock
 import pandas as pd
 import tempfile
 from pathlib import Path
-from bot3.bot3 import in_session, trend_direction, confirmed_pivots, fetch_live_quote, evaluate_trade_outcome
+from bot3.bot3 import in_session, trend_direction, confirmed_pivots, fetch_live_quote, evaluate_trade_outcome, detect_approved_pattern
 from bot3.backtest import bid_stop_to_executable, load_m5
 
 class Bot3Tests(unittest.TestCase):
@@ -117,5 +117,27 @@ class Bot3Tests(unittest.TestCase):
             index=pd.to_datetime(["2026-11-05T10:00:00Z"]))
         outcome,stamp,detail=evaluate_trade_outcome(signal,candles)
         self.assertEqual(outcome,"")
+
+    def test_liquidity_sweep_requires_sweep_rejection_and_close_break(self):
+        n=60
+        frame=pd.DataFrame({
+            "Open":[1.005]*n,"High":[1.006]*n,"Low":[1.004]*n,
+            "Close":[1.0055]*n,"ATR":[0.001]*n,
+            "EMA21":[1.005]*n,"EMA20":[1.005]*n,"EMA50":[1.004]*n,
+        },index=pd.date_range("2026-11-05",periods=n,freq="5min",tz="UTC"))
+        frame.loc[frame.index[56],"Low"]=1.000
+        frame.loc[frame.index[59],["Open","High","Low","Close"]]=[1.001,1.007,0.999,1.0068]
+        result=detect_approved_pattern(frame,"BUY")
+        self.assertIsNotNone(result)
+        self.assertEqual(result["setup_type"],"TWO-SIDED LIQUIDITY SWEEP")
+
+    def test_unrelated_m5_candle_is_not_an_approved_setup(self):
+        n=60
+        frame=pd.DataFrame({
+            "Open":[1.005]*n,"High":[1.006]*n,"Low":[1.004]*n,
+            "Close":[1.0055]*n,"ATR":[0.001]*n,
+            "EMA21":[1.005]*n,"EMA20":[1.005]*n,"EMA50":[1.004]*n,
+        },index=pd.date_range("2026-11-05",periods=n,freq="5min",tz="UTC"))
+        self.assertIsNone(detect_approved_pattern(frame,"BUY"))
 
 if __name__=="__main__": unittest.main()
