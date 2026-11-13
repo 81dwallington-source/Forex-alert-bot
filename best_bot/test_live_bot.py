@@ -64,3 +64,14 @@ class LiveBotTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+
+    def test_every_alert_displays_the_recognised_pattern():
+        message = live_bot.format_signal(
+            "AUDNZD", "SELL", 1.22591, 1.22679, 1.22457, 8.8,
+            pd.Timestamp("2026-11-13T07:30:00Z"), 1.5, 0.001,
+            "IMPULSE_ORIGIN_RETEST", 1.2250, 1.2258,
+        )
+        self.assertIn("PATTERN CONFIRMED: IMPULSE_ORIGIN_RETEST", message)
+        self.assertIn("Origin candle body:", message)
