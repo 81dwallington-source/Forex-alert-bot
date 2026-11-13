@@ -1,5 +1,5 @@
 import pandas as pd
-from strategy import confirmed_swing, indicators, trend, m5_trend_aligned, pullback_structure_extreme
+from strategy import confirmed_swing, indicators, trend, m5_trend_aligned, pullback_structure_extreme, make_signal
 
 
 def sample_frame(n=260, slope=0.0002, start=1.0):
@@ -97,3 +97,15 @@ def test_buy_stop_uses_recent_pullback_low_not_small_local_pivot():
         "low":  [1.10,1.09,1.08,1.07,1.05,1.06,1.07,1.08,1.09,1.08,1.09,1.10],
     })
     assert pullback_structure_extreme(frame, "LOW") == 1.05
+
+
+
+def test_indicator_alignment_alone_never_creates_a_signal():
+    # A clean EMA trend without one of the three requested chart patterns
+    # must produce no trade.
+    m5 = sample_frame()
+    m15 = sample_frame()
+    h1 = sample_frame()
+    assert trend(m15) == "BUY"
+    assert trend(h1) == "BUY"
+    assert make_signal(m5, m15, h1, 0.0001) is None
