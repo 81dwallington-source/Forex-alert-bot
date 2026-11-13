@@ -1,0 +1,62 @@
+name: Bot 3 historical backtest
+
+on:
+  push:
+    branches:
+      - bot3-independent-build-v2
+    paths:
+      - 'bot3/run_historical_backtest.mjs'
+      - '.github/workflows/bot3-historical-backtest.yml'
+      - 'bot3/backtest.py'
+      - 'bot3/strategy_competition.py'
+      - 'bot3/bot3.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: bot3-historical-backtest-v2
+  cancel-in-progress: true
+
+jobs:
+  strategy-competition:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: bot3-independent-build-v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Reuse the verified 36-month historical input artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: bot3-research-inputs
+          repository: 81dwallington-source/Forex-alert-bot
+          run-id: 42768895828
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify all 27 pair files are present
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          pairs = "EURUSD GBPUSD USDJPY USDCHF USDCAD AUDUSD NZDUSD EURGBP EURJPY EURCHF EURAUD EURCAD EURNZD GBPJPY GBPCHF GBPAUD GBPCAD GBPNZD AUDJPY AUDCHF AUDCAD AUDNZD NZDJPY NZDCHF NZDCAD CADJPY CHFJPY".split()
+          missing = [p for p in pairs if not (Path("research-data") / f"{p}_M5.csv").is_file()]
+          if missing:
+              raise SystemExit(f"Shared history artifact is incomplete; missing: {missing}")
+          print(f"Verified {len(pairs)} M5 pair files from the existing Bot 3 download")
+          PY
+      - name: Run predeclared strategy competition on all 27 pairs
+        run: python -m bot3.strategy_competition --data-dir research-data --out-dir research-results/competition
+      - name: Upload competition reports, including validation failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bot3-competition-reports
+          path: research-results/competition/
+          if-no-files-found: warn
+          retention-days: 30

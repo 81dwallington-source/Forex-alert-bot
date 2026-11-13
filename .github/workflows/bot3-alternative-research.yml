@@ -1,0 +1,59 @@
+name: Bot 3 alternative strategy research
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - bot3-independent-build-v2
+    paths:
+      - 'bot3/alternative_strategy_research.py'
+      - '.github/workflows/bot3-alternative-research.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: bot3-alternative-strategy-research
+  cancel-in-progress: false
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: bot3-independent-build-v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Reuse recovered historical data (no new download)
+        uses: actions/download-artifact@v4
+        with:
+          name: bot3-research-inputs
+          repository: 81dwallington-source/Forex-alert-bot
+          run-id: 42768895828
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify historical inputs
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          pairs = "EURUSD GBPUSD USDJPY USDCHF USDCAD AUDUSD NZDUSD EURGBP EURJPY EURCHF EURAUD EURCAD EURNZD GBPJPY GBPCHF GBPAUD GBPCAD GBPNZD AUDJPY AUDCHF AUDCAD AUDNZD NZDJPY NZDCHF NZDCAD CADJPY CHFJPY".split()
+          missing = [p for p in pairs if not (Path("research-data") / f"{p}_M5.csv").is_file()]
+          if missing:
+              raise SystemExit(f"Missing historical inputs: {missing}")
+          print(f"Verified existing M5 history for all {len(pairs)} pairs")
+          PY
+      - name: Run alternative strategy research
+        run: python -m bot3.alternative_strategy_research --data-dir research-data --out-dir research-results/alternative
+      - name: Upload results even when validation fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bot3-alternative-research-results
+          path: research-results/alternative/
+          if-no-files-found: warn
+          retention-days: 30
