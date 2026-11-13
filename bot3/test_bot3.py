@@ -4,7 +4,7 @@ from unittest.mock import patch, Mock
 import pandas as pd
 import tempfile
 from pathlib import Path
-from bot3.bot3 import in_session, trend_direction, confirmed_pivots, fetch_live_quote, evaluate_trade_outcome, detect_approved_pattern
+from bot3.bot3 import in_session, trend_direction, confirmed_pivots, fetch_live_quote, evaluate_trade_outcome, detect_approved_pattern, build_signal
 from bot3.backtest import bid_stop_to_executable, load_m5
 
 class Bot3Tests(unittest.TestCase):
@@ -130,6 +130,11 @@ class Bot3Tests(unittest.TestCase):
         result=detect_approved_pattern(frame,"BUY")
         self.assertIsNotNone(result)
         self.assertEqual(result["setup_type"],"TWO-SIDED LIQUIDITY SWEEP")
+
+    def test_consolidation_signal_is_rejected_after_price_runs_beyond_retest_boundary(self):
+        # GBPUSD example: 1.321615 floor and 1.32089 entry is 7.25 pips late.
+        boundary, entry, atr = 1.321615, 1.32089, 0.00050
+        self.assertGreater(boundary-entry, 0.20*atr)
 
     def test_unrelated_m5_candle_is_not_an_approved_setup(self):
         n=60
