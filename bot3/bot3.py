@@ -95,6 +95,111 @@ def confirmed_pivots(frame, side, lookback=30, left=2, right=2):
             found.append((i,float(value)))
     return found
 
+def detect_approved_pattern(df, direction):
+    """Return only one of the three user-approved M5 structures, or None."""
+    if direction not in ("BUY", "SELL") or len(df) < 60:
+        return None
+    last, prev = df.iloc[-1], df.iloc[-2]
+    atr = float(last.ATR)
+    if not pd.notna(atr) or atr <= 0:
+        return None
+    candle_range = float(last.High - last.Low)
+    body = abs(float(last.Close - last.Open))
+    if candle_range <= 0 or body / candle_range < 0.55:
+        return None
+    close_location = (float(last.Close) - float(last.Low)) / candle_range
+    directional_candle = (
+        float(last.Close) > float(last.Open) and close_location >= 0.70
+        if direction == "BUY" else
+        float(last.Close) < float(last.Open) and close_location <= 0.30
+    )
+    if not directional_candle:
+        return None
+
+    # 1) Liquidity sweep in either direction: take a confirmed swing level,
+    # close back through it, then confirm by breaking the prior candle.
+    pivots = confirmed_pivots(df.iloc[:-1], "low" if direction == "BUY" else "high",
+                              lookback=30, left=2, right=2)
+    for pivot_i, level in reversed(pivots):
+        if len(df) - 1 - pivot_i > 20:
+            break
+        swept = (float(last.Low) < level and float(last.Close) > level
+                 if direction == "BUY" else
+                 float(last.High) > level and float(last.Close) < level)
+        broke = (float(last.Close) > float(prev.High) if direction == "BUY"
+                 else float(last.Close) < float(prev.Low))
+        if swept and broke:
+            return {"setup_type": "TWO-SIDED LIQUIDITY SWEEP",
+                    "evidence": f"Confirmed {direction.lower()}-side swing sweep, rejection back through {level:.6f}, and M5 close-break"}
+
+    # 2) Impulse + origin retest: find a strong displacement candle and the
+    # last opposing candle immediately before it; require a retest and fresh
+    # directional close-break now (not entry on the impulse itself).
+    for impulse_i in range(len(df) - 3, max(2, len(df) - 11), -1):
+        impulse = df.iloc[impulse_i]
+        impulse_atr = float(impulse.ATR)
+        if not pd.notna(impulse_atr) or impulse_atr <= 0:
+            continue
+        impulse_range = float(impulse.High - impulse.Low)
+        impulse_body = abs(float(impulse.Close - impulse.Open))
+        impulse_dir = (float(impulse.Close) > float(impulse.Open) if direction == "BUY"
+                       else float(impulse.Close) < float(impulse.Open))
+        impulse_location = ((float(impulse.Close)-float(impulse.Low))/impulse_range
+                            if impulse_range > 0 else 0.5)
+        strong_impulse = (impulse_dir and impulse_body >= 1.20*impulse_atr
+                          and (impulse_location >= 0.75 if direction == "BUY"
+                               else impulse_location <= 0.25))
+        if not strong_impulse:
+            continue
+        origin_i = impulse_i - 1
+        while origin_i > max(0, impulse_i - 4):
+            origin = df.iloc[origin_i]
+            opposing = (float(origin.Close) < float(origin.Open) if direction == "BUY"
+                        else float(origin.Close) > float(origin.Open))
+            if opposing:
+                break
+            origin_i -= 1
+        if origin_i <= 0:
+            continue
+        origin = df.iloc[origin_i]
+        touched_origin = (float(last.Low) <= float(origin.High) + 0.15*atr
+                          and float(last.Low) >= float(origin.Low) - 0.25*atr
+                          if direction == "BUY" else
+                          float(last.High) >= float(origin.Low) - 0.15*atr
+                          and float(last.High) <= float(origin.High) + 0.25*atr)
+        close_break = (float(last.Close) > float(prev.High) and float(last.Close) > float(origin.High)
+                       if direction == "BUY" else
+                       float(last.Close) < float(prev.Low) and float(last.Close) < float(origin.Low))
+        if touched_origin and close_break:
+            return {"setup_type": "IMPULSE + ORIGIN RETEST",
+                    "evidence": f"Strong M5 displacement at {df.index[impulse_i]}, retest of origin candle {df.index[origin_i]}, then confirmed close-break"}
+
+    # 3) Consolidation breakout + retest: a compact base, a completed close
+    # outside it, then a later retest of the broken boundary and confirmation.
+    for breakout_i in range(len(df) - 3, max(5, len(df) - 9), -1):
+        base = df.iloc[max(0, breakout_i-8):breakout_i]
+        if len(base) < 5:
+            continue
+        ceiling, floor = float(base.High.max()), float(base.Low.min())
+        if ceiling - floor > 3.0*atr:
+            continue
+        breakout = df.iloc[breakout_i]
+        broke_range = (float(breakout.Close) > ceiling if direction == "BUY"
+                       else float(breakout.Close) < floor)
+        if not broke_range:
+            continue
+        retested = (float(last.Low) <= ceiling + 0.20*atr and float(last.Low) >= ceiling - 0.35*atr
+                    if direction == "BUY" else
+                    float(last.High) >= floor - 0.20*atr and float(last.High) <= floor + 0.35*atr)
+        confirmed = (float(last.Close) > float(prev.High) and float(last.Close) > ceiling
+                     if direction == "BUY" else
+                     float(last.Close) < float(prev.Low) and float(last.Close) < floor)
+        if retested and confirmed:
+            return {"setup_type": "CONSOLIDATION BREAKOUT + RETEST",
+                    "evidence": f"Compact M5 base ({floor:.6f}-{ceiling:.6f}), completed breakout, boundary retest, and confirmation close-break"}
+    return None
+
+
 def build_signal(pair,m5,m15,h1,live_price=None,live_stamp=None,live_bid=None,live_ask=None,now=None):
     now = now or datetime.now(timezone.utc)
     now_ts = pd.Timestamp(now)
@@ -104,40 +209,30 @@ def build_signal(pair,m5,m15,h1,live_price=None,live_stamp=None,live_bid=None,li
     h1_age = (now_utc-(h1.index[-1]+pd.Timedelta(hours=1))).total_seconds()/60
     if age < -1 or age > MAX_M5_AGE_MINUTES: return None
     if m15_age < -1 or m15_age > 20 or h1_age < -1 or h1_age > 75: return None
+
+    # H1 is the mandatory directional gate. M15 must agree; neither can be
+    # overridden by an M5 pattern.
     direction = trend_direction(h1)
     if not direction or trend_direction(m15) != direction: return None
     df = add_indicators(m5)
     if len(df)<60 or pd.isna(df.iloc[-1].ATR): return None
-    last, prev = df.iloc[-1], df.iloc[-2]
+    last = df.iloc[-1]
     atr = float(last.ATR)
     if atr<=0 or float(last.High-last.Low)>2.0*atr: return None
-    pullback = None
-    for i in range(len(df)-2,max(1,len(df)-5),-1):
-        c=df.iloc[i]; ema=float(c.EMA21); a=float(c.ATR)
-        if pd.isna(a) or a<=0: continue
-        touched = (c.Low<=ema+0.15*a and c.Low>=ema-0.50*a) if direction=="BUY" else (c.High>=ema-0.15*a and c.High<=ema+0.50*a)
-        if touched: pullback=i; break
-    if pullback is None: return None
-    rng=float(last.High-last.Low); body=abs(float(last.Close-last.Open))
-    if rng<=0 or body/rng<0.55: return None
-    location=(float(last.Close)-float(last.Low))/rng
-    pullback_candle = df.iloc[pullback]
-    if direction=="BUY":
-        if not (last.Close>last.Open and last.Close>max(float(prev.High),float(pullback_candle.High)) and last.Close>last.EMA21 and location>=0.75): return None
-        pivots=confirmed_pivots(df.iloc[:-1],"low",30)
-        if not pivots: return None
-        swing=pivots[-1][1]; entry=float(last.Close); stop=swing-0.15*atr
-        risk=entry-stop
-        if risk<MIN_STOP_ATR*atr or risk>MAX_STOP_ATR*atr: return None
-        target=entry+risk*MIN_RR
-    else:
-        if not (last.Close<last.Open and last.Close<min(float(prev.Low),float(pullback_candle.Low)) and last.Close<last.EMA21 and location<=0.25): return None
-        pivots=confirmed_pivots(df.iloc[:-1],"high",30)
-        if not pivots: return None
-        swing=pivots[-1][1]; entry=float(last.Close); stop=swing+0.15*atr
-        risk=stop-entry
-        if risk<MIN_STOP_ATR*atr or risk>MAX_STOP_ATR*atr: return None
-        target=entry-risk*MIN_RR
+    pattern = detect_approved_pattern(df, direction)
+    if not pattern: return None
+
+    # Independent stop placement: latest confirmed M5 swing plus a volatility
+    # buffer. The strategy never copies manually drawn chart levels.
+    pivots = confirmed_pivots(df.iloc[:-1], "low" if direction=="BUY" else "high", 36, 2, 2)
+    if not pivots: return None
+    swing = pivots[-1][1]
+    entry = float(last.Close)
+    stop = swing - 0.25*atr if direction=="BUY" else swing + 0.25*atr
+    risk = entry-stop if direction=="BUY" else stop-entry
+    if risk < MIN_STOP_ATR*atr or risk > MAX_STOP_ATR*atr: return None
+    target = entry + risk*MIN_RR if direction=="BUY" else entry-risk*MIN_RR
+
     if live_price is None or live_stamp is None or live_bid is None or live_ask is None: return None
     live_time=pd.Timestamp(live_stamp)
     if live_time.tzinfo is None: live_time=live_time.tz_localize("UTC")
@@ -146,43 +241,34 @@ def build_signal(pair,m5,m15,h1,live_price=None,live_stamp=None,live_bid=None,li
     bid,ask,mid=float(live_bid),float(live_ask),float(live_price)
     if bid<=0 or ask<=bid or mid<=0 or not (bid<=mid<=ask): return None
     spread=ask-bid
-    if spread > 0.15*atr: return None
-    if abs(mid-entry)>MAX_ENTRY_DRIFT_ATR*atr: return None
+    if spread > 0.15*atr or abs(mid-entry)>MAX_ENTRY_DRIFT_ATR*atr: return None
+
     m15_last = add_indicators(m15).iloc[-1]
     h1_last = add_indicators(h1).iloc[-1]
-    pullback_atr = float(pullback_candle.ATR)
-    # Diagnostic features only: these are logged for research and do not alter entry rules.
-    prior6 = df.iloc[-7:-1]
-    prior12 = df.iloc[-13:-1]
-    prior24 = df.iloc[-25:-1]
     direction_sign = 1.0 if direction == "BUY" else -1.0
+    prior6, prior12, prior24 = df.iloc[-7:-1], df.iloc[-13:-1], df.iloc[-25:-1]
     prior_atr_median = float(df.ATR.iloc[-60:].median())
-    breakout_margin = ((float(last.Close) - float(prior12.High.max())) if direction == "BUY"
-                       else (float(prior12.Low.min()) - float(last.Close))) / atr
-    opposing_distance = ((float(prior24.High.max()) - float(last.Close)) if direction == "BUY"
-                         else (float(last.Close) - float(prior24.Low.min()))) / atr
     features = {
-        "m5_ema21_slope_atr": float((last.EMA21 - df.iloc[-4].EMA21) / atr),
-        "m5_directional_ema21_slope_atr": float((last.EMA21 - df.iloc[-4].EMA21) / atr * direction_sign),
-        "m15_ema20_50_gap_atr": float(abs(m15_last.EMA20 - m15_last.EMA50) / m15_last.ATR),
-        "h1_ema20_50_gap_atr": float(abs(h1_last.EMA20 - h1_last.EMA50) / h1_last.ATR),
-        "m15_directional_trend_gap_atr": float((m15_last.EMA20 - m15_last.EMA50) / m15_last.ATR * direction_sign),
-        "h1_directional_trend_gap_atr": float((h1_last.EMA20 - h1_last.EMA50) / h1_last.ATR * direction_sign),
-        "confirmation_body_ratio": float(body / rng),
-        "confirmation_close_location": float(location),
-        "confirmation_range_atr": float(rng / atr),
-        "directional_momentum_3_atr": float((last.Close - df.iloc[-4].Close) / atr * direction_sign),
-        "directional_momentum_6_atr": float((last.Close - df.iloc[-7].Close) / atr * direction_sign),
-        "directional_bar_fraction_6": float(((df.Close.iloc[-6:].to_numpy() - df.Open.iloc[-6:].to_numpy()) * direction_sign > 0).mean()),
-        "prior_range_6_atr": float((prior6.High.max() - prior6.Low.min()) / atr),
-        "breakout_margin_12_atr": float(breakout_margin),
-        "opposing_distance_24_atr": float(max(0.0, opposing_distance)),
-        "pullback_distance_atr": float(abs(pullback_candle.Close - pullback_candle.EMA21) / pullback_atr),
-        "pullback_depth_atr": float(((pullback_candle.EMA21 - pullback_candle.Low) if direction == "BUY" else (pullback_candle.High - pullback_candle.EMA21)) / pullback_atr),
-        "pullback_age_bars": int(len(df) - 1 - pullback),
-        "atr_regime_60": float(atr / prior_atr_median) if prior_atr_median > 0 else 0.0,
+        "m5_ema21_slope_atr": float((last.EMA21-df.iloc[-4].EMA21)/atr),
+        "m5_directional_ema21_slope_atr": float((last.EMA21-df.iloc[-4].EMA21)/atr*direction_sign),
+        "m15_ema20_50_gap_atr": float(abs(m15_last.EMA20-m15_last.EMA50)/m15_last.ATR),
+        "h1_ema20_50_gap_atr": float(abs(h1_last.EMA20-h1_last.EMA50)/h1_last.ATR),
+        "m15_directional_trend_gap_atr": float((m15_last.EMA20-m15_last.EMA50)/m15_last.ATR*direction_sign),
+        "h1_directional_trend_gap_atr": float((h1_last.EMA20-h1_last.EMA50)/h1_last.ATR*direction_sign),
+        "confirmation_body_ratio": float(abs(last.Close-last.Open)/(last.High-last.Low)),
+        "confirmation_close_location": float((last.Close-last.Low)/(last.High-last.Low)),
+        "confirmation_range_atr": float((last.High-last.Low)/atr),
+        "directional_momentum_3_atr": float((last.Close-df.iloc[-4].Close)/atr*direction_sign),
+        "directional_momentum_6_atr": float((last.Close-df.iloc[-7].Close)/atr*direction_sign),
+        "directional_bar_fraction_6": float(((df.Close.iloc[-6:].to_numpy()-df.Open.iloc[-6:].to_numpy())*direction_sign>0).mean()),
+        "prior_range_6_atr": float((prior6.High.max()-prior6.Low.min())/atr),
+        "breakout_margin_12_atr": float(((last.Close-prior12.High.max()) if direction=="BUY" else (prior12.Low.min()-last.Close))/atr),
+        "opposing_distance_24_atr": float(max(0.0,((prior24.High.max()-last.Close) if direction=="BUY" else (last.Close-prior24.Low.min()))/atr)),
+        "pullback_distance_atr": 0.0, "pullback_depth_atr": 0.0, "pullback_age_bars": 0,
+        "atr_regime_60": float(atr/prior_atr_median) if prior_atr_median>0 else 0.0,
     }
-    return {"pair":pair,"direction":direction,"entry":entry,"stop":stop,"target":target,
+    return {"pair":pair,"direction":direction,"setup_type":pattern["setup_type"],
+        "pattern_evidence":pattern["evidence"],"entry":entry,"stop":stop,"target":target,
         "rr":MIN_RR,"atr":atr,"swing":swing,"candle_time":m5.index[-1].isoformat(),
         "live_price":mid,"live_bid":bid,"live_ask":ask,"spread":spread,
         "quote_time":live_time.isoformat(),"data_source":DATA_SOURCE, **features}
@@ -293,10 +379,10 @@ def update_outcomes():
 def format_alert(s):
     digits=3 if "JPY" in s["pair"] else 5
     fmt=lambda x:f"{x:.{digits}f}"
-    return (f"🟢 FOREX BOT 3 — TRADE SIGNAL\nPair: {s['pair']}\nDirection: {s['direction']}\n"
+    return (f"🟢 FOREX BOT 3 — TRADE SIGNAL\nSetup: {s['setup_type']}\nPair: {s['pair']}\nDirection: {s['direction']}\n"
         f"Entry reference: {fmt(s['entry'])}\nStop-loss: {fmt(s['stop'])}\n"
         f"Take-profit: {fmt(s['target'])}\nPlanned R:R: 1:{s['rr']:.1f}\n"
-        f"Confirmed M5 swing: {fmt(s['swing'])}\nBid/ask: {fmt(s['live_bid'])} / {fmt(s['live_ask'])} | spread: {fmt(s['spread'])}\nQuote timestamp: {s['quote_time']}\nRisk advisory: max {RISK_ADVISORY_PERCENT:.2f}% (manual sizing required)\n"
+        f"Confirmed M5 swing: {fmt(s['swing'])}\nPattern evidence: {s['pattern_evidence']}\nBid/ask: {fmt(s['live_bid'])} / {fmt(s['live_ask'])} | spread: {fmt(s['spread'])}\nQuote timestamp: {s['quote_time']}\nRisk advisory: max {RISK_ADVISORY_PERCENT:.2f}% (manual sizing required)\n"
         f"Data: {DATA_SOURCE}\nCheck broker price and spread before entry. No automatic trading.")
 
 def scan_once():
