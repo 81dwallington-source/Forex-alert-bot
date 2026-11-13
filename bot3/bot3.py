@@ -196,6 +196,7 @@ def detect_approved_pattern(df, direction):
                      float(last.Close) < float(prev.Low) and float(last.Close) < floor)
         if retested and confirmed:
             return {"setup_type": "CONSOLIDATION BREAKOUT + RETEST",
+                    "entry_boundary": floor if direction == "SELL" else ceiling,
                     "evidence": f"Compact M5 base ({floor:.6f}-{ceiling:.6f}), completed breakout, boundary retest, and confirmation close-break"}
     return None
 
@@ -242,6 +243,18 @@ def build_signal(pair,m5,m15,h1,live_price=None,live_stamp=None,live_bid=None,li
     if bid<=0 or ask<=bid or mid<=0 or not (bid<=mid<=ask): return None
     spread=ask-bid
     if spread > 0.15*atr or abs(mid-entry)>MAX_ENTRY_DRIFT_ATR*atr: return None
+
+    # A consolidation retest is only actionable close to the broken boundary.
+    # Reject confirmation candles/quotes that have already run away from it.
+    if pattern["setup_type"] == "CONSOLIDATION BREAKOUT + RETEST":
+        boundary = float(pattern["entry_boundary"])
+        max_boundary_distance = 0.20 * atr
+        if direction == "SELL":
+            if not (0 <= boundary-entry <= max_boundary_distance): return None
+            if not (0 <= boundary-mid <= max_boundary_distance): return None
+        else:
+            if not (0 <= entry-boundary <= max_boundary_distance): return None
+            if not (0 <= mid-boundary <= max_boundary_distance): return None
 
     m15_last = add_indicators(m15).iloc[-1]
     h1_last = add_indicators(h1).iloc[-1]
