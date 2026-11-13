@@ -158,8 +158,10 @@ def find_origin_retest(df: pd.DataFrame, side: str, range_bars: int = 12,
             continue
         prior = x.iloc[sweep_start:breakout_i]
         # Both edges must have been taken during the pattern before displacement.
-        swept_high = bool((prior.high > rh).any())
-        swept_low = bool((prior.low < rl).any())
+        # A sweep must take the level AND close back inside the range.
+        # A mere wick through a level is not enough to count as a rejected sweep.
+        swept_high = bool(((prior.high > rh) & (prior.close < rh)).any())
+        swept_low = bool(((prior.low < rl) & (prior.close > rl)).any())
         if not (swept_high and swept_low):
             continue
         impulse = x.iloc[breakout_i]
@@ -238,7 +240,13 @@ def find_impulse_origin_retest(df: pd.DataFrame, side: str,
                 continue
             if side == "BUY":
                 impulse_size = float(impulse.high.max()) - float(origin.close)
-                made_progress = float(impulse.close.iloc[-1]) > float(origin.high)
+                directional_body = float((impulse.close - impulse.open).clip(lower=0).sum())
+                made_progress = (
+                    float(impulse.close.iloc[-1]) > float(origin.high)
+                    and float(impulse.close.iloc[-1]) >= float(impulse.high.max()) - 0.35 * atr
+                    and int((impulse.close > impulse.open).sum()) >= 2
+                    and directional_body >= 0.80 * atr
+                )
                 pullback_low = float(x.low.iloc[impulse_end + 1:].min())
                 latest_bar = x.iloc[latest]
                 touched = float(latest_bar.low) <= zone_high and float(latest_bar.high) >= zone_low
@@ -251,7 +259,13 @@ def find_impulse_origin_retest(df: pd.DataFrame, side: str,
                             "atr": atr, "setup": "IMPULSE_ORIGIN_RETEST"}
             else:
                 impulse_size = float(origin.close) - float(impulse.low.min())
-                made_progress = float(impulse.close.iloc[-1]) < float(origin.low)
+                directional_body = float((impulse.open - impulse.close).clip(lower=0).sum())
+                made_progress = (
+                    float(impulse.close.iloc[-1]) < float(origin.low)
+                    and float(impulse.close.iloc[-1]) <= float(impulse.low.min()) + 0.35 * atr
+                    and int((impulse.close < impulse.open).sum()) >= 2
+                    and directional_body >= 0.80 * atr
+                )
                 pullback_high = float(x.high.iloc[impulse_end + 1:].max())
                 latest_bar = x.iloc[latest]
                 touched = float(latest_bar.high) >= zone_low and float(latest_bar.low) <= zone_high
@@ -280,10 +294,13 @@ def find_trend_consolidation_break_retest(df: pd.DataFrame, side: str,
     if len(x) < range_bars + max_break_bars + 3:
         return None
     cur = x.iloc[-1]
+    prev = x.iloc[-2]
     if side == "SELL":
-        aligned = cur.close < cur.ema21 < cur.ema50 < cur.ema200
+        aligned = (cur.close < cur.ema21 < cur.ema50 < cur.ema200
+                   and cur.ema21 < prev.ema21 and cur.ema50 <= prev.ema50)
     else:
-        aligned = cur.close > cur.ema21 > cur.ema50 > cur.ema200
+        aligned = (cur.close > cur.ema21 > cur.ema50 > cur.ema200
+                   and cur.ema21 > prev.ema21 and cur.ema50 >= prev.ema50)
     if not aligned:
         return None
 
@@ -298,7 +315,8 @@ def find_trend_consolidation_break_retest(df: pd.DataFrame, side: str,
             continue
         impulse = x.iloc[break_i]
         if side == "SELL":
-            broke = float(impulse.close) < rl and float(impulse.close) < float(impulse.open)
+            broke = (float(impulse.close) < rl and float(impulse.close) < float(impulse.open)
+                     and abs(float(impulse.close)-float(impulse.open)) >= 0.55*atr)
             retest = float(cur.high) >= rl and float(cur.low) <= rl + 0.20*atr
             rejected = float(cur.close) < rl and float(cur.close) < float(cur.open)
             if broke and retest and rejected:
@@ -306,7 +324,8 @@ def find_trend_consolidation_break_retest(df: pd.DataFrame, side: str,
                         "origin_high":rh, "sweep_extreme":float(x.high.iloc[break_i: ].max()),
                         "atr":atr, "setup":"TREND_CONSOLIDATION_BREAK_RETEST"}
         else:
-            broke = float(impulse.close) > rh and float(impulse.close) > float(impulse.open)
+            broke = (float(impulse.close) > rh and float(impulse.close) > float(impulse.open)
+                     and abs(float(impulse.close)-float(impulse.open)) >= 0.55*atr)
             retest = float(cur.low) <= rh and float(cur.high) >= rh - 0.20*atr
             rejected = float(cur.close) > rh and float(cur.close) > float(cur.open)
             if broke and retest and rejected:
@@ -336,6 +355,14 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: floa
     if not pattern:
         pattern = find_trend_consolidation_break_retest(a, direction)
     if not pattern:
+        return None
+    allowed_setups = {
+        "TWO_SIDED_SWEEP_ORIGIN_RETEST",
+        "IMPULSE_ORIGIN_RETEST",
+        "TREND_CONSOLIDATION_BREAK_RETEST",
+    }
+    # Fail closed: never emit an unclassified/indicator-only trade.
+    if pattern.get("setup") not in allowed_setups:
         return None
     atr = float(pattern["atr"])
     entry = float(pattern["entry"])
