@@ -39,7 +39,7 @@ jobs:
       - name: Run offline regression tests
         run: python -m unittest -v bot3.test_bot3
       - name: Run 5-minute scans during UK session
-        if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+        if: github.event_name != 'pull_request'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -54,7 +54,7 @@ jobs:
           done
           if [ "$failures" -gt 0 ]; then exit 1; fi
       - name: Persist signal log and outcome state
-        if: always() && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule')
+        if: always() && github.event_name != 'pull_request'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
