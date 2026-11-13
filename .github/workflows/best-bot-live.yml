@@ -19,7 +19,8 @@ permissions:
 
 concurrency:
   group: best-bot-live-scan
-  cancel-in-progress: false
+  # A code push must replace the old scanner so obsolete logic cannot keep sending alerts.
+  cancel-in-progress: true
 
 jobs:
   scan:
