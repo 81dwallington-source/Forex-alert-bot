@@ -299,7 +299,7 @@ def send_telegram(message):
     r.raise_for_status()
     if not r.json().get("ok"): raise RuntimeError("Telegram rejected Bot 3 alert")
 
-OUTCOME_FIELDS = ["timestamp_utc","uk_date","pair","direction","entry","stop","target","rr","swing",
+OUTCOME_FIELDS = ["timestamp_utc","uk_date","pair","direction","setup_type","pattern_evidence","entry","stop","target","rr","swing",
     "candle_time","live_price","live_bid","live_ask","spread","quote_time","data_source",
     "m5_ema21_slope_atr","m5_directional_ema21_slope_atr","m15_ema20_50_gap_atr","h1_ema20_50_gap_atr",
     "m15_directional_trend_gap_atr","h1_directional_trend_gap_atr","confirmation_body_ratio",
