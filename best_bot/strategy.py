@@ -184,7 +184,7 @@ def find_origin_retest(df: pd.DataFrame, side: str, range_bars: int = 12,
                 if touched and confirmed and bar.name == retest.index[-1]:
                     return {"entry":float(bar.close),"origin_low":float(origin.low),
                             "origin_high":float(origin.high),"sweep_extreme":sweep_extreme,
-                            "atr":atr,"range_high":rh,"range_low":rl}
+                            "atr":atr,"range_high":rh,"range_low":rl,"setup":"TWO_SIDED_SWEEP_ORIGIN_RETEST"}
         else:
             displacement = (impulse.close < rl and impulse.close < impulse.open
                             and body >= 0.60*atr)
@@ -205,7 +205,7 @@ def find_origin_retest(df: pd.DataFrame, side: str, range_bars: int = 12,
                 if touched and confirmed and bar.name == retest.index[-1]:
                     return {"entry":float(bar.close),"origin_low":float(origin.low),
                             "origin_high":float(origin.high),"sweep_extreme":sweep_extreme,
-                            "atr":atr,"range_high":rh,"range_low":rl}
+                            "atr":atr,"range_high":rh,"range_low":rl,"setup":"TWO_SIDED_SWEEP_ORIGIN_RETEST"}
     return None
 
 
@@ -359,4 +359,6 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: floa
         "direction": direction, "signal_close": entry,
         "stop": float(stop), "target": float(target), "risk_pips": round(stop_pips, 1),
         "rr": MIN_RR, "ema21": float(cur.ema21), "atr": atr,
+        "setup": pattern.get("setup", "ORIGIN_CANDLE_RETEST"),
+        "origin_low": float(pattern["origin_low"]), "origin_high": float(pattern["origin_high"]),
     }
