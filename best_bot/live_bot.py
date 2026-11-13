@@ -223,7 +223,7 @@ def format_signal(pair, direction, entry, stop, target, risk_pips, stamp, rr, at
         f"Stop loss: {stop:.5f}\n"
         f"Take profit: {target:.5f}\n"
         f"Planned R:R: 1:{rr:.1f} | Stop: {risk_pips:.1f} pips\n"
-        f"Setup: {setup}\n"
+        f"PATTERN CONFIRMED: {setup}\n"
         f"Origin candle body: {origin_low:.5f}–{origin_high:.5f}\n"
         f"M5 entry + M15/H1 trend aligned\n"
         f"Completed candle: {stamp.strftime('%Y-%m-%d %H:%M UTC')}\n"
@@ -263,6 +263,15 @@ def scan():
             pip = pip_size(pair)
             sig = make_signal(m5, m15, h1, pip)
             if not sig:
+                continue
+            allowed_setups = {
+                "TWO_SIDED_SWEEP_ORIGIN_RETEST",
+                "IMPULSE_ORIGIN_RETEST",
+                "TREND_CONSOLIDATION_BREAK_RETEST",
+            }
+            # Second fail-closed gate at the alert boundary.
+            if sig.get("setup") not in allowed_setups:
+                print(f"{pair}: rejected — missing/unknown chart pattern", flush=True)
                 continue
             stamp = m5.index[-1]
             # Sanity-check the reference against the provider's current open candle.
