@@ -267,7 +267,7 @@ def scan():
             # Fail closed: only the user's three approved patterns may alert.
             allowed_setups = {
                 "TWO_SIDED_SWEEP_ORIGIN_RETEST",
-                "LIQUIDITY_SWEEP_ORIGIN_RETEST",
+                "LIQUIDITY_SWEEP_RANGE_RETEST",
                 "IMPULSE_ORIGIN_RETEST",
             }
             if sig.get("setup") not in allowed_setups:
