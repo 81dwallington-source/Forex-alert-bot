@@ -463,9 +463,3 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: floa
         "origin_high": float(pattern["origin_high"]),
     }
 
-        "direction": direction, "signal_close": entry,
-        "stop": float(stop), "target": float(target), "risk_pips": round(stop_pips, 1),
-        "rr": MIN_RR, "ema21": float(cur.ema21), "atr": atr,
-        "setup": pattern.get("setup", "ORIGIN_CANDLE_RETEST"),
-        "origin_low": float(pattern["origin_low"]), "origin_high": float(pattern["origin_high"]),
-    }
