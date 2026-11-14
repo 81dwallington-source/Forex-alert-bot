@@ -200,6 +200,16 @@ def detect_approved_pattern(df, direction):
     return None
 
 
+def validate_m15_structure(m15, direction, expected_setup):
+    """Require M15 to independently confirm the same approved structure as M5."""
+    if len(m15) < 60:
+        return None
+    m15_pattern = detect_approved_pattern(add_indicators(m15), direction)
+    if not m15_pattern or m15_pattern["setup_type"] != expected_setup:
+        return None
+    return m15_pattern
+
+
 def build_signal(pair,m5,m15,h1,live_price=None,live_stamp=None,live_bid=None,live_ask=None,now=None):
     now = now or datetime.now(timezone.utc)
     now_ts = pd.Timestamp(now)
@@ -221,6 +231,11 @@ def build_signal(pair,m5,m15,h1,live_price=None,live_stamp=None,live_bid=None,li
     if atr<=0 or float(last.High-last.Low)>2.0*atr: return None
     pattern = detect_approved_pattern(df, direction)
     if not pattern: return None
+
+    # M15 must independently show the same approved structure. M5 remains
+    # responsible for the actual retest/confirmation candle and entry timing.
+    m15_pattern = validate_m15_structure(m15, direction, pattern["setup_type"])
+    if not m15_pattern: return None
 
     # Independent stop placement: latest confirmed M5 swing plus a volatility
     # buffer. The strategy never copies manually drawn chart levels.
@@ -268,7 +283,8 @@ def build_signal(pair,m5,m15,h1,live_price=None,live_stamp=None,live_bid=None,li
         "atr_regime_60": float(atr/prior_atr_median) if prior_atr_median>0 else 0.0,
     }
     return {"pair":pair,"direction":direction,"setup_type":pattern["setup_type"],
-        "pattern_evidence":pattern["evidence"],"entry":entry,"stop":stop,"target":target,
+        "pattern_evidence":pattern["evidence"],"m15_pattern_evidence":m15_pattern["evidence"],
+        "entry":entry,"stop":stop,"target":target,
         "rr":MIN_RR,"atr":atr,"swing":swing,"candle_time":m5.index[-1].isoformat(),
         "live_price":mid,"live_bid":bid,"live_ask":ask,"spread":spread,
         "quote_time":live_time.isoformat(),"data_source":DATA_SOURCE, **features}
@@ -299,7 +315,7 @@ def send_telegram(message):
     r.raise_for_status()
     if not r.json().get("ok"): raise RuntimeError("Telegram rejected Bot 3 alert")
 
-OUTCOME_FIELDS = ["timestamp_utc","uk_date","pair","direction","setup_type","pattern_evidence","entry","stop","target","rr","swing",
+OUTCOME_FIELDS = ["timestamp_utc","uk_date","pair","direction","setup_type","pattern_evidence","m15_pattern_evidence","entry","stop","target","rr","swing",
     "candle_time","live_price","live_bid","live_ask","spread","quote_time","data_source",
     "m5_ema21_slope_atr","m5_directional_ema21_slope_atr","m15_ema20_50_gap_atr","h1_ema20_50_gap_atr",
     "m15_directional_trend_gap_atr","h1_directional_trend_gap_atr","confirmation_body_ratio",
@@ -382,7 +398,7 @@ def format_alert(s):
     return (f"🟢 FOREX BOT 3 — TRADE SIGNAL\nSetup: {s['setup_type']}\nPair: {s['pair']}\nDirection: {s['direction']}\n"
         f"Entry reference: {fmt(s['entry'])}\nStop-loss: {fmt(s['stop'])}\n"
         f"Take-profit: {fmt(s['target'])}\nPlanned R:R: 1:{s['rr']:.1f}\n"
-        f"Confirmed M5 swing: {fmt(s['swing'])}\nPattern evidence: {s['pattern_evidence']}\nBid/ask: {fmt(s['live_bid'])} / {fmt(s['live_ask'])} | spread: {fmt(s['spread'])}\nQuote timestamp: {s['quote_time']}\nRisk advisory: max {RISK_ADVISORY_PERCENT:.2f}% (manual sizing required)\n"
+        f"Confirmed M5 swing: {fmt(s['swing'])}\nM15 structure: {s['m15_pattern_evidence']}\nM5 entry confirmation: {s['pattern_evidence']}\nBid/ask: {fmt(s['live_bid'])} / {fmt(s['live_ask'])} | spread: {fmt(s['spread'])}\nQuote timestamp: {s['quote_time']}\nRisk advisory: max {RISK_ADVISORY_PERCENT:.2f}% (manual sizing required)\n"
         f"Data: {DATA_SOURCE}\nCheck broker price and spread before entry. No automatic trading.")
 
 def scan_once():
