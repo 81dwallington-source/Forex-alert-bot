@@ -1,6 +1,6 @@
 # Bot 3 visual setup references
 
-These are the three chart examples supplied for the approved two-sided consolidation breakout pattern. The screenshots are visual examples only; do not reuse their historical price levels.
+These are chart examples supplied for the approved two-sided consolidation breakout pattern. The screenshots are visual examples only; do not reuse their historical price levels.
 
 ## Mandatory two-sided consolidation breakout entry
 
@@ -19,5 +19,6 @@ No qualifying two-sided break, no origin-candle retest, or no confirmation = NO 
 - AUD/USD: boxed consolidation followed by a two-sided range break.
 - EUR/NZD: aggressive break below the range followed by a strong reclaim through the opposite boundary. The supplied screenshot is M15; Bot 3 execution remains M5.
 - GBP/JPY: aggressive breaks above and below the same boxed range, followed by a bearish move.
+- NZD/CAD (FXCM, M15): a clearly boxed range is marked in yellow. Price first pushes above the range high, then later breaks below the range low with a decisive bearish move. This is an additional visual example of a two-sided range break, not a standalone entry. Bot 3 must still wait for the final bearish move's exact origin candle to be retested and confirmed on its M5 execution data before alerting. Do not copy the screenshot's prices or use the M15 chart as the execution timeframe.
 
 These references supplement the other approved Bot 3 setup rules; they do not replace them.
