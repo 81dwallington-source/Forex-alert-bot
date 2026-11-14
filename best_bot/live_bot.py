@@ -264,13 +264,9 @@ def scan():
             sig = make_signal(m5, m15, h1, pip)
             if not sig:
                 continue
-            allowed_setups = {
-                "TWO_SIDED_SWEEP_ORIGIN_RETEST",
-                "IMPULSE_ORIGIN_RETEST",
-                "TREND_CONSOLIDATION_BREAK_RETEST",
-            }
-            # Second fail-closed gate at the alert boundary.
-            if sig.get("setup") not in allowed_setups:
+            # Second fail-closed gate: only the user's exact two-sided
+            # consolidation sweep + directional displacement + origin retest.
+            if sig.get("setup") != "TWO_SIDED_SWEEP_ORIGIN_RETEST":
                 print(f"{pair}: rejected — missing/unknown chart pattern", flush=True)
                 continue
             stamp = m5.index[-1]
