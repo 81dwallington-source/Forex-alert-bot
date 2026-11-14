@@ -129,7 +129,7 @@ class Bot3Tests(unittest.TestCase):
         frame.loc[frame.index[59],["Open","High","Low","Close"]]=[1.001,1.007,0.999,1.0068]
         result=detect_approved_pattern(frame,"BUY")
         self.assertIsNotNone(result)
-        self.assertEqual(result["setup_type"],"TWO-SIDED LIQUIDITY SWEEP")
+        self.assertEqual(result["setup_type"],"LIQUIDITY SWEEP")
 
     @patch("bot3.bot3.detect_approved_pattern")
     def test_m15_must_confirm_same_approved_setup(self, detect):
@@ -156,5 +156,44 @@ class Bot3Tests(unittest.TestCase):
             "EMA21":[1.005]*n,"EMA20":[1.005]*n,"EMA50":[1.004]*n,
         },index=pd.date_range("2026-11-05",periods=n,freq="5min",tz="UTC"))
         self.assertIsNone(detect_approved_pattern(frame,"BUY"))
+
+
+    def _two_sided_breakout_frame(self, include_both_sides=True):
+        n = 70
+        frame = pd.DataFrame({
+            "Open":[1.000]*n,"High":[1.001]*n,"Low":[0.999]*n,
+            "Close":[1.0005]*n,"ATR":[0.002]*n,
+            "EMA21":[1.000]*n,"EMA20":[1.000]*n,"EMA50":[0.999]*n,
+        },index=pd.date_range("2026-11-05",periods=n,freq="5min",tz="UTC"))
+        # Same compact eight-candle range.
+        frame.loc[frame.index[47:55],"High"] = 1.002
+        frame.loc[frame.index[47:55],"Low"] = 0.998
+        if include_both_sides:
+            # First break below the range, then decisive reclaim above it.
+            frame.loc[frame.index[57],["Open","High","Low","Close"]] = [1.000,1.001,0.995,0.996]
+            frame.loc[frame.index[59],["Open","High","Low","Close"]] = [1.003,1.004,0.998,0.999]
+            frame.loc[frame.index[60],["Open","High","Low","Close"]] = [0.999,1.005,0.998,1.004]
+            # Return to the exact origin candle (index 59) and confirm BUY.
+            frame.loc[frame.index[68],["Open","High","Low","Close"]] = [1.000,1.002,0.999,1.001]
+            frame.loc[frame.index[69],["Open","High","Low","Close"]] = [1.001,1.006,1.000,1.005]
+        else:
+            # Only one side breaks: this must never qualify as the pattern.
+            frame.loc[frame.index[60],["Open","High","Low","Close"]] = [1.000,1.005,0.999,1.004]
+            frame.loc[frame.index[68],["Open","High","Low","Close"]] = [1.000,1.002,0.999,1.001]
+            frame.loc[frame.index[69],["Open","High","Low","Close"]] = [1.001,1.006,1.000,1.005]
+        return frame
+
+    def test_two_sided_consolidation_requires_both_edges_and_origin_retest(self):
+        frame = self._two_sided_breakout_frame(True)
+        result = detect_approved_pattern(frame, "BUY")
+        self.assertIsNotNone(result)
+        self.assertEqual(result["setup_type"], "TWO-SIDED CONSOLIDATION BREAKOUT + ORIGIN RETEST")
+        self.assertIn("both ways", result["evidence"])
+        self.assertIn(str(frame.index[59]), result["evidence"])
+
+    def test_single_sided_consolidation_breakout_is_rejected(self):
+        frame = self._two_sided_breakout_frame(False)
+        result = detect_approved_pattern(frame, "BUY")
+        self.assertIsNone(result)
 
 if __name__=="__main__": unittest.main()
