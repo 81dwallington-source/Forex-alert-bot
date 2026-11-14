@@ -196,4 +196,14 @@ class Bot3Tests(unittest.TestCase):
         result = detect_approved_pattern(frame, "BUY")
         self.assertIsNone(result)
 
+    def test_two_sided_breakout_requires_aggressive_breaks_on_both_edges(self):
+        frame = self._two_sided_breakout_frame(True)
+        # Weaken the first (SELL-side) boundary break so it no longer meets
+        # the minimum real-body / displacement requirement.
+        frame.loc[frame.index[57], ["Open","High","Low","Close"]] = [
+            1.000, 1.001, 0.995, 0.9975
+        ]
+        result = detect_approved_pattern(frame, "BUY")
+        self.assertIsNone(result)
+
 if __name__=="__main__": unittest.main()
