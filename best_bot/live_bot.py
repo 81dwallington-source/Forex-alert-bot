@@ -264,10 +264,14 @@ def scan():
             sig = make_signal(m5, m15, h1, pip)
             if not sig:
                 continue
-            # Second fail-closed gate: only the user's exact two-sided
-            # consolidation sweep + directional displacement + origin retest.
-            if sig.get("setup") != "TWO_SIDED_SWEEP_ORIGIN_RETEST":
-                print(f"{pair}: rejected — missing/unknown chart pattern", flush=True)
+            # Fail closed: only the user's three approved patterns may alert.
+            allowed_setups = {
+                "TWO_SIDED_SWEEP_ORIGIN_RETEST",
+                "LIQUIDITY_SWEEP_ORIGIN_RETEST",
+                "IMPULSE_ORIGIN_RETEST",
+            }
+            if sig.get("setup") not in allowed_setups:
+                print(f"{pair}: rejected — setup is not one of the three approved patterns", flush=True)
                 continue
             stamp = m5.index[-1]
             # Sanity-check the reference against the provider's current open candle.
