@@ -20,5 +20,10 @@ No qualifying two-sided break, no origin-candle retest, or no confirmation = NO 
 - EUR/NZD: aggressive break below the range followed by a strong reclaim through the opposite boundary. The supplied screenshot is M15; Bot 3 execution remains M5.
 - GBP/JPY: aggressive breaks above and below the same boxed range, followed by a bearish move.
 - NZD/CAD (FXCM, M15): a clearly boxed range is marked in yellow. Price first pushes above the range high, then later breaks below the range low with a decisive bearish move. This is an additional visual example of a two-sided range break, not a standalone entry. Bot 3 must still wait for the final bearish move's exact origin candle to be retested and confirmed on its M5 execution data before alerting. Do not copy the screenshot's prices or use the M15 chart as the execution timeframe.
+- NZD/JPY: additional chart example supplied for the two-sided breakout pattern. Treat it as a visual reference only; Bot 3 must independently detect both aggressive breaks and wait for the exact origin-candle retest and confirmation on M5.
+
+## USD/CAD example (FXCM, M15)
+
+The yellow box marks the consolidation range. Price first pushes above the upper boundary, then later sweeps/breaks below the lower boundary with a sharp bearish move. The later candles recover back into and above the range, so the chart is a useful visual example of a two-sided range break followed by a reclaim. It is not a trade signal by itself: Bot 3 must identify the final directional break on its own M5 data, locate that move's exact origin candle, and wait for the return to that candle plus confirmation before alerting. Do not copy the screenshot's price levels or execute from M15.
 
 These references supplement the other approved Bot 3 setup rules; they do not replace them.
