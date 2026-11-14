@@ -6,7 +6,7 @@ The default branch now runs one active signal-only scanner: **Best Bot**.
 - GitHub Actions scans every 5 minutes on weekdays and during the Sunday forex reopen window (UTC). GitHub scheduling is best-effort, not a guaranteed real-time service.
 - Scans 27 major and cross-currency pairs.
 - Uses completed M5 candles for entries; M15 and H1 must independently confirm the same direction.
-- Strategy: EMA21/EMA50/EMA200 context on M5, EMA21/EMA50 trend alignment and slope on M15/H1, fresh EMA21 pullback, then a close beyond the prior M5 candle extreme.
+- Strategy: M5 consolidation must sweep BOTH range edges (each break closes back inside), then make decisive displacement through one edge, then retest/reject the candle body that launched that move. No one-sided breakout or generic impulse/trend-break fallback alerts. M15 and H1 must agree on direction; entries use completed M5 candles.
 - Stops sit beyond the latest confirmed M5 swing (two candles on each side to confirm) with an ATR buffer. Rejects stops under 4 pips or above 2.5 ATR. Target is 1.5R.
 - Maximum 5 new alerts per UTC day and one per pair per UTC day. No watchlist alerts and no automatic trading.
 - Every signal is logged in `best_bot/live_signals.csv`; pending outcomes are tracked in `best_bot/live_state.json`. Public-candle TP/SL outcomes are estimates, not broker-verified executions.
