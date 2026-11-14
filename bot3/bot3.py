@@ -129,7 +129,7 @@ def detect_approved_pattern(df, direction):
         broke = (float(last.Close) > float(prev.High) if direction == "BUY"
                  else float(last.Close) < float(prev.Low))
         if swept and broke:
-            return {"setup_type": "TWO-SIDED LIQUIDITY SWEEP",
+            return {"setup_type": "LIQUIDITY SWEEP",
                     "evidence": f"Confirmed {direction.lower()}-side swing sweep, rejection back through {level:.6f}, and M5 close-break"}
 
     # 2) Impulse + origin retest: find a strong displacement candle and the
@@ -174,29 +174,86 @@ def detect_approved_pattern(df, direction):
             return {"setup_type": "IMPULSE + ORIGIN RETEST",
                     "evidence": f"Strong M5 displacement at {df.index[impulse_i]}, retest of origin candle {df.index[origin_i]}, then confirmed close-break"}
 
-    # 3) Consolidation breakout + retest: a compact base, a completed close
-    # outside it, then a later retest of the broken boundary and confirmation.
-    for breakout_i in range(len(df) - 3, max(5, len(df) - 9), -1):
-        base = df.iloc[max(0, breakout_i-8):breakout_i]
-        if len(base) < 5:
+    # 3) TWO-SIDED consolidation breakout + exact origin-candle retest.
+    # Both edges of the SAME compact base must be decisively closed through.
+    # The second edge break defines direction; then price must revisit the
+    # exact last opposing candle before that directional displacement.
+    n = len(df)
+    search_start = max(12, n - 36)
+    for base_end in range(n - 4, search_start, -1):
+        base_start = base_end - 8
+        if base_start < 0:
+            continue
+        base = df.iloc[base_start:base_end]
+        if len(base) != 8:
             continue
         ceiling, floor = float(base.High.max()), float(base.Low.min())
-        if ceiling - floor > 3.0*atr:
+        if ceiling <= floor or ceiling - floor > 3.0 * atr:
             continue
-        breakout = df.iloc[breakout_i]
-        broke_range = (float(breakout.Close) > ceiling if direction == "BUY"
-                       else float(breakout.Close) < floor)
-        if not broke_range:
+
+        # Only completed bars after the base and before the current retest
+        # candle can establish the two-sided sequence.
+        events = []
+        for i in range(base_end, n - 1):
+            bar = df.iloc[i]
+            bar_range = float(bar.High - bar.Low)
+            bar_body = abs(float(bar.Close - bar.Open))
+            if bar_range <= 0 or bar_body / bar_range < 0.55 or bar_body < 0.75 * float(bar.ATR):
+                continue
+            loc = (float(bar.Close) - float(bar.Low)) / bar_range
+            if float(bar.Close) > ceiling and loc >= 0.70 and float(bar.Close) > float(bar.Open):
+                events.append((i, "BUY"))
+            elif float(bar.Close) < floor and loc <= 0.30 and float(bar.Close) < float(bar.Open):
+                events.append((i, "SELL"))
+
+        if len(events) < 2:
             continue
-        retested = (float(last.Low) <= ceiling + 0.20*atr and float(last.Low) >= ceiling - 0.35*atr
-                    if direction == "BUY" else
-                    float(last.High) >= floor - 0.20*atr and float(last.High) <= floor + 0.35*atr)
-        confirmed = (float(last.Close) > float(prev.High) and float(last.Close) > ceiling
-                     if direction == "BUY" else
-                     float(last.Close) < float(prev.Low) and float(last.Close) < floor)
-        if retested and confirmed:
-            return {"setup_type": "CONSOLIDATION BREAKOUT + RETEST",
-                    "evidence": f"Compact M5 base ({floor:.6f}-{ceiling:.6f}), completed breakout, boundary retest, and confirmation close-break"}
+        # Need both directions through the same range. The most recent
+        # decisive boundary break determines the eventual move's direction.
+        sides = {side for _, side in events}
+        if sides != {"BUY", "SELL"}:
+            continue
+        final_i, final_direction = events[-1]
+        if final_direction != direction:
+            continue
+        opposite_events = [i for i, side in events if side != direction and i < final_i]
+        if not opposite_events:
+            continue
+
+        # Find the exact last opposing candle immediately before the final
+        # directional displacement, after the first side of the range was swept.
+        origin_i = None
+        for i in range(final_i - 1, max(base_end, final_i - 5) - 1, -1):
+            origin = df.iloc[i]
+            opposing = (float(origin.Close) < float(origin.Open) if direction == "BUY"
+                        else float(origin.Close) > float(origin.Open))
+            if opposing:
+                origin_i = i
+                break
+        if origin_i is None or origin_i <= opposite_events[-1]:
+            continue
+
+        # Require at least one completed bar after the final breakout to
+        # return to the exact origin candle; the current candle is the
+        # confirmation candle, never the breakout candle itself.
+        origin = df.iloc[origin_i]
+        if direction == "BUY":
+            retested = (float(last.Low) <= float(origin.High) + 0.10 * atr
+                        and float(last.Low) >= float(origin.Low) - 0.10 * atr)
+            confirmed = (float(last.Close) > float(last.Open)
+                         and float(last.Close) > float(prev.High)
+                         and float(last.Close) > float(origin.High))
+        else:
+            retested = (float(last.High) >= float(origin.Low) - 0.10 * atr
+                        and float(last.High) <= float(origin.High) + 0.10 * atr)
+            confirmed = (float(last.Close) < float(last.Open)
+                         and float(last.Close) < float(prev.Low)
+                         and float(last.Close) < float(origin.Low))
+        if final_i < n - 2 and retested and confirmed:
+            return {"setup_type": "TWO-SIDED CONSOLIDATION BREAKOUT + ORIGIN RETEST",
+                    "evidence": (f"Same M5 base ({floor:.6f}-{ceiling:.6f}) decisively broken both ways; "
+                                 f"final {direction.lower()} displacement at {df.index[final_i]}; "
+                                 f"exact origin candle {df.index[origin_i]} retested and confirmed")}
     return None
 
 
