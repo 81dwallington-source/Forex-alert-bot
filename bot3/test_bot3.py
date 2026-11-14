@@ -4,7 +4,7 @@ from unittest.mock import patch, Mock
 import pandas as pd
 import tempfile
 from pathlib import Path
-from bot3.bot3 import in_session, trend_direction, confirmed_pivots, fetch_live_quote, evaluate_trade_outcome, detect_approved_pattern
+from bot3.bot3 import in_session, trend_direction, confirmed_pivots, fetch_live_quote, evaluate_trade_outcome, detect_approved_pattern, validate_m15_structure
 from bot3.backtest import bid_stop_to_executable, load_m5
 
 class Bot3Tests(unittest.TestCase):
@@ -130,6 +130,23 @@ class Bot3Tests(unittest.TestCase):
         result=detect_approved_pattern(frame,"BUY")
         self.assertIsNotNone(result)
         self.assertEqual(result["setup_type"],"TWO-SIDED LIQUIDITY SWEEP")
+
+    @patch("bot3.bot3.detect_approved_pattern")
+    def test_m15_must_confirm_same_approved_setup(self, detect):
+        detect.return_value = {"setup_type":"LIQUIDITY SWEEP","evidence":"M15 sweep"}
+        frame = pd.DataFrame({"Open":[1.0]*60,"High":[1.1]*60,
+            "Low":[0.9]*60,"Close":[1.0]*60},
+            index=pd.date_range("2026-11-05",periods=60,freq="15min",tz="UTC"))
+        self.assertIsNone(validate_m15_structure(frame,"BUY","IMPULSE + ORIGIN RETEST"))
+
+    @patch("bot3.bot3.detect_approved_pattern")
+    def test_m15_matching_setup_is_accepted(self, detect):
+        expected = {"setup_type":"LIQUIDITY SWEEP","evidence":"M15 sweep"}
+        detect.return_value = expected
+        frame = pd.DataFrame({"Open":[1.0]*60,"High":[1.1]*60,
+            "Low":[0.9]*60,"Close":[1.0]*60},
+            index=pd.date_range("2026-11-05",periods=60,freq="15min",tz="UTC"))
+        self.assertEqual(validate_m15_structure(frame,"BUY","LIQUIDITY SWEEP"),expected)
 
     def test_unrelated_m5_candle_is_not_an_approved_setup(self):
         n=60
