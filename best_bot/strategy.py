@@ -345,24 +345,13 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: floa
     if not direction or trend(h1) != direction:
         return None
 
-    # M15 and H1 must agree. M5 entry is decided by the requested pattern,
-    # not by a separate EMA-stack or staircase filter.
-    # Required sequence: consolidation -> both edges swept -> displacement
-    # through one edge -> retest and rejection of the displacement-origin candle.
+    # M15 and H1 must agree. M5 entries are allowed ONLY after the exact
+    # two-sided consolidation sequence: both range edges swept and closed
+    # back inside, then decisive displacement through one edge, followed by
+    # a retest/rejection of the candle that launched that displacement.
+    # No one-sided breakout, generic impulse, or trend-break fallback alerts.
     pattern = find_origin_retest(a, direction)
-    if not pattern:
-        pattern = find_impulse_origin_retest(a, direction)
-    if not pattern:
-        pattern = find_trend_consolidation_break_retest(a, direction)
-    if not pattern:
-        return None
-    allowed_setups = {
-        "TWO_SIDED_SWEEP_ORIGIN_RETEST",
-        "IMPULSE_ORIGIN_RETEST",
-        "TREND_CONSOLIDATION_BREAK_RETEST",
-    }
-    # Fail closed: never emit an unclassified/indicator-only trade.
-    if pattern.get("setup") not in allowed_setups:
+    if not pattern or pattern.get("setup") != "TWO_SIDED_SWEEP_ORIGIN_RETEST":
         return None
     atr = float(pattern["atr"])
     entry = float(pattern["entry"])
