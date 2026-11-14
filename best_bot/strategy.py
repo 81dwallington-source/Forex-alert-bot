@@ -337,81 +337,105 @@ def find_trend_consolidation_break_retest(df: pd.DataFrame, side: str,
 
 
 def find_liquidity_sweep_retest(df: pd.DataFrame, side: str,
-                                swing_lookback: int = 12,
+                                range_lookback: int = 12,
                                 max_pattern_bars: int = 30) -> dict | None:
-    """Find a clean prior-swing liquidity sweep, reversal impulse and origin retest.
+    """Video-based range sweep, decisive reversal, retest and confirmation.
 
-    SELL: wick above a prior swing high, close back below it, bearish displacement,
-    then a retest/rejection of the last bullish launch candle.
-    BUY is the exact inverse. The latest completed candle must confirm the retest.
+    SELL: establish a compact range, wick above its high and close back inside,
+    confirm bearish displacement, then retest/reject the range high.
+    BUY is the exact inverse at the range low. Only the latest completed M5
+    candle may trigger; a sweep alone never produces a signal.
     """
-    if side not in ("BUY", "SELL") or len(df) < swing_lookback + 12:
+    if side not in ("BUY", "SELL") or len(df) < range_lookback + 15:
         return None
     x = df.reset_index(drop=True)
     latest = len(x) - 1
-    first = max(swing_lookback + 2, latest - max_pattern_bars)
+    first = max(range_lookback + 2, latest - max_pattern_bars)
+
+    # Most recent complete sequence first. The range is fixed before the sweep.
     for sweep_i in range(latest - 3, first - 1, -1):
-        prior = x.iloc[sweep_i - swing_lookback:sweep_i]
-        if len(prior) != swing_lookback:
+        base = x.iloc[sweep_i - range_lookback:sweep_i]
+        if len(base) != range_lookback:
             continue
+        rh, rl = float(base.high.max()), float(base.low.min())
         atr = float(indicators(x.iloc[:sweep_i + 1])["atr"].iloc[-1])
-        if not pd.notna(atr) or atr <= 0:
+        if not pd.notna(atr) or atr <= 0 or rh <= rl or rh - rl > 4.0 * atr:
             continue
+
         sweep = x.iloc[sweep_i]
         if side == "SELL":
-            level = float(prior.high.max())
-            swept = float(sweep.high) > level and float(sweep.close) < level
-            if not swept:
+            # A genuine grab above range high, followed by a close back inside.
+            if not (float(sweep.high) > rh and float(sweep.close) < rh):
                 continue
-            impulse_candidates = range(sweep_i + 1, min(latest, sweep_i + 5) + 1)
-            for impulse_i in impulse_candidates:
-                impulse = x.iloc[impulse_i]
-                body = abs(float(impulse.close) - float(impulse.open))
-                if not (float(impulse.close) < float(impulse.open)
-                        and float(impulse.close) < float(sweep.low)
+            sweep_extreme = float(sweep.high)
+            displacement_i = None
+            for j in range(sweep_i + 1, min(latest, sweep_i + 4) + 1):
+                bar = x.iloc[j]
+                body = abs(float(bar.close) - float(bar.open))
+                if (float(bar.close) < float(bar.open)
+                        and float(bar.close) < rh - 0.20 * atr
                         and body >= 0.60 * atr):
-                    continue
-                origins = [j for j in range(sweep_i, impulse_i)
-                           if float(x.open.iloc[j]) < float(x.close.iloc[j])]
-                if not origins:
-                    continue
-                origin = x.iloc[origins[-1]]
-                zone_low, zone_high = sorted((float(origin.open), float(origin.close)))
-                bar = x.iloc[latest]
-                touched = float(bar.high) >= zone_low and float(bar.low) <= zone_high
-                confirmed = float(bar.close) < float(bar.open) and float(bar.close) < zone_low
-                if touched and confirmed and latest > impulse_i:
-                    return {"entry":float(bar.close), "origin_low":float(origin.low),
-                            "origin_high":float(origin.high), "sweep_extreme":float(sweep.high),
-                            "atr":atr, "setup":"LIQUIDITY_SWEEP_ORIGIN_RETEST"}
-        else:
-            level = float(prior.low.min())
-            swept = float(sweep.low) < level and float(sweep.close) > level
-            if not swept:
+                    displacement_i = j
+                    break
+            if displacement_i is None or latest <= displacement_i:
                 continue
-            impulse_candidates = range(sweep_i + 1, min(latest, sweep_i + 5) + 1)
-            for impulse_i in impulse_candidates:
-                impulse = x.iloc[impulse_i]
-                body = abs(float(impulse.close) - float(impulse.open))
-                if not (float(impulse.close) > float(impulse.open)
-                        and float(impulse.close) > float(sweep.high)
-                        and body >= 0.60 * atr):
-                    continue
-                origins = [j for j in range(sweep_i, impulse_i)
-                           if float(x.open.iloc[j]) > float(x.close.iloc[j])]
-                if not origins:
-                    continue
-                origin = x.iloc[origins[-1]]
-                zone_low, zone_high = sorted((float(origin.open), float(origin.close)))
-                bar = x.iloc[latest]
-                touched = float(bar.low) <= zone_high and float(bar.high) >= zone_low
-                confirmed = float(bar.close) > float(bar.open) and float(bar.close) > zone_high
-                if touched and confirmed and latest > impulse_i:
-                    return {"entry":float(bar.close), "origin_low":float(origin.low),
-                            "origin_high":float(origin.high), "sweep_extreme":float(sweep.low),
-                            "atr":atr, "setup":"LIQUIDITY_SWEEP_ORIGIN_RETEST"}
-    return None
 
+            # Retest the swept range high from below; confirmation must be last.
+            bar = x.iloc[latest]
+            touched = float(bar.high) >= rh - 0.15 * atr and float(bar.low) < rh
+            confirmed = (float(bar.close) < float(bar.open)
+                         and float(bar.close) < rh
+                         and float(bar.close) < float(bar.high))
+            if not (touched and confirmed):
+                continue
+            origin_candidates = [
+                j for j in range(sweep_i, displacement_i)
+                if float(x.close.iloc[j]) > float(x.open.iloc[j])
+            ]
+            origin = x.iloc[origin_candidates[-1]] if origin_candidates else sweep
+            return {
+                "entry": float(bar.close), "origin_low": float(origin.low),
+                "origin_high": float(origin.high), "sweep_extreme": sweep_extreme,
+                "atr": atr, "range_high": rh, "range_low": rl,
+                "setup": "LIQUIDITY_SWEEP_RANGE_RETEST",
+            }
+        else:
+            # A genuine grab below range low, followed by a close back inside.
+            if not (float(sweep.low) < rl and float(sweep.close) > rl):
+                continue
+            sweep_extreme = float(sweep.low)
+            displacement_i = None
+            for j in range(sweep_i + 1, min(latest, sweep_i + 4) + 1):
+                bar = x.iloc[j]
+                body = abs(float(bar.close) - float(bar.open))
+                if (float(bar.close) > float(bar.open)
+                        and float(bar.close) > rl + 0.20 * atr
+                        and body >= 0.60 * atr):
+                    displacement_i = j
+                    break
+            if displacement_i is None or latest <= displacement_i:
+                continue
+
+            # Retest the swept range low from above; confirmation must be last.
+            bar = x.iloc[latest]
+            touched = float(bar.low) <= rl + 0.15 * atr and float(bar.high) > rl
+            confirmed = (float(bar.close) > float(bar.open)
+                         and float(bar.close) > rl
+                         and float(bar.close) > float(bar.low))
+            if not (touched and confirmed):
+                continue
+            origin_candidates = [
+                j for j in range(sweep_i, displacement_i)
+                if float(x.close.iloc[j]) < float(x.open.iloc[j])
+            ]
+            origin = x.iloc[origin_candidates[-1]] if origin_candidates else sweep
+            return {
+                "entry": float(bar.close), "origin_low": float(origin.low),
+                "origin_high": float(origin.high), "sweep_extreme": sweep_extreme,
+                "atr": atr, "range_high": rh, "range_low": rl,
+                "setup": "LIQUIDITY_SWEEP_RANGE_RETEST",
+            }
+    return None
 
 def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: float) -> dict | None:
     """Allow only the three user-approved M5 patterns, with M15/H1 agreement."""
@@ -434,7 +458,7 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: floa
     )
     allowed = {
         "TWO_SIDED_SWEEP_ORIGIN_RETEST",
-        "LIQUIDITY_SWEEP_ORIGIN_RETEST",
+        "LIQUIDITY_SWEEP_RANGE_RETEST",
         "IMPULSE_ORIGIN_RETEST",
     }
     pattern = next((p for p in candidates if p and p.get("setup") in allowed), None)
@@ -452,12 +476,23 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: floa
         stop = max(float(pattern["sweep_extreme"]), float(pattern["origin_high"])) + buffer
         risk = stop - entry
         target = entry - MIN_RR * risk
+
+    # For the video-based range sweep, aim at the opposite range boundary.
+    # Reject the setup if that structural target cannot still deliver >= 1.5R.
+    actual_rr = MIN_RR
+    if pattern.get("setup") == "LIQUIDITY_SWEEP_RANGE_RETEST":
+        target = float(pattern["range_high"] if direction == "BUY" else pattern["range_low"])
+        reward = (target - entry) if direction == "BUY" else (entry - target)
+        actual_rr = reward / risk if risk > 0 else 0.0
+        if actual_rr < MIN_RR:
+            return None
+
     if risk <= 0 or not valid_stop_distance(risk, pip, atr):
         return None
     return {
         "direction": direction, "signal_close": entry,
         "stop": float(stop), "target": float(target),
-        "risk_pips": round(risk / pip, 1), "rr": MIN_RR,
+        "risk_pips": round(risk / pip, 1), "rr": round(actual_rr, 2),
         "ema21": float(cur.ema21), "atr": atr, "setup": pattern["setup"],
         "origin_low": float(pattern["origin_low"]),
         "origin_high": float(pattern["origin_high"]),
