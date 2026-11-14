@@ -156,12 +156,20 @@ def detect_approved_pattern(df, direction):
             bar = df.iloc[i]
             bar_range = float(bar.High - bar.Low)
             bar_body = abs(float(bar.Close - bar.Open))
-            if bar_range <= 0 or bar_body / bar_range < 0.55 or bar_body < 0.75 * float(bar.ATR):
+            bar_atr = float(bar.ATR) if pd.notna(bar.ATR) else 0.0
+            # "Aggressive" means a large real body, a strong close near the
+            # candle extreme, and a close meaningfully beyond the range edge.
+            # Apply this to BOTH boundary breaks, not just the final direction.
+            if (bar_range <= 0 or bar_atr <= 0
+                    or bar_body / bar_range < 0.65
+                    or bar_body < 1.00 * bar_atr):
                 continue
             loc = (float(bar.Close) - float(bar.Low)) / bar_range
-            if float(bar.Close) > ceiling and loc >= 0.70 and float(bar.Close) > float(bar.Open):
+            if (float(bar.Close) > ceiling + 0.05 * bar_atr
+                    and loc >= 0.75 and float(bar.Close) > float(bar.Open)):
                 events.append((i, "BUY"))
-            elif float(bar.Close) < floor and loc <= 0.30 and float(bar.Close) < float(bar.Open):
+            elif (float(bar.Close) < floor - 0.05 * bar_atr
+                    and loc <= 0.25 and float(bar.Close) < float(bar.Open)):
                 events.append((i, "SELL"))
 
         if len(events) < 2:
