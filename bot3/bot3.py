@@ -132,48 +132,6 @@ def detect_approved_pattern(df, direction):
             return {"setup_type": "LIQUIDITY SWEEP",
                     "evidence": f"Confirmed {direction.lower()}-side swing sweep, rejection back through {level:.6f}, and M5 close-break"}
 
-    # 2) Impulse + origin retest: find a strong displacement candle and the
-    # last opposing candle immediately before it; require a retest and fresh
-    # directional close-break now (not entry on the impulse itself).
-    for impulse_i in range(len(df) - 3, max(2, len(df) - 11), -1):
-        impulse = df.iloc[impulse_i]
-        impulse_atr = float(impulse.ATR)
-        if not pd.notna(impulse_atr) or impulse_atr <= 0:
-            continue
-        impulse_range = float(impulse.High - impulse.Low)
-        impulse_body = abs(float(impulse.Close - impulse.Open))
-        impulse_dir = (float(impulse.Close) > float(impulse.Open) if direction == "BUY"
-                       else float(impulse.Close) < float(impulse.Open))
-        impulse_location = ((float(impulse.Close)-float(impulse.Low))/impulse_range
-                            if impulse_range > 0 else 0.5)
-        strong_impulse = (impulse_dir and impulse_body >= 1.20*impulse_atr
-                          and (impulse_location >= 0.75 if direction == "BUY"
-                               else impulse_location <= 0.25))
-        if not strong_impulse:
-            continue
-        origin_i = impulse_i - 1
-        while origin_i > max(0, impulse_i - 4):
-            origin = df.iloc[origin_i]
-            opposing = (float(origin.Close) < float(origin.Open) if direction == "BUY"
-                        else float(origin.Close) > float(origin.Open))
-            if opposing:
-                break
-            origin_i -= 1
-        if origin_i <= 0:
-            continue
-        origin = df.iloc[origin_i]
-        touched_origin = (float(last.Low) <= float(origin.High) + 0.15*atr
-                          and float(last.Low) >= float(origin.Low) - 0.25*atr
-                          if direction == "BUY" else
-                          float(last.High) >= float(origin.Low) - 0.15*atr
-                          and float(last.High) <= float(origin.High) + 0.25*atr)
-        close_break = (float(last.Close) > float(prev.High) and float(last.Close) > float(origin.High)
-                       if direction == "BUY" else
-                       float(last.Close) < float(prev.Low) and float(last.Close) < float(origin.Low))
-        if touched_origin and close_break:
-            return {"setup_type": "IMPULSE + ORIGIN RETEST",
-                    "evidence": f"Strong M5 displacement at {df.index[impulse_i]}, retest of origin candle {df.index[origin_i]}, then confirmed close-break"}
-
     # 3) TWO-SIDED consolidation breakout + exact origin-candle retest.
     # Both edges of the SAME compact base must be decisively closed through.
     # The second edge break defines direction; then price must revisit the
@@ -254,6 +212,48 @@ def detect_approved_pattern(df, direction):
                     "evidence": (f"Same M5 base ({floor:.6f}-{ceiling:.6f}) decisively broken both ways; "
                                  f"final {direction.lower()} displacement at {df.index[final_i]}; "
                                  f"exact origin candle {df.index[origin_i]} retested and confirmed")}
+    # 2) Impulse + origin retest: find a strong displacement candle and the
+    # last opposing candle immediately before it; require a retest and fresh
+    # directional close-break now (not entry on the impulse itself).
+    for impulse_i in range(len(df) - 3, max(2, len(df) - 11), -1):
+        impulse = df.iloc[impulse_i]
+        impulse_atr = float(impulse.ATR)
+        if not pd.notna(impulse_atr) or impulse_atr <= 0:
+            continue
+        impulse_range = float(impulse.High - impulse.Low)
+        impulse_body = abs(float(impulse.Close - impulse.Open))
+        impulse_dir = (float(impulse.Close) > float(impulse.Open) if direction == "BUY"
+                       else float(impulse.Close) < float(impulse.Open))
+        impulse_location = ((float(impulse.Close)-float(impulse.Low))/impulse_range
+                            if impulse_range > 0 else 0.5)
+        strong_impulse = (impulse_dir and impulse_body >= 1.20*impulse_atr
+                          and (impulse_location >= 0.75 if direction == "BUY"
+                               else impulse_location <= 0.25))
+        if not strong_impulse:
+            continue
+        origin_i = impulse_i - 1
+        while origin_i > max(0, impulse_i - 4):
+            origin = df.iloc[origin_i]
+            opposing = (float(origin.Close) < float(origin.Open) if direction == "BUY"
+                        else float(origin.Close) > float(origin.Open))
+            if opposing:
+                break
+            origin_i -= 1
+        if origin_i <= 0:
+            continue
+        origin = df.iloc[origin_i]
+        touched_origin = (float(last.Low) <= float(origin.High) + 0.15*atr
+                          and float(last.Low) >= float(origin.Low) - 0.25*atr
+                          if direction == "BUY" else
+                          float(last.High) >= float(origin.Low) - 0.15*atr
+                          and float(last.High) <= float(origin.High) + 0.25*atr)
+        close_break = (float(last.Close) > float(prev.High) and float(last.Close) > float(origin.High)
+                       if direction == "BUY" else
+                       float(last.Close) < float(prev.Low) and float(last.Close) < float(origin.Low))
+        if touched_origin and close_break:
+            return {"setup_type": "IMPULSE + ORIGIN RETEST",
+                    "evidence": f"Strong M5 displacement at {df.index[impulse_i]}, retest of origin candle {df.index[origin_i]}, then confirmed close-break"}
+
     return None
 
 
