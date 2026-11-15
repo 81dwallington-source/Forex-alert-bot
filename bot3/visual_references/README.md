@@ -27,3 +27,13 @@ No qualifying two-sided break, no origin-candle retest, or no confirmation = NO 
 The yellow box marks the consolidation range. Price first pushes above the upper boundary, then later sweeps/breaks below the lower boundary with a sharp bearish move. The later candles recover back into and above the range, so the chart is a useful visual example of a two-sided range break followed by a reclaim. It is not a trade signal by itself: Bot 3 must identify the final directional break on its own M5 data, locate that move's exact origin candle, and wait for the return to that candle plus confirmation before alerting. Do not copy the screenshot's price levels or execute from M15.
 
 These references supplement the other approved Bot 3 setup rules; they do not replace them.
+
+## EUR/CHF M5 bullish liquidity-sweep example (15 November 2026)
+
+- The yellow box marks a consolidation range. Price briefly sweeps below the range low, sharply rejects upward, breaks back through the range, and continues higher.
+- This is a visual example only, not a fixed level or a fourth setup. Bot 3 must identify its own range and sweep, wait for bullish displacement, then require the approved pullback-to-relevant-area and confirmation sequence. H1 trend alignment remains mandatory; M15 must agree. Calculate entry, stop-loss, and take-profit independently.
+- The chart image is currently stored as a reduced 400 × 185 JPEG; it is not the original full-resolution 2532 × 1170 PNG.
+
+## Image inventory and quality note
+
+The folder currently contains seven chart-image files: AUD/USD, EUR/CHF, EUR/NZD, GBP/JPY, NZD/CAD, NZD/JPY, and USD/CAD. The AUD/USD, EUR/NZD, and GBP/JPY files currently resolve to only 240 × 111 pixels; the NZD/CAD, NZD/JPY, and USD/CAD images are 480 × 222, 700 × 323, and 640 × 296 respectively. These are present in the repository, but the low-resolution copies should not be mistaken for original-resolution screenshots.
