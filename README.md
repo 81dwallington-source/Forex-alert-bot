@@ -11,6 +11,12 @@ The default branch now runs one active signal-only scanner: **Best Bot**.
 - Maximum 5 new alerts per UTC day and one per pair per UTC day. No watchlist alerts and no automatic trading.
 - Every signal is logged in `best_bot/live_signals.csv`; pending outcomes are tracked in `best_bot/live_state.json`. Public-candle TP/SL outcomes are estimates, not broker-verified executions.
 
+## Visual pattern reference — USDJPY M5 (15 November 2026)
+- Added the user's USDJPY 5-minute chart as a bearish liquidity-sweep example: a compact consolidation near the local high, a brief push/wick above the range high, a sharp bearish rejection/displacement back below the range, then continued downside.
+- Bot interpretation: identify its own completed-candle range and sweep level; require the sweep above the range high to close back inside, then require decisive bearish displacement and a later retest/rejection of the swept range high before any SELL alert.
+- The screenshot is a visual teaching reference only. Its displayed prices, manually drawn box, timestamps and chart levels are not fixed bot inputs. The bot must calculate all levels from its own live M5 candles and still pass M15/H1 direction alignment, freshness, stop-distance, reward/risk and live-price-drift checks.
+- Never alert on the sweep candle or displacement alone; if the retest and confirmation do not occur, there is no trade.
+
 ## Telegram
 Repository Actions secrets must be named `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`. A one-off Telegram test succeeded on 11 November 2026. The live scanner's first run also successfully sent a qualifying EURJPY BUY alert. [View that successful scan](https://github.com/81dwallington-source/Forex-alert-bot/actions/runs/43068374733).
 
