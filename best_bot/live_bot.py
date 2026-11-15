@@ -266,6 +266,7 @@ def scan():
                 continue
             # Fail closed: only the user's three approved patterns may alert.
             allowed_setups = {
+                "TWO_SIDED_BREAKOUT_ORIGIN_RETEST",
                 "TWO_SIDED_SWEEP_ORIGIN_RETEST",
                 "LIQUIDITY_SWEEP_RANGE_RETEST",
                 "IMPULSE_ORIGIN_RETEST",

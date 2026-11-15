@@ -437,6 +437,97 @@ def find_liquidity_sweep_retest(df: pd.DataFrame, side: str,
             }
     return None
 
+
+def find_two_sided_breakout_origin_retest(df: pd.DataFrame, side: str,
+                                          range_bars: int = 12,
+                                          max_pattern_bars: int = 36) -> dict | None:
+    """Both edges of one compact range must close-break, then retest the
+    exact opposing origin candle of the final directional displacement.
+
+    The latest completed candle alone may confirm the origin-body retest.
+    For BUY, price must first close below the range low, then close above the
+    range high with bullish displacement. SELL is the exact inverse.
+    """
+    if side not in ("BUY", "SELL") or len(df) < range_bars + 12:
+        return None
+    x = df.reset_index(drop=True)
+    latest = len(x) - 1
+    first_end = max(range_bars, latest - max_pattern_bars)
+    # Newest possible range first; the range itself is fixed before either break.
+    for range_end in range(range_bars, first_end - 1, -1):
+        base = x.iloc[range_end-range_bars:range_end]
+        if len(base) != range_bars:
+            continue
+        rh, rl = float(base.high.max()), float(base.low.min())
+        atr0 = float(indicators(x.iloc[:range_end])["atr"].iloc[-1])
+        if not pd.notna(atr0) or atr0 <= 0 or rh <= rl or rh-rl > 3.5*atr0:
+            continue
+        post = x.iloc[range_end:latest]
+        if len(post) < 4:
+            continue
+        if side == "BUY":
+            low_breaks = [i for i in post.index if float(x.close.iloc[i]) < rl]
+            high_breaks = [i for i in post.index if float(x.close.iloc[i]) > rh]
+            if not low_breaks or not high_breaks:
+                continue
+            low_i = low_breaks[0]
+            later_highs = [i for i in high_breaks if i > low_i]
+            if not later_highs:
+                continue
+            break_i = later_highs[0]
+            impulse = x.iloc[break_i]
+            atr = float(indicators(x.iloc[:break_i+1])["atr"].iloc[-1])
+            body = abs(float(impulse.close)-float(impulse.open))
+            if (not pd.notna(atr) or atr <= 0 or float(impulse.close) <= rh
+                    or float(impulse.close) <= float(impulse.open) or body < 0.60*atr):
+                continue
+            origins = [i for i in range(max(low_i+1, break_i-5), break_i)
+                       if float(x.close.iloc[i]) < float(x.open.iloc[i])]
+            if not origins:
+                continue
+            origin = x.iloc[origins[-1]]
+            zone_low, zone_high = sorted((float(origin.open), float(origin.close)))
+            bar = x.iloc[latest]
+            touched = float(bar.low) <= zone_high and float(bar.high) >= zone_low
+            confirmed = float(bar.close) > float(bar.open) and float(bar.close) > zone_high
+            if touched and confirmed:
+                return {"entry":float(bar.close), "origin_low":float(origin.low),
+                        "origin_high":float(origin.high), "sweep_extreme":float(x.iloc[low_i:break_i+1].low.min()),
+                        "atr":atr, "range_high":rh, "range_low":rl,
+                        "setup":"TWO_SIDED_BREAKOUT_ORIGIN_RETEST"}
+        else:
+            high_breaks = [i for i in post.index if float(x.close.iloc[i]) > rh]
+            low_breaks = [i for i in post.index if float(x.close.iloc[i]) < rl]
+            if not high_breaks or not low_breaks:
+                continue
+            high_i = high_breaks[0]
+            later_lows = [i for i in low_breaks if i > high_i]
+            if not later_lows:
+                continue
+            break_i = later_lows[0]
+            impulse = x.iloc[break_i]
+            atr = float(indicators(x.iloc[:break_i+1])["atr"].iloc[-1])
+            body = abs(float(impulse.close)-float(impulse.open))
+            if (not pd.notna(atr) or atr <= 0 or float(impulse.close) >= rl
+                    or float(impulse.close) >= float(impulse.open) or body < 0.60*atr):
+                continue
+            origins = [i for i in range(max(high_i+1, break_i-5), break_i)
+                       if float(x.close.iloc[i]) > float(x.open.iloc[i])]
+            if not origins:
+                continue
+            origin = x.iloc[origins[-1]]
+            zone_low, zone_high = sorted((float(origin.open), float(origin.close)))
+            bar = x.iloc[latest]
+            touched = float(bar.high) >= zone_low and float(bar.low) <= zone_high
+            confirmed = float(bar.close) < float(bar.open) and float(bar.close) < zone_low
+            if touched and confirmed:
+                return {"entry":float(bar.close), "origin_low":float(origin.low),
+                        "origin_high":float(origin.high), "sweep_extreme":float(x.iloc[high_i:break_i+1].high.max()),
+                        "atr":atr, "range_high":rh, "range_low":rl,
+                        "setup":"TWO_SIDED_BREAKOUT_ORIGIN_RETEST"}
+    return None
+
+
 def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: float) -> dict | None:
     """Allow only the three user-approved M5 patterns, with M15/H1 agreement."""
     if len(m5) < 210 or len(m15) < 55 or len(h1) < 55:
@@ -452,11 +543,13 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: floa
     # The only permitted live setups. Each detector requires a completed
     # M5 confirmation candle at the end of its sequence.
     candidates = (
+        find_two_sided_breakout_origin_retest(a, direction),
         find_origin_retest(a, direction),
         find_liquidity_sweep_retest(a, direction),
         find_impulse_origin_retest(a, direction),
     )
     allowed = {
+        "TWO_SIDED_BREAKOUT_ORIGIN_RETEST",
         "TWO_SIDED_SWEEP_ORIGIN_RETEST",
         "LIQUIDITY_SWEEP_RANGE_RETEST",
         "IMPULSE_ORIGIN_RETEST",
