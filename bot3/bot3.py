@@ -282,10 +282,48 @@ def detect_approved_pattern(df, direction):
                     "evidence": (f"Same M5 base ({floor:.6f}-{ceiling:.6f}) decisively broken both ways; "
                                  f"final {direction.lower()} displacement at {df.index[final_i]}; "
                                  f"exact origin candle {df.index[origin_i]} retested and confirmed")}
+    # A one-sided break of a compact range is NOT the independent impulse
+    # setup. It must qualify under the dedicated two-sided-range rules above;
+    # otherwise it is rejected rather than slipping through this fallback.
+    def is_one_sided_range_breakout(impulse_i):
+        for base_end in range(max(12, impulse_i - 16), impulse_i - 3):
+            base_start = base_end - 8
+            if base_start < 0:
+                continue
+            base = df.iloc[base_start:base_end]
+            if len(base) != 8:
+                continue
+            ceiling, floor = float(base.High.max()), float(base.Low.min())
+            if ceiling <= floor or ceiling - floor > 3.0 * float(df.iloc[impulse_i].ATR):
+                continue
+            events = []
+            for j in range(base_end, impulse_i + 1):
+                bar = df.iloc[j]
+                bar_range = float(bar.High - bar.Low)
+                bar_body = abs(float(bar.Close - bar.Open))
+                bar_atr = float(bar.ATR) if pd.notna(bar.ATR) else 0.0
+                if (bar_range <= 0 or bar_atr <= 0
+                        or bar_body / bar_range < 0.65
+                        or bar_body < 1.00 * bar_atr):
+                    continue
+                loc = (float(bar.Close) - float(bar.Low)) / bar_range
+                if (float(bar.Close) > ceiling + 0.05 * bar_atr
+                        and loc >= 0.75 and float(bar.Close) > float(bar.Open)):
+                    events.append((j, "BUY"))
+                elif (float(bar.Close) < floor - 0.05 * bar_atr
+                        and loc <= 0.25 and float(bar.Close) < float(bar.Open)):
+                    events.append((j, "SELL"))
+            if (events and {side for _, side in events} == {direction}
+                    and events[-1][0] >= impulse_i - 1):
+                return True
+        return False
+
     # 2) Impulse + origin retest: find a strong displacement candle and the
     # last opposing candle immediately before it; require a retest and fresh
     # directional close-break now (not entry on the impulse itself).
     for impulse_i in range(len(df) - 3, max(2, len(df) - 11), -1):
+        if is_one_sided_range_breakout(impulse_i):
+            continue
         impulse = df.iloc[impulse_i]
         impulse_atr = float(impulse.ATR)
         if not pd.notna(impulse_atr) or impulse_atr <= 0:
