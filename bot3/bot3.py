@@ -116,21 +116,83 @@ def detect_approved_pattern(df, direction):
     if not directional_candle:
         return None
 
-    # 1) Liquidity sweep in either direction: take a confirmed swing level,
-    # close back through it, then confirm by breaking the prior candle.
+    # 1) Liquidity-sweep reversal: sweep first, then displacement, then
+    # pullback to the exact origin candle and a separate confirmation candle.
+    # The sweep candle itself is never an entry trigger.
     pivots = confirmed_pivots(df.iloc[:-1], "low" if direction == "BUY" else "high",
-                              lookback=30, left=2, right=2)
+                              lookback=36, left=2, right=2)
+    sweep_start = max(2, len(df) - 14)
     for pivot_i, level in reversed(pivots):
-        if len(df) - 1 - pivot_i > 20:
+        if len(df) - 1 - pivot_i > 36:
             break
-        swept = (float(last.Low) < level and float(last.Close) > level
-                 if direction == "BUY" else
-                 float(last.High) > level and float(last.Close) < level)
-        broke = (float(last.Close) > float(prev.High) if direction == "BUY"
-                 else float(last.Close) < float(prev.Low))
-        if swept and broke:
+        sweep_i = None
+        for i in range(len(df) - 3, sweep_start - 1, -1):
+            bar = df.iloc[i]
+            swept = (float(bar.Low) < level and float(bar.Close) > level
+                     if direction == "BUY" else
+                     float(bar.High) > level and float(bar.Close) < level)
+            if swept:
+                sweep_i = i
+                break
+        if sweep_i is None:
+            continue
+
+        displacement_i = None
+        for i in range(sweep_i + 1, len(df) - 2):
+            bar = df.iloc[i]
+            bar_range = float(bar.High - bar.Low)
+            bar_body = abs(float(bar.Close - bar.Open))
+            bar_atr = float(bar.ATR) if pd.notna(bar.ATR) else 0.0
+            if bar_range <= 0 or bar_atr <= 0:
+                continue
+            loc = (float(bar.Close) - float(bar.Low)) / bar_range
+            impulse_ok = (
+                float(bar.Close) > float(bar.Open) and bar_body >= 0.80 * bar_atr
+                and bar_body / bar_range >= 0.60 and loc >= 0.75
+                if direction == "BUY" else
+                float(bar.Close) < float(bar.Open) and bar_body >= 0.80 * bar_atr
+                and bar_body / bar_range >= 0.60 and loc <= 0.25
+            )
+            if impulse_ok:
+                displacement_i = i
+                break
+        if displacement_i is None:
+            continue
+
+        # Exact last opposing candle before displacement is the origin.
+        origin_i = None
+        for i in range(displacement_i - 1, max(sweep_i, displacement_i - 5) - 1, -1):
+            origin_bar = df.iloc[i]
+            opposing = (float(origin_bar.Close) < float(origin_bar.Open)
+                        if direction == "BUY" else
+                        float(origin_bar.Close) > float(origin_bar.Open))
+            if opposing:
+                origin_i = i
+                break
+        if origin_i is None:
+            continue
+
+        # Current completed M5 candle must retest the origin and then
+        # reject it with a directional close-break. No entry on sweep alone.
+        origin = df.iloc[origin_i]
+        if direction == "BUY":
+            retested = (float(last.Low) <= float(origin.High) + 0.10 * atr
+                        and float(last.Low) >= float(origin.Low) - 0.10 * atr)
+            confirmed = (float(last.Close) > float(last.Open)
+                         and float(last.Close) > float(prev.High)
+                         and float(last.Close) > float(origin.High))
+        else:
+            retested = (float(last.High) >= float(origin.Low) - 0.10 * atr
+                        and float(last.High) <= float(origin.High) + 0.10 * atr)
+            confirmed = (float(last.Close) < float(last.Open)
+                         and float(last.Close) < float(prev.Low)
+                         and float(last.Close) < float(origin.Low))
+        if displacement_i < len(df) - 2 and retested and confirmed:
             return {"setup_type": "LIQUIDITY SWEEP",
-                    "evidence": f"Confirmed {direction.lower()}-side swing sweep, rejection back through {level:.6f}, and M5 close-break"}
+                    "evidence": (f"{direction} sweep of confirmed swing {level:.6f} "
+                                 f"at {df.index[sweep_i]}, displacement at "
+                                 f"{df.index[displacement_i]}, exact origin candle "
+                                 f"{df.index[origin_i]} retested and M5 confirmation")}
 
     # 3) TWO-SIDED consolidation breakout + exact origin-candle retest.
     # Both edges of the SAME compact base must be decisively closed through.
