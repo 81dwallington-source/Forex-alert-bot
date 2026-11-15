@@ -36,4 +36,10 @@ These references supplement the other approved Bot 3 setup rules; they do not re
 
 ## Image inventory and quality note
 
-The folder currently contains seven chart-image files: AUD/USD, EUR/CHF, EUR/NZD, GBP/JPY, NZD/CAD, NZD/JPY, and USD/CAD. The AUD/USD, EUR/NZD, and GBP/JPY files currently resolve to only 240 × 111 pixels; the NZD/CAD, NZD/JPY, and USD/CAD images are 480 × 222, 700 × 323, and 640 × 296 respectively. These are present in the repository, but the low-resolution copies should not be mistaken for original-resolution screenshots.
+The folder currently contains seven chart-image files: AUD/USD, EUR/CHF, EUR/NZD, GBP/JPY, NZD/CAD, NZD/JPY, and USD/CAD. An eighth user-supplied chart reference, AUD/NZD, is still missing as an image file. The AUD/USD, EUR/NZD, and GBP/JPY files currently resolve to only 240 × 111 pixels; the NZD/CAD, NZD/JPY, and USD/CAD images are 480 × 222, 700 × 323, and 640 × 296 respectively. These are present in the repository, but the low-resolution copies should not be mistaken for original-resolution screenshots.
+
+## AUD/NZD bearish liquidity-sweep example (14 November 2026) — image outstanding
+
+- The user supplied an AUD/NZD chart as the visual reference for a bearish liquidity-sweep SELL.
+- Required visual sequence: sweep above a prior swing high, bearish reversal, pullback to the bearish move's origin candle/area, then bearish confirmation. Do not enter on the sweep itself.
+- The screenshot is not currently present in this folder. The description is recorded here so the reference is not lost; the original chart image still needs to be added.
