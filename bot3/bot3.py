@@ -27,7 +27,9 @@ log = logging.getLogger(BOT_NAME)
 
 def in_session(now=None):
     now = (now or datetime.now(timezone.utc)).astimezone(UK)
-    return SESSION_START_HOUR <= now.hour < SESSION_END_HOUR
+    # Forex is closed over the weekend; skip scans rather than treating
+    # the feed's intentional stale-quote 404 responses as a live-data failure.
+    return now.weekday() < 5 and SESSION_START_HOUR <= now.hour < SESSION_END_HOUR
 
 def load_state():
     try:
