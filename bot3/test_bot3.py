@@ -35,9 +35,11 @@ class Bot3Tests(unittest.TestCase):
         with self.assertRaises(ValueError):
             bid_stop_to_executable(1.25000, "HOLD", 0.00015)
 
-    def test_session_uses_uk_local_time(self):
+    def test_session_uses_uk_local_time_and_skips_weekends(self):
         self.assertTrue(in_session(datetime(2026,11,5,6,0,tzinfo=timezone.utc)))
         self.assertFalse(in_session(datetime(2026,11,5,23,0,tzinfo=timezone.utc)))
+        self.assertFalse(in_session(datetime(2026,11,14,12,0,tzinfo=timezone.utc)))
+        self.assertFalse(in_session(datetime(2026,11,15,12,0,tzinfo=timezone.utc)))
 
     def test_trend_requires_ordered_emas(self):
         close=list(range(1,81))
