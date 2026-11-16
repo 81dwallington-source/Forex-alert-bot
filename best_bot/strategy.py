@@ -271,7 +271,9 @@ def find_impulse_origin_retest(df: pd.DataFrame, side: str,
                 latest_bar = x.iloc[latest]
                 touched = float(latest_bar.low) <= zone_high and float(latest_bar.high) >= zone_low
                 rejected = float(latest_bar.close) > float(latest_bar.open) and float(latest_bar.close) > zone_high
-                if (impulse_size >= 1.5 * atr and made_progress and 0.50 <= retrace <= 0.85
+                if (impulse_size >= 1.5 * atr and made_progress and len(pullback) >= 3
+                        and 0.50 <= retrace <= 0.85
+                        and float(impulse.high.max()) - pullback_low >= 0.80 * atr
                         and touched and rejected
                         and pullback_low >= float(origin.low) - 0.35 * atr):
                     return {"entry": float(latest_bar.close), "origin_low": float(origin.low),
@@ -293,7 +295,9 @@ def find_impulse_origin_retest(df: pd.DataFrame, side: str,
                 latest_bar = x.iloc[latest]
                 touched = float(latest_bar.high) >= zone_low and float(latest_bar.low) <= zone_high
                 rejected = float(latest_bar.close) < float(latest_bar.open) and float(latest_bar.close) < zone_low
-                if (impulse_size >= 1.5 * atr and made_progress and 0.50 <= retrace <= 0.85
+                if (impulse_size >= 1.5 * atr and made_progress and len(pullback) >= 3
+                        and 0.50 <= retrace <= 0.85
+                        and pullback_high - float(impulse.low.min()) >= 0.80 * atr
                         and touched and rejected
                         and pullback_high <= float(origin.high) + 0.35 * atr):
                     return {"entry": float(latest_bar.close), "origin_low": float(origin.low),
