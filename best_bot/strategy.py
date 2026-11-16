@@ -281,7 +281,7 @@ def find_impulse_origin_retest(df: pd.DataFrame, side: str,
 
 
 def find_impulse_pullback_continuation(df: pd.DataFrame, side: str,
-                                      max_pattern_bars: int = 24) -> dict | None:
+                                      max_pattern_bars: int = 48) -> dict | None:
     """Strong directional impulse, measured retracement, then confirmed continuation.
 
     The latest completed M5 candle must reject a pullback into the EMA21/EMA50
@@ -296,7 +296,9 @@ def find_impulse_pullback_continuation(df: pd.DataFrame, side: str,
     for impulse_end in range(latest - 2, first_end - 1, -1):
         # Pullback must contain at least two completed candles after the impulse.
         pullback = x.iloc[impulse_end + 1:latest + 1]
-        if len(pullback) < 2 or len(pullback) > 9:
+        # Allow a genuine, slower retracement to develop; do not require
+        # the pullback to finish within only a handful of M5 candles.
+        if len(pullback) < 2 or len(pullback) > 18:
             continue
         # Test impulse legs of 3–7 candles, ending at the candidate extreme.
         for leg_len in range(3, 8):
