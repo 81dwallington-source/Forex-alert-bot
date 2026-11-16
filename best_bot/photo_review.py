@@ -112,14 +112,21 @@ def _get_vision_model():
     global _VISION_MODEL
     if _VISION_MODEL is None:
         try:
-            import moondream as md
+            import torch
+            from transformers import AutoModelForCausalLM
         except ImportError as exc:
             raise RuntimeError(
-                "The optional local vision model did not install; screenshot review is unavailable"
+                "The CPU vision dependencies did not install; screenshot review is unavailable"
             ) from exc
-        # Runs locally on the GitHub Actions CPU runner. No external vision API
-        # key is used. The base model weights are downloaded on first use.
-        _VISION_MODEL = md.photon("moondream2", device="cpu")
+        # Photon requires a supported GPU and cannot run on GitHub's standard
+        # CPU runner. Load Moondream 2 through Transformers explicitly on CPU.
+        # No external vision API key is used; weights download on first use.
+        _VISION_MODEL = AutoModelForCausalLM.from_pretrained(
+            "vikhyatk/moondream2",
+            trust_remote_code=True,
+            dtype=torch.float32,
+            device_map="cpu",
+        ).eval()
     return _VISION_MODEL
 
 
