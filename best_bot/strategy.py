@@ -455,11 +455,13 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: floa
         find_origin_retest(a, direction),
         find_liquidity_sweep_retest(a, direction),
         find_impulse_origin_retest(a, direction),
+        find_trend_consolidation_break_retest(a, direction),
     )
     allowed = {
         "TWO_SIDED_SWEEP_ORIGIN_RETEST",
         "LIQUIDITY_SWEEP_RANGE_RETEST",
         "IMPULSE_ORIGIN_RETEST",
+        "TREND_CONSOLIDATION_BREAK_RETEST",
     }
     pattern = next((p for p in candidates if p and p.get("setup") in allowed), None)
     if not pattern:
