@@ -130,6 +130,22 @@ def valid_stop_distance(risk: float, pip: float, atr: float) -> bool:
     return minimum <= risk <= MAX_STOP_ATR * atr
 
 
+def impulse_retracement(side: str, origin_level: float,
+                        impulse_extreme: float, pullback_extreme: float) -> float:
+    """Measure pullback against the complete origin-to-impulse move."""
+    if side == "BUY":
+        full_move = impulse_extreme - origin_level
+        retraced = impulse_extreme - pullback_extreme
+    elif side == "SELL":
+        full_move = origin_level - impulse_extreme
+        retraced = pullback_extreme - impulse_extreme
+    else:
+        return 0.0
+    if full_move <= 0:
+        return 0.0
+    return retraced / full_move
+
+
 
 def find_origin_retest(df: pd.DataFrame, side: str, range_bars: int = 12,
                        max_pattern_bars: int = 30) -> dict | None:
@@ -213,10 +229,12 @@ def find_origin_retest(df: pd.DataFrame, side: str, range_bars: int = 12,
 
 def find_impulse_origin_retest(df: pd.DataFrame, side: str,
                               max_pattern_bars: int = 28) -> dict | None:
-    """Find a directional impulse, pullback to its launch candle, then rejection.
+    """Find a directional impulse, deep pullback to its launch candle, then rejection.
 
-    The latest completed candle must retest the launch candle body and close
-    back in the direction of the impulse. BUY/SELL are exact mirrors.
+    Pullback depth is measured from the complete launch-candle extreme to the
+    impulse extreme, not from a shortened subset of impulse candles. The
+    latest completed candle must retest the launch body and reject in direction.
+    BUY/SELL are exact mirrors; 50–85% retracement is mandatory.
     """
     if side not in ("BUY", "SELL") or len(df) < 18:
         return None
@@ -249,7 +267,7 @@ def find_impulse_origin_retest(df: pd.DataFrame, side: str,
                 )
                 pullback = x.iloc[impulse_end + 1:latest + 1]
                 pullback_low = float(pullback.low.min()) if not pullback.empty else float("inf")
-                retrace = (float(impulse.high.max()) - pullback_low) / max(float(impulse.high.max()) - float(impulse.low.min()), 1e-12)
+                retrace = impulse_retracement("BUY", float(origin.low), float(impulse.high.max()), pullback_low)
                 latest_bar = x.iloc[latest]
                 touched = float(latest_bar.low) <= zone_high and float(latest_bar.high) >= zone_low
                 rejected = float(latest_bar.close) > float(latest_bar.open) and float(latest_bar.close) > zone_high
@@ -271,7 +289,7 @@ def find_impulse_origin_retest(df: pd.DataFrame, side: str,
                 )
                 pullback = x.iloc[impulse_end + 1:latest + 1]
                 pullback_high = float(pullback.high.max()) if not pullback.empty else float("-inf")
-                retrace = (pullback_high - float(impulse.low.min())) / max(float(impulse.high.max()) - float(impulse.low.min()), 1e-12)
+                retrace = impulse_retracement("SELL", float(origin.high), float(impulse.low.min()), pullback_high)
                 latest_bar = x.iloc[latest]
                 touched = float(latest_bar.high) >= zone_low and float(latest_bar.low) <= zone_high
                 rejected = float(latest_bar.close) < float(latest_bar.open) and float(latest_bar.close) < zone_low
@@ -353,7 +371,7 @@ def find_impulse_pullback_continuation(df: pd.DataFrame, side: str,
                            and float(last.close) > float(x.close.iloc[latest - 1])
                            and float(last.close) > float(last.ema21)
                            and float(last.close) >= float(last.high) - 0.55 * float(last.high - last.low))
-                if (strong and 0.25 <= retrace <= 0.70 and ema_touch and confirm
+                if (strong and 0.50 <= retrace <= 0.85 and ema_touch and confirm
                         and float(pullback.low.min()) > impulse_low - 0.20 * atr):
                     pb_high = float(pullback.high.max())
                     pb_low = float(pullback.low.min())
