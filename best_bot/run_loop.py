@@ -1,8 +1,7 @@
-"""Keep the Best Bot scanning on one GitHub Actions runner.
+"""Keep Best Bot scanning and receiving Telegram chart screenshots.
 
-GitHub scheduled events can be delayed. This loop performs an immediate scan,
-then starts another scan on five-minute boundaries for up to 5h40m. The
-workflow saves the signal/outcome ledger when the loop exits.
+The runner scans every five minutes and checks Telegram for incoming chart photos
+between scans. GitHub Actions remains a best-effort hosted runner, not a 24/7 service.
 """
 from __future__ import annotations
 
@@ -10,8 +9,10 @@ import time
 from datetime import datetime, timezone
 
 from live_bot import scan
+from photo_review import poll_telegram_photos
 
 INTERVAL_SECONDS = 5 * 60
+PHOTO_POLL_SECONDS = 5
 MAX_RUNTIME_SECONDS = 340 * 60  # leave room inside GitHub's six-hour job limit
 
 
@@ -30,18 +31,24 @@ def main() -> None:
         try:
             scan()
         except Exception as exc:
-            # A temporary feed/API failure must not kill the whole scan loop.
             print(f"Scan loop caught {type(exc).__name__}: {exc}", flush=True)
 
+        # Poll photos throughout the wait instead of only once per five-minute scan.
         next_scan += INTERVAL_SECONDS
-        now = time.monotonic()
-        if next_scan < now:
-            # If a scan took longer than five minutes, start the next one now.
-            next_scan = now
-        sleep_for = min(next_scan - now, max(0.0, deadline - now))
-        if sleep_for > 0:
-            print(f"Next scan in {sleep_for:.0f} seconds", flush=True)
-            time.sleep(sleep_for)
+        while time.monotonic() < deadline:
+            try:
+                received = poll_telegram_photos()
+                if received:
+                    print(f"Reviewed {received} Telegram screenshot(s)", flush=True)
+            except Exception as exc:
+                print(f"Telegram photo polling caught {type(exc).__name__}: {exc}", flush=True)
+
+            now = time.monotonic()
+            if now >= next_scan:
+                break
+            time.sleep(min(PHOTO_POLL_SECONDS, next_scan - now, deadline - now))
+        if next_scan < time.monotonic():
+            next_scan = time.monotonic()
 
     print(f"Scan loop finished after {scan_number} scans", flush=True)
 
