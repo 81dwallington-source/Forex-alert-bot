@@ -139,7 +139,7 @@ def append_log(row):
     """Upsert one CSV row per trade: PENDING is replaced by its final outcome."""
     fields = [
         "signal_time_utc","pair","direction","entry_reference","stop_loss","take_profit",
-        "risk_pips","planned_rr","setup_type","origin_candle_low","origin_candle_high","outcome","outcome_time_utc","outcome_note","data_source",
+        "risk_pips","planned_rr","setup_type","origin_candle_low","origin_candle_high","origin_candle_body_low","origin_candle_body_high","origin_candle_time_utc","outcome","outcome_time_utc","outcome_note","data_source",
     ]
     key = (str(row.get("signal_time_utc", "")), str(row.get("pair", "")), str(row.get("direction", "")))
     rows = []
@@ -251,8 +251,6 @@ def scan():
     print(f"Starting scan {now.isoformat()} across {len(PAIRS)} pairs", flush=True)
 
     for pair in PAIRS:
-        if sent_today + sent >= MAX_ALERTS_PER_UTC_DAY:
-            break
         if MAX_ONE_PER_PAIR_PER_UTC_DAY and pair in used_pairs:
             continue
         try:
@@ -319,6 +317,8 @@ def scan():
                         }
                         changed = True
 
+            if sent_today + sent >= MAX_ALERTS_PER_UTC_DAY:
+                continue  # Keep scanning for approach/invalidation notices; cap only trade entries.
             sig = make_signal(m5, m15, h1, pip)
             if not sig:
                 continue
@@ -345,6 +345,9 @@ def scan():
                 "risk_pips":float(sig["risk_pips"]), "planned_rr":float(sig["rr"]),
                 "setup_type":sig["setup"], "origin_candle_low":float(sig["origin_low"]),
                 "origin_candle_high":float(sig["origin_high"]),
+                "origin_candle_body_low":float(sig.get("origin_body_low", sig["origin_low"])),
+                "origin_candle_body_high":float(sig.get("origin_body_high", sig["origin_high"])),
+                "origin_candle_time_utc":sig.get("origin_time", ""),
                 "outcome":"PENDING", "outcome_time_utc":"", "outcome_note":"",
                 "data_source":"BiQuote public FX OHLC; not broker-verified",
             }
