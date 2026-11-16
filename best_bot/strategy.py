@@ -206,7 +206,7 @@ def find_origin_retest(df: pd.DataFrame, side: str, range_bars: int = 12,
             touched = float(last.low) <= zone_high and float(last.high) >= zone_low
             confirmed = float(last.close) > float(last.open) and float(last.close) > zone_high
             if touched and confirmed:
-                return {"entry":float(last.close),"origin_low":float(origin.low),
+                return {"entry":zone_high,"origin_low":float(origin.low),
                         "origin_high":float(origin.high),"origin_body_low":zone_low,
                         "origin_body_high":zone_high,"origin_time":str(df.index[origin_i]),
                         "sweep_extreme":float(prior.low.min()),"atr":atr,
@@ -233,7 +233,7 @@ def find_origin_retest(df: pd.DataFrame, side: str, range_bars: int = 12,
             touched = float(last.high) >= zone_low and float(last.low) <= zone_high
             confirmed = float(last.close) < float(last.open) and float(last.close) < zone_low
             if touched and confirmed:
-                return {"entry":float(last.close),"origin_low":float(origin.low),
+                return {"entry":zone_low,"origin_low":float(origin.low),
                         "origin_high":float(origin.high),"origin_body_low":zone_low,
                         "origin_body_high":zone_high,"origin_time":str(origin.get("time", origin_i)),
                         "sweep_extreme":float(prior.high.max()),"atr":atr,
