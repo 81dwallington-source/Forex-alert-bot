@@ -146,6 +146,11 @@ def impulse_retracement(side: str, origin_level: float,
     return retraced / full_move
 
 
+def valid_deep_pullback(retracement: float, depth_atr: float, bars: int) -> bool:
+    """Fail closed: no impulse entry on a shallow, tiny, or one/two-bar dip."""
+    return bool(0.50 <= retracement <= 0.85 and depth_atr >= 0.80 and bars >= 3)
+
+
 
 def find_origin_retest(df: pd.DataFrame, side: str, range_bars: int = 12,
                        max_pattern_bars: int = 30) -> dict | None:
@@ -271,9 +276,8 @@ def find_impulse_origin_retest(df: pd.DataFrame, side: str,
                 latest_bar = x.iloc[latest]
                 touched = float(latest_bar.low) <= zone_high and float(latest_bar.high) >= zone_low
                 rejected = float(latest_bar.close) > float(latest_bar.open) and float(latest_bar.close) > zone_high
-                if (impulse_size >= 1.5 * atr and made_progress and len(pullback) >= 3
-                        and 0.50 <= retrace <= 0.85
-                        and float(impulse.high.max()) - pullback_low >= 0.80 * atr
+                if (impulse_size >= 1.5 * atr and made_progress
+                        and valid_deep_pullback(retrace, (float(impulse.high.max()) - pullback_low) / atr, len(pullback))
                         and touched and rejected
                         and pullback_low >= float(origin.low) - 0.35 * atr):
                     return {"entry": float(latest_bar.close), "origin_low": float(origin.low),
@@ -295,9 +299,8 @@ def find_impulse_origin_retest(df: pd.DataFrame, side: str,
                 latest_bar = x.iloc[latest]
                 touched = float(latest_bar.high) >= zone_low and float(latest_bar.low) <= zone_high
                 rejected = float(latest_bar.close) < float(latest_bar.open) and float(latest_bar.close) < zone_low
-                if (impulse_size >= 1.5 * atr and made_progress and len(pullback) >= 3
-                        and 0.50 <= retrace <= 0.85
-                        and pullback_high - float(impulse.low.min()) >= 0.80 * atr
+                if (impulse_size >= 1.5 * atr and made_progress
+                        and valid_deep_pullback(retrace, (pullback_high - float(impulse.low.min())) / atr, len(pullback))
                         and touched and rejected
                         and pullback_high <= float(origin.high) + 0.35 * atr):
                     return {"entry": float(latest_bar.close), "origin_low": float(origin.low),
@@ -353,7 +356,8 @@ def find_impulse_pullback_continuation(df: pd.DataFrame, side: str,
                            and float(last.close) < float(x.close.iloc[latest - 1])
                            and float(last.close) < float(last.ema21)
                            and float(last.close) <= float(last.low) + 0.55 * float(last.high - last.low))
-                if (strong and 0.50 <= retrace <= 0.85 and ema_touch and confirm
+                if (strong and valid_deep_pullback(retrace, (float(pullback.high.max()) - impulse_low) / atr, len(pullback))
+                        and ema_touch and confirm
                         and float(pullback.high.max()) < impulse_high + 0.20 * atr):
                     pb_high = float(pullback.high.max())
                     pb_low = float(pullback.low.min())
@@ -375,7 +379,8 @@ def find_impulse_pullback_continuation(df: pd.DataFrame, side: str,
                            and float(last.close) > float(x.close.iloc[latest - 1])
                            and float(last.close) > float(last.ema21)
                            and float(last.close) >= float(last.high) - 0.55 * float(last.high - last.low))
-                if (strong and 0.50 <= retrace <= 0.85 and ema_touch and confirm
+                if (strong and valid_deep_pullback(retrace, (impulse_high - float(pullback.low.min())) / atr, len(pullback))
+                        and ema_touch and confirm
                         and float(pullback.low.min()) > impulse_low - 0.20 * atr):
                     pb_high = float(pullback.high.max())
                     pb_low = float(pullback.low.min())
