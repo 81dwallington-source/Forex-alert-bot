@@ -414,8 +414,8 @@ def find_trend_consolidation_break_retest(df: pd.DataFrame, side: str,
 
 
 def find_liquidity_sweep_retest(df: pd.DataFrame, side: str,
-                                range_lookback: int = 12,
-                                max_pattern_bars: int = 30) -> dict | None:
+                                range_lookback: int = 36,
+                                max_pattern_bars: int = 48) -> dict | None:
     """Detect sweep reversals with either same-edge or opposite-edge retests.
 
     BUY: sweep below range low, then either displace/retest the low from above,
