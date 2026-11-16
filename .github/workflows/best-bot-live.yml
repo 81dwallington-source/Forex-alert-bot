@@ -18,7 +18,7 @@ permissions:
 
 concurrency:
   group: best-bot-live-scanner
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   scan:
