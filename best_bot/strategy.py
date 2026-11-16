@@ -208,7 +208,7 @@ def find_origin_retest(df: pd.DataFrame, side: str, range_bars: int = 12,
             if touched and confirmed:
                 return {"entry":float(last.close),"origin_low":float(origin.low),
                         "origin_high":float(origin.high),"origin_body_low":zone_low,
-                        "origin_body_high":zone_high,"origin_time":str(origin.get("time", origin_i)),
+                        "origin_body_high":zone_high,"origin_time":str(df.index[origin_i]),
                         "sweep_extreme":float(prior.low.min()),"atr":atr,
                         "range_high":rh,"range_low":rl,"setup":"TWO_SIDED_SWEEP_ORIGIN_RETEST"}
         else:
@@ -288,7 +288,7 @@ def find_two_sided_origin_approach(df: pd.DataFrame, side: str,
             low, high = sorted((float(x.open.iloc[oi]), float(x.close.iloc[oi])))
             later = x.iloc[breakout_i+1:]
             if later.empty or float(later.high.max()) >= low: continue
-        return {"direction":side,"origin_time":str(x.index[oi]),
+        return {"direction":side,"origin_time":str(df.index[oi]),
                 "origin_low":float(x.low.iloc[oi]),"origin_high":float(x.high.iloc[oi]),
                 "origin_body_low":low,"origin_body_high":high,"atr":atr,
                 "setup":"TWO_SIDED_SWEEP_ORIGIN_RETEST"}
