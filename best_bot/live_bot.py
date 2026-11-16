@@ -17,7 +17,7 @@ import requests
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
-from strategy import make_signal, find_impulse_origin_approach  # noqa: E402
+from strategy import make_signal, find_impulse_origin_approach, trend  # noqa: E402
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
@@ -228,10 +228,10 @@ def format_signal(pair, direction, entry, stop, target, risk_pips, stamp, rr, at
         f"PATTERN CONFIRMED: {setup}\n"
         f"Origin candle body: {(origin_body_low if origin_body_low is not None else origin_low):.5f}–{(origin_body_high if origin_body_high is not None else origin_high):.5f}\n"
         + (f"Origin candle started: {origin_time}\n" if origin_time else "")
-        f"M5 entry + M15/H1 trend aligned\n"
-        f"Completed candle: {stamp.strftime('%Y-%m-%d %H:%M UTC')}\n"
-        f"Public BiQuote feed — NOT broker-verified. Check MT4 spread and price before entry; "
-        f"skip if price has moved more than 0.20 ATR. Risk no more than 0.25%."
+        + f"M5 entry + M15/H1 trend aligned\n"
+        + f"Completed candle: {stamp.strftime('%Y-%m-%d %H:%M UTC')}\n"
+        + f"Public BiQuote feed — NOT broker-verified. Check MT4 spread and price before entry; "
+        + f"skip if price has moved more than 0.20 ATR. Risk no more than 0.25%."
     )
 
 
