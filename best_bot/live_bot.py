@@ -17,7 +17,7 @@ import requests
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
-from strategy import make_signal, find_impulse_origin_approach, find_two_sided_origin_approach, trend  # noqa: E402
+from strategy import make_signal  # noqa: E402
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
@@ -269,57 +269,8 @@ def scan():
                 continue
             live_price = float(max(live_bars, key=lambda b:b["time"])["close"])
 
-            # Invalidate an announced origin watch if price decisively breaks its wick.
-            watch_state = state.setdefault("origin_watch_state", {})
-            for watch_key, watch in list(watch_state.items()):
-                if watch.get("pair") != pair or watch.get("status") != "APPROACH_ALERTED":
-                    continue
-                watch_atr = float(watch.get("atr", 0.0))
-                invalid = (
-                    (watch.get("direction") == "BUY" and live_price < float(watch["origin_low"]) - 0.20 * watch_atr)
-                    or (watch.get("direction") == "SELL" and live_price > float(watch["origin_high"]) + 0.20 * watch_atr)
-                )
-                if invalid:
-                    send_telegram(
-                        f"⚠️ BEST BOT — ORIGIN SETUP INVALIDATED\n{pair} {watch['direction']}\n"
-                        f"Origin candle: {float(watch['body_low']):.5f}–{float(watch['body_high']):.5f}\n"
-                        f"Current price: {live_price:.5f}\n"
-                        "Price broke beyond the origin candle structure. No entry."
-                    )
-                    watch["status"] = "INVALIDATED"
-                    changed = True
-
-            # Early warning only: notify as price approaches the exact launch candle body.
-            direction = trend(m15)
-            if direction and trend(h1) == direction:
-                approach = (find_two_sided_origin_approach(m5, direction)
-                            or find_impulse_origin_approach(m5, direction))
-                if approach:
-                    body_low = float(approach["origin_body_low"])
-                    body_high = float(approach["origin_body_high"])
-                    atr_approach = float(approach["atr"])
-                    distance = (live_price - body_high) if direction == "BUY" else (body_low - live_price)
-                    watch_key = f"{pair}|{direction}|{approach['origin_time']}"
-                    if 0 < distance <= 0.75 * atr_approach and watch_key not in state["origin_prealerts"]:
-                        send_telegram(
-                            f"👀 BEST BOT — APPROACHING ORIGIN CANDLE\n{pair} {direction}\n"
-                            f"Origin candle body: {body_low:.5f}–{body_high:.5f}\n"
-                            f"Current price: {live_price:.5f}\n"
-                            f"Distance to origin body: {distance / pip:.1f} pips\n"
-                            f"Origin candle: {approach['origin_time']}\n"
-                            "PRE-ALERT ONLY — no trade entry. Waiting for the origin retest and completed M5 confirmation."
-                        )
-                        state["origin_prealerts"].append(watch_key)
-                        watch_state[watch_key] = {
-                            "pair": pair, "direction": direction, "origin_time": approach["origin_time"],
-                            "origin_low": float(approach["origin_low"]), "origin_high": float(approach["origin_high"]),
-                            "body_low": body_low, "body_high": body_high, "atr": atr_approach,
-                            "status": "APPROACH_ALERTED",
-                        }
-                        changed = True
-
             if sent_today + sent >= MAX_ALERTS_PER_UTC_DAY:
-                continue  # Keep scanning for approach/invalidation notices; cap only trade entries.
+                continue  # Daily cap applies to confirmed trade-entry alerts.
             sig = make_signal(m5, m15, h1, pip)
             if not sig:
                 continue
