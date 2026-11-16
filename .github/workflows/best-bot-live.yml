@@ -43,26 +43,27 @@ jobs:
           pip install -r requirements.txt
 
       - name: Check scanner syntax
-        run: python -m py_compile best_bot/strategy.py best_bot/live_bot.py best_bot/run_loop.py
+        run: python -m py_compile best_bot/strategy.py best_bot/live_bot.py best_bot/run_loop.py best_bot/photo_review.py
 
       - name: Run strategy regression tests
         run: python -m pytest -q best_bot/test_strategy.py
 
-      - name: Run five-minute live scan loop
+      - name: Run five-minute scan and Telegram photo listener
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: python best_bot/run_loop.py
 
-      - name: Save signal log and outcome state
+      - name: Save signal log, outcome state, and Telegram update offset
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add best_bot/live_signals.csv best_bot/live_state.json
+          git add best_bot/live_signals.csv best_bot/live_state.json best_bot/telegram_update_offset.json
           if ! git diff --cached --quiet; then
-            git commit -m "Update Best Bot signal and outcome ledger [skip ci]"
+            git commit -m "Update Best Bot signal, outcome and Telegram inbox state [skip ci]"
             git push
           fi
