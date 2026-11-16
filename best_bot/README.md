@@ -10,6 +10,8 @@ Every alert must be classified as exactly one of these completed-candle M5 patte
 2. **Strong impulse + origin-candle retest** — a clear multi-candle directional impulse moves at least 1.5 ATR from its launch candle, with meaningful directional candle bodies and a close near the impulse extreme; price later returns to the launch candle body and rejects it.
 3. **Trend + consolidation + breakout + retest** — M5 EMA21/50/200 stack and EMA21/50 slope agree; a compact consolidation breaks with a decisive candle; price retests the broken range edge and closes back in the breakout direction.
 
+The impulse-pullback continuation detector also allows a slower retracement of up to 18 completed M5 candles (rather than only 9), while still requiring a measured 25–70% pullback, EMA21/EMA50-area interaction, a completed directional confirmation candle, aligned M15/H1 trend, a structural pullback stop and at least 1.5R. It must not chase the initial impulse or alert before confirmation.
+
 All three patterns have BUY and SELL versions. The bot calculates its own entry, structural stop and 1.5R target. If the pattern is incomplete, unclear, unclassified, stale, too extended, or requires an invalid stop distance, it rejects the trade. No generic EMA-only fallback is permitted.
 
 ## Confirmation and risk controls
