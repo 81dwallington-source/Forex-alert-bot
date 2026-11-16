@@ -270,6 +270,7 @@ def scan():
                 "LIQUIDITY_SWEEP_RANGE_RETEST",
                 "LIQUIDITY_SWEEP_OPPOSITE_RANGE_BREAK_RETEST",
                 "IMPULSE_ORIGIN_RETEST",
+                "IMPULSE_PULLBACK_CONTINUATION",
                 "TREND_CONSOLIDATION_BREAK_RETEST",
             }
             if sig.get("setup") not in allowed_setups:
