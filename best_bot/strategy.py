@@ -339,12 +339,11 @@ def find_trend_consolidation_break_retest(df: pd.DataFrame, side: str,
 def find_liquidity_sweep_retest(df: pd.DataFrame, side: str,
                                 range_lookback: int = 12,
                                 max_pattern_bars: int = 30) -> dict | None:
-    """Video-based range sweep, decisive reversal, retest and confirmation.
+    """Detect sweep reversals with either same-edge or opposite-edge retests.
 
-    SELL: establish a compact range, wick above its high and close back inside,
-    confirm bearish displacement, then retest/reject the range high.
-    BUY is the exact inverse at the range low. Only the latest completed M5
-    candle may trigger; a sweep alone never produces a signal.
+    BUY: sweep below range low, then either displace/retest the low from above,
+    or break above the opposite range high and retest that breakout level.
+    SELL is the exact inverse. The latest completed M5 candle must confirm.
     """
     if side not in ("BUY", "SELL") or len(df) < range_lookback + 15:
         return None
@@ -352,7 +351,6 @@ def find_liquidity_sweep_retest(df: pd.DataFrame, side: str,
     latest = len(x) - 1
     first = max(range_lookback + 2, latest - max_pattern_bars)
 
-    # Most recent complete sequence first. The range is fixed before the sweep.
     for sweep_i in range(latest - 3, first - 1, -1):
         base = x.iloc[sweep_i - range_lookback:sweep_i]
         if len(base) != range_lookback:
@@ -363,78 +361,92 @@ def find_liquidity_sweep_retest(df: pd.DataFrame, side: str,
             continue
 
         sweep = x.iloc[sweep_i]
-        if side == "SELL":
-            # A genuine grab above range high, followed by a close back inside.
-            if not (float(sweep.high) > rh and float(sweep.close) < rh):
-                continue
-            sweep_extreme = float(sweep.high)
-            displacement_i = None
-            for j in range(sweep_i + 1, min(latest, sweep_i + 4) + 1):
-                bar = x.iloc[j]
-                body = abs(float(bar.close) - float(bar.open))
-                if (float(bar.close) < float(bar.open)
-                        and float(bar.close) < rh - 0.20 * atr
-                        and body >= 0.60 * atr):
-                    displacement_i = j
-                    break
-            if displacement_i is None or latest <= displacement_i:
-                continue
-
-            # Retest the swept range high from below; confirmation must be last.
-            bar = x.iloc[latest]
-            touched = float(bar.high) >= rh - 0.15 * atr and float(bar.low) < rh
-            confirmed = (float(bar.close) < float(bar.open)
-                         and float(bar.close) < rh
-                         and float(bar.close) < float(bar.high))
-            if not (touched and confirmed):
-                continue
-            origin_candidates = [
-                j for j in range(sweep_i, displacement_i)
-                if float(x.close.iloc[j]) > float(x.open.iloc[j])
-            ]
-            origin = x.iloc[origin_candidates[-1]] if origin_candidates else sweep
-            return {
-                "entry": float(bar.close), "origin_low": float(origin.low),
-                "origin_high": float(origin.high), "sweep_extreme": sweep_extreme,
-                "atr": atr, "range_high": rh, "range_low": rl,
-                "setup": "LIQUIDITY_SWEEP_RANGE_RETEST",
-            }
-        else:
-            # A genuine grab below range low, followed by a close back inside.
-            if not (float(sweep.low) < rl and float(sweep.close) > rl):
-                continue
+        if side == "BUY":
+            swept = float(sweep.low) < rl and float(sweep.close) > rl
             sweep_extreme = float(sweep.low)
-            displacement_i = None
+            if not swept:
+                continue
+            # Variation A: reversal displaces away from the swept low, then retests it.
             for j in range(sweep_i + 1, min(latest, sweep_i + 4) + 1):
                 bar = x.iloc[j]
                 body = abs(float(bar.close) - float(bar.open))
                 if (float(bar.close) > float(bar.open)
                         and float(bar.close) > rl + 0.20 * atr
                         and body >= 0.60 * atr):
-                    displacement_i = j
+                    latest_bar = x.iloc[latest]
+                    touched = float(latest_bar.low) <= rl + 0.15 * atr and float(latest_bar.high) > rl
+                    confirmed = float(latest_bar.close) > float(latest_bar.open) and float(latest_bar.close) > rl
+                    if latest > j and touched and confirmed:
+                        origins = [k for k in range(sweep_i, j) if float(x.close.iloc[k]) < float(x.open.iloc[k])]
+                        origin = x.iloc[origins[-1]] if origins else sweep
+                        return {"entry":float(latest_bar.close),"origin_low":float(origin.low),
+                                "origin_high":float(origin.high),"sweep_extreme":sweep_extreme,
+                                "atr":atr,"range_high":rh,"range_low":rl,
+                                "setup":"LIQUIDITY_SWEEP_RANGE_RETEST"}
+            # Variation B: sweep low, break the opposite range high, retest that high.
+            breakout_i = None
+            for j in range(sweep_i + 1, min(latest, sweep_i + 9) + 1):
+                bar = x.iloc[j]
+                body = abs(float(bar.close) - float(bar.open))
+                if (float(bar.close) > rh and float(bar.close) > float(bar.open)
+                        and body >= 0.60 * atr):
+                    breakout_i = j
                     break
-            if displacement_i is None or latest <= displacement_i:
+            if breakout_i is not None and latest > breakout_i:
+                bar = x.iloc[latest]
+                touched = float(bar.low) <= rh + 0.15 * atr and float(bar.high) >= rh - 0.10 * atr
+                confirmed = float(bar.close) > float(bar.open) and float(bar.close) > rh
+                if touched and confirmed:
+                    origins = [k for k in range(sweep_i + 1, breakout_i)
+                               if float(x.close.iloc[k]) < float(x.open.iloc[k])]
+                    origin = x.iloc[origins[-1]] if origins else sweep
+                    return {"entry":float(bar.close),"origin_low":float(origin.low),
+                            "origin_high":float(origin.high),"sweep_extreme":sweep_extreme,
+                            "atr":atr,"range_high":rh,"range_low":rl,
+                            "setup":"LIQUIDITY_SWEEP_OPPOSITE_RANGE_BREAK_RETEST"}
+        else:
+            swept = float(sweep.high) > rh and float(sweep.close) < rh
+            sweep_extreme = float(sweep.high)
+            if not swept:
                 continue
-
-            # Retest the swept range low from above; confirmation must be last.
-            bar = x.iloc[latest]
-            touched = float(bar.low) <= rl + 0.15 * atr and float(bar.high) > rl
-            confirmed = (float(bar.close) > float(bar.open)
-                         and float(bar.close) > rl
-                         and float(bar.close) > float(bar.low))
-            if not (touched and confirmed):
-                continue
-            origin_candidates = [
-                j for j in range(sweep_i, displacement_i)
-                if float(x.close.iloc[j]) < float(x.open.iloc[j])
-            ]
-            origin = x.iloc[origin_candidates[-1]] if origin_candidates else sweep
-            return {
-                "entry": float(bar.close), "origin_low": float(origin.low),
-                "origin_high": float(origin.high), "sweep_extreme": sweep_extreme,
-                "atr": atr, "range_high": rh, "range_low": rl,
-                "setup": "LIQUIDITY_SWEEP_RANGE_RETEST",
-            }
+            # Variation A: reversal displaces away from swept high, then retests it.
+            for j in range(sweep_i + 1, min(latest, sweep_i + 4) + 1):
+                bar = x.iloc[j]
+                body = abs(float(bar.close) - float(bar.open))
+                if (float(bar.close) < float(bar.open)
+                        and float(bar.close) < rh - 0.20 * atr
+                        and body >= 0.60 * atr):
+                    latest_bar = x.iloc[latest]
+                    touched = float(latest_bar.high) >= rh - 0.15 * atr and float(latest_bar.low) < rh
+                    confirmed = float(latest_bar.close) < float(latest_bar.open) and float(latest_bar.close) < rh
+                    if latest > j and touched and confirmed:
+                        origins = [k for k in range(sweep_i, j) if float(x.close.iloc[k]) > float(x.open.iloc[k])]
+                        origin = x.iloc[origins[-1]] if origins else sweep
+                        return {"entry":float(latest_bar.close),"origin_low":float(origin.low),
+                                "origin_high":float(origin.high),"sweep_extreme":sweep_extreme,
+                                "atr":atr,"range_high":rh,"range_low":rl,
+                                "setup":"LIQUIDITY_SWEEP_RANGE_RETEST"}
+            # Variation B: sweep high, break the opposite range low, retest that low.
+            breakout_i = None
+            for j in range(sweep_i + 1, min(latest, sweep_i + 9) + 1):
+                bar = x.iloc[j]
+                body = abs(float(bar.close) - float(bar.open))
+                if (float(bar.close) < rl and float(bar.close) < float(bar.open)
+                        and body >= 0.60 * atr):
+                    breakout_i = j
+                    break
+            if breakout_i is not None and latest > breakout_i:
+                bar = x.iloc[latest]
+                touched = float(bar.high) >= rl - 0.15 * atr and float(bar.low) <= rl + 0.10 * atr
+                confirmed = float(bar.close) < float(bar.open) and float(bar.close) < rl
+                if touched and confirmed:
+                    origins = [k for k in range(sweep_i + 1, breakout_i)
+                               if float(x.close.iloc[k]) > float(x.open.iloc[k])]
+                    origin = x.iloc[origins[-1]] if origins else sweep
+                    return {"entry":float(bar.close),"origin_low":float(origin.low),
+                            "origin_high":float(origin.high),"sweep_extreme":sweep_extreme,
+                            "atr":atr,"range_high":rh,"range_low":rl,
+                            "setup":"LIQUIDITY_SWEEP_OPPOSITE_RANGE_BREAK_RETEST"}
     return None
 
 def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: float) -> dict | None:
@@ -460,6 +472,7 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: floa
     allowed = {
         "TWO_SIDED_SWEEP_ORIGIN_RETEST",
         "LIQUIDITY_SWEEP_RANGE_RETEST",
+        "LIQUIDITY_SWEEP_OPPOSITE_RANGE_BREAK_RETEST",
         "IMPULSE_ORIGIN_RETEST",
         "TREND_CONSOLIDATION_BREAK_RETEST",
     }
