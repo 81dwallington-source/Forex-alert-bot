@@ -45,6 +45,9 @@ jobs:
       - name: Check scanner syntax
         run: python -m py_compile best_bot/strategy.py best_bot/live_bot.py best_bot/run_loop.py
 
+      - name: Run strategy regression tests
+        run: python -m pytest -q best_bot/test_strategy.py
+
       - name: Run five-minute live scan loop
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
