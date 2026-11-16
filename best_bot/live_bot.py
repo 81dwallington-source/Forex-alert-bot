@@ -17,7 +17,7 @@ import requests
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
-from strategy import make_signal  # noqa: E402
+from strategy import make_signal, find_impulse_origin_approach  # noqa: E402
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
@@ -118,11 +118,13 @@ def send_telegram(message: str) -> bool:
 
 def load_state():
     if not STATE_PATH.exists():
-        return {"signals": [], "pending": [], "last_scan_utc": None}
+        return {"signals": [], "pending": [], "origin_prealerts": [], "origin_watch_state": {}, "last_scan_utc": None}
     with STATE_PATH.open(encoding="utf-8") as f:
         state = json.load(f)
     state.setdefault("signals", [])
     state.setdefault("pending", [])
+    state.setdefault("origin_prealerts", [])
+    state.setdefault("origin_watch_state", {})
     return state
 
 
@@ -216,7 +218,7 @@ def outcome_updates(state, candle_cache):
     return changed
 
 
-def format_signal(pair, direction, entry, stop, target, risk_pips, stamp, rr, atr, setup, origin_low, origin_high):
+def format_signal(pair, direction, entry, stop, target, risk_pips, stamp, rr, atr, setup, origin_low, origin_high, origin_body_low=None, origin_body_high=None, origin_time=None):
     return (
         f"📣 BEST BOT — {direction} {pair}\n"
         f"Entry reference: {entry:.5f}\n"
@@ -224,7 +226,8 @@ def format_signal(pair, direction, entry, stop, target, risk_pips, stamp, rr, at
         f"Take profit: {target:.5f}\n"
         f"Planned R:R: 1:{rr:.1f} | Stop: {risk_pips:.1f} pips\n"
         f"PATTERN CONFIRMED: {setup}\n"
-        f"Origin candle body: {origin_low:.5f}–{origin_high:.5f}\n"
+        f"Origin candle body: {(origin_body_low if origin_body_low is not None else origin_low):.5f}–{(origin_body_high if origin_body_high is not None else origin_high):.5f}\n"
+        + (f"Origin candle started: {origin_time}\n" if origin_time else "")
         f"M5 entry + M15/H1 trend aligned\n"
         f"Completed candle: {stamp.strftime('%Y-%m-%d %H:%M UTC')}\n"
         f"Public BiQuote feed — NOT broker-verified. Check MT4 spread and price before entry; "
@@ -261,10 +264,64 @@ def scan():
             validate_freshness(pair, m15, "15m", MAX_M15_AGE_MINUTES)
             validate_freshness(pair, h1, "1h", MAX_H1_AGE_MINUTES)
             pip = pip_size(pair)
+            stamp = m5.index[-1]
+            live_bars = [b for b in live if b.get("time") and b["time"] >= stamp]
+            if not live_bars:
+                print(f"{pair}: no current open quote; no alert", flush=True)
+                continue
+            live_price = float(max(live_bars, key=lambda b:b["time"])["close"])
+
+            # Invalidate an announced origin watch if price decisively breaks its wick.
+            watch_state = state.setdefault("origin_watch_state", {})
+            for watch_key, watch in list(watch_state.items()):
+                if watch.get("pair") != pair or watch.get("status") != "APPROACH_ALERTED":
+                    continue
+                watch_atr = float(watch.get("atr", 0.0))
+                invalid = (
+                    (watch.get("direction") == "BUY" and live_price < float(watch["origin_low"]) - 0.20 * watch_atr)
+                    or (watch.get("direction") == "SELL" and live_price > float(watch["origin_high"]) + 0.20 * watch_atr)
+                )
+                if invalid:
+                    send_telegram(
+                        f"⚠️ BEST BOT — ORIGIN SETUP INVALIDATED\n{pair} {watch['direction']}\n"
+                        f"Origin candle: {float(watch['body_low']):.5f}–{float(watch['body_high']):.5f}\n"
+                        f"Current price: {live_price:.5f}\n"
+                        "Price broke beyond the origin candle structure. No entry."
+                    )
+                    watch["status"] = "INVALIDATED"
+                    changed = True
+
+            # Early warning only: notify as price approaches the exact launch candle body.
+            direction = trend(m15)
+            if direction and trend(h1) == direction:
+                approach = find_impulse_origin_approach(m5, direction)
+                if approach:
+                    body_low = float(approach["origin_body_low"])
+                    body_high = float(approach["origin_body_high"])
+                    atr_approach = float(approach["atr"])
+                    distance = (live_price - body_high) if direction == "BUY" else (body_low - live_price)
+                    watch_key = f"{pair}|{direction}|{approach['origin_time']}"
+                    if 0 < distance <= 0.75 * atr_approach and watch_key not in state["origin_prealerts"]:
+                        send_telegram(
+                            f"👀 BEST BOT — APPROACHING ORIGIN CANDLE\n{pair} {direction}\n"
+                            f"Origin candle body: {body_low:.5f}–{body_high:.5f}\n"
+                            f"Current price: {live_price:.5f}\n"
+                            f"Distance to origin body: {distance / pip:.1f} pips\n"
+                            f"Origin candle: {approach['origin_time']}\n"
+                            "PRE-ALERT ONLY — no trade entry. Waiting for the origin retest and completed M5 confirmation."
+                        )
+                        state["origin_prealerts"].append(watch_key)
+                        watch_state[watch_key] = {
+                            "pair": pair, "direction": direction, "origin_time": approach["origin_time"],
+                            "origin_low": float(approach["origin_low"]), "origin_high": float(approach["origin_high"]),
+                            "body_low": body_low, "body_high": body_high, "atr": atr_approach,
+                            "status": "APPROACH_ALERTED",
+                        }
+                        changed = True
+
             sig = make_signal(m5, m15, h1, pip)
             if not sig:
                 continue
-            # Fail closed: only the user's three approved patterns may alert.
             allowed_setups = {
                 "TWO_SIDED_SWEEP_ORIGIN_RETEST",
                 "LIQUIDITY_SWEEP_RANGE_RETEST",
@@ -274,15 +331,8 @@ def scan():
                 "TREND_CONSOLIDATION_BREAK_RETEST",
             }
             if sig.get("setup") not in allowed_setups:
-                print(f"{pair}: rejected — setup is not one of the three approved patterns", flush=True)
+                print(f"{pair}: rejected — setup is not one of the approved patterns", flush=True)
                 continue
-            stamp = m5.index[-1]
-            # Sanity-check the reference against the provider's current open candle.
-            live_bars = [b for b in live if b.get("time") and b["time"] >= stamp]
-            if not live_bars:
-                print(f"{pair}: no current open quote; no alert", flush=True)
-                continue
-            live_price = float(max(live_bars, key=lambda b:b["time"])["close"])
             atr = float(sig["atr"])
             if abs(live_price - float(sig["signal_close"])) > MAX_ENTRY_DRIFT_ATR * atr:
                 print(f"{pair}: current price drifted > {MAX_ENTRY_DRIFT_ATR} ATR; rejected", flush=True)
@@ -300,8 +350,13 @@ def scan():
             }
             message = format_signal(pair, sig["direction"], entry, row["stop_loss"],
                                     row["take_profit"], row["risk_pips"], stamp,
-                                    row["planned_rr"], atr, sig["setup"], sig["origin_low"], sig["origin_high"])
+                                    row["planned_rr"], atr, sig["setup"], sig["origin_low"], sig["origin_high"],
+                                    sig.get("origin_body_low"), sig.get("origin_body_high"), sig.get("origin_time"))
             send_telegram(message)
+            for watch in state.get("origin_watch_state", {}).values():
+                if watch.get("pair") == pair and watch.get("direction") == sig["direction"] and watch.get("status") == "APPROACH_ALERTED":
+                    if sig.get("origin_time") and watch.get("origin_time") == sig.get("origin_time"):
+                        watch["status"] = "ENTRY_ALERTED"
             state["pending"].append(row)
             append_log(row)
             used_pairs.add(pair)
