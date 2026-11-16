@@ -268,6 +268,7 @@ def scan():
             allowed_setups = {
                 "TWO_SIDED_SWEEP_ORIGIN_RETEST",
                 "LIQUIDITY_SWEEP_RANGE_RETEST",
+                "LIQUIDITY_SWEEP_OPPOSITE_RANGE_BREAK_RETEST",
                 "IMPULSE_ORIGIN_RETEST",
                 "TREND_CONSOLIDATION_BREAK_RETEST",
             }
