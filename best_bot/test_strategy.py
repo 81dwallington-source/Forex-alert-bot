@@ -124,3 +124,16 @@ def test_invalid_impulse_retracement_returns_zero():
     from strategy import impulse_retracement
     assert impulse_retracement("BUY", 1.10, 1.00, 1.05) == 0.0
     assert impulse_retracement("SELL", 1.00, 1.10, 1.05) == 0.0
+
+
+def test_deep_pullback_gate_rejects_shallow_tiny_or_short_retracements():
+    from strategy import valid_deep_pullback
+    assert not valid_deep_pullback(0.20, 0.90, 5)
+    assert not valid_deep_pullback(0.50, 0.30, 5)
+    assert not valid_deep_pullback(0.60, 0.90, 2)
+    assert not valid_deep_pullback(0.90, 1.00, 5)
+
+
+def test_deep_pullback_gate_accepts_only_full_quality_retracement():
+    from strategy import valid_deep_pullback
+    assert valid_deep_pullback(0.60, 0.90, 4)
