@@ -311,82 +311,162 @@ def find_impulse_origin_retest(df: pd.DataFrame, side: str,
 
 
 
-def find_impulse_pullback_continuation(df: pd.DataFrame, side: str,
-                                      max_pattern_bars: int = 48) -> dict | None:
-    """Strong directional impulse, measured retracement, then confirmed continuation.
+def find_impulse_origin_approach(df: pd.DataFrame, side: str,
+                                max_pattern_bars: int = 48) -> dict | None:
+    """Find the exact opposing launch candle before a strong impulse, before its retest.
 
-    The latest completed M5 candle must reject a pullback into the EMA21/EMA50
-    area. The stop reference is the full pullback extreme, not the impulse candle.
-    BUY is the exact mirror of SELL.
+    Returns only an approaching (not-yet-touched) origin. Completed candles
+    define the pattern; the live quote is used by the caller for proximity.
     """
     if side not in ("BUY", "SELL") or len(df) < 30:
         return None
-    x = indicators(df).dropna().reset_index(drop=True)
+    x = indicators(df).dropna()
     latest = len(x) - 1
     first_end = max(12, latest - max_pattern_bars)
     for impulse_end in range(latest - 2, first_end - 1, -1):
-        # Pullback must contain at least two completed candles after the impulse.
         pullback = x.iloc[impulse_end + 1:latest + 1]
-        # Allow a genuine, slower retracement to develop; do not require
-        # the pullback to finish within only a handful of M5 candles.
         if len(pullback) < 2 or len(pullback) > 18:
             continue
-        # Test impulse legs of 3–7 candles, ending at the candidate extreme.
         for leg_len in range(3, 8):
             start = impulse_end - leg_len + 1
-            if start < 1:
+            origin_i = start - 1
+            if origin_i < 1:
                 continue
             leg = x.iloc[start:impulse_end + 1]
+            origin = x.iloc[origin_i]
             atr = float(x.atr.iloc[impulse_end])
             if not pd.notna(atr) or atr <= 0:
                 continue
-            total_range = float(leg.high.max() - leg.low.min())
-            if side == "SELL":
-                bearish_count = int((leg.close < leg.open).sum())
-                body_sum = float((leg.open - leg.close).clip(lower=0).sum())
-                impulse_high, impulse_low = float(leg.high.max()), float(leg.low.min())
-                strong = (bearish_count >= 3 and body_sum >= 1.25 * atr
-                          and total_range >= 1.8 * atr
-                          and float(leg.close.iloc[-1]) <= impulse_low + 0.30 * atr)
-                retrace = (float(pullback.high.max()) - impulse_low) / max(impulse_high - impulse_low, 1e-12)
-                ema_touch = bool(((pullback.high >= pullback.ema21) & (pullback.low <= pullback.ema21)).any()
-                                 or ((pullback.high >= pullback.ema50) & (pullback.low <= pullback.ema50)).any())
-                last = x.iloc[latest]
-                confirm = (float(last.close) < float(last.open)
-                           and float(last.close) < float(x.close.iloc[latest - 1])
-                           and float(last.close) < float(last.ema21)
-                           and float(last.close) <= float(last.low) + 0.55 * float(last.high - last.low))
-                if (strong and valid_deep_pullback(retrace, (float(pullback.high.max()) - impulse_low) / atr, len(pullback))
-                        and ema_touch and confirm
-                        and float(pullback.high.max()) < impulse_high + 0.20 * atr):
-                    pb_high = float(pullback.high.max())
-                    pb_low = float(pullback.low.min())
-                    return {"entry":float(last.close), "origin_low":pb_low,
-                            "origin_high":pb_high, "sweep_extreme":pb_high,
-                            "atr":atr, "setup":"IMPULSE_PULLBACK_CONTINUATION"}
+            impulse_high, impulse_low = float(leg.high.max()), float(leg.low.min())
+            if side == "BUY":
+                if float(origin.close) >= float(origin.open):
+                    continue
+                body_low, body_high = sorted((float(origin.open), float(origin.close)))
+                strong = (
+                    int((leg.close > leg.open).sum()) >= 3
+                    and float((leg.close - leg.open).clip(lower=0).sum()) >= 1.25 * atr
+                    and float(leg.high.max() - leg.low.min()) >= 1.8 * atr
+                    and float(leg.close.iloc[-1]) >= impulse_high - 0.30 * atr
+                )
+                pullback_low = float(pullback.low.min())
+                retrace = (impulse_high - pullback_low) / max(impulse_high - impulse_low, 1e-12)
+                untouched = float(pullback.low.min()) > body_high
+                still_valid = pullback_low > float(origin.low) - 0.20 * atr
+                if (strong and untouched and still_valid and len(pullback) >= 2
+                        and 0.20 <= retrace < 0.85):
+                    return {
+                        "direction": side, "origin_time": str(x.index[origin_i]),
+                        "origin_low": float(origin.low), "origin_high": float(origin.high),
+                        "origin_body_low": body_low, "origin_body_high": body_high,
+                        "atr": atr, "impulse_high": impulse_high, "impulse_low": impulse_low,
+                        "setup": "IMPULSE_PULLBACK_CONTINUATION",
+                    }
             else:
-                bullish_count = int((leg.close > leg.open).sum())
-                body_sum = float((leg.close - leg.open).clip(lower=0).sum())
-                impulse_high, impulse_low = float(leg.high.max()), float(leg.low.min())
-                strong = (bullish_count >= 3 and body_sum >= 1.25 * atr
-                          and total_range >= 1.8 * atr
-                          and float(leg.close.iloc[-1]) >= impulse_high - 0.30 * atr)
-                retrace = (impulse_high - float(pullback.low.min())) / max(impulse_high - impulse_low, 1e-12)
-                ema_touch = bool(((pullback.high >= pullback.ema21) & (pullback.low <= pullback.ema21)).any()
-                                 or ((pullback.high >= pullback.ema50) & (pullback.low <= pullback.ema50)).any())
-                last = x.iloc[latest]
+                if float(origin.close) <= float(origin.open):
+                    continue
+                body_low, body_high = sorted((float(origin.open), float(origin.close)))
+                strong = (
+                    int((leg.close < leg.open).sum()) >= 3
+                    and float((leg.open - leg.close).clip(lower=0).sum()) >= 1.25 * atr
+                    and float(leg.high.max() - leg.low.min()) >= 1.8 * atr
+                    and float(leg.close.iloc[-1]) <= impulse_low + 0.30 * atr
+                )
+                pullback_high = float(pullback.high.max())
+                retrace = (pullback_high - impulse_low) / max(impulse_high - impulse_low, 1e-12)
+                untouched = float(pullback.high.max()) < body_low
+                still_valid = pullback_high < float(origin.high) + 0.20 * atr
+                if (strong and untouched and still_valid and len(pullback) >= 2
+                        and 0.20 <= retrace < 0.85):
+                    return {
+                        "direction": side, "origin_time": str(x.index[origin_i]),
+                        "origin_low": float(origin.low), "origin_high": float(origin.high),
+                        "origin_body_low": body_low, "origin_body_high": body_high,
+                        "atr": atr, "impulse_high": impulse_high, "impulse_low": impulse_low,
+                        "setup": "IMPULSE_PULLBACK_CONTINUATION",
+                    }
+    return None
+
+
+def find_impulse_pullback_continuation(df: pd.DataFrame, side: str,
+                                      max_pattern_bars: int = 48) -> dict | None:
+    """Strong impulse followed by a confirmed retest of its exact launch candle.
+
+    The origin is the last opposing candle immediately before the 3–7 candle
+    displacement leg. Entry reference is the near edge of that candle's body.
+    """
+    if side not in ("BUY", "SELL") or len(df) < 30:
+        return None
+    x = indicators(df).dropna()
+    latest = len(x) - 1
+    first_end = max(12, latest - max_pattern_bars)
+    for impulse_end in range(latest - 2, first_end - 1, -1):
+        pullback = x.iloc[impulse_end + 1:latest + 1]
+        if len(pullback) < 2 or len(pullback) > 18:
+            continue
+        for leg_len in range(3, 8):
+            start = impulse_end - leg_len + 1
+            origin_i = start - 1
+            if origin_i < 1:
+                continue
+            leg = x.iloc[start:impulse_end + 1]
+            origin = x.iloc[origin_i]
+            atr = float(x.atr.iloc[impulse_end])
+            if not pd.notna(atr) or atr <= 0:
+                continue
+            impulse_high, impulse_low = float(leg.high.max()), float(leg.low.min())
+            last = x.iloc[latest]
+            if side == "BUY":
+                if float(origin.close) >= float(origin.open):
+                    continue
+                body_low, body_high = sorted((float(origin.open), float(origin.close)))
+                strong = (
+                    int((leg.close > leg.open).sum()) >= 3
+                    and float((leg.close - leg.open).clip(lower=0).sum()) >= 1.25 * atr
+                    and float(leg.high.max() - leg.low.min()) >= 1.8 * atr
+                    and float(leg.close.iloc[-1]) >= impulse_high - 0.30 * atr
+                )
+                pb_low = float(pullback.low.min())
+                retrace = (impulse_high - pb_low) / max(impulse_high - impulse_low, 1e-12)
+                touched = bool(((pullback.low <= body_high) & (pullback.high >= body_low)).any())
                 confirm = (float(last.close) > float(last.open)
-                           and float(last.close) > float(x.close.iloc[latest - 1])
-                           and float(last.close) > float(last.ema21)
-                           and float(last.close) >= float(last.high) - 0.55 * float(last.high - last.low))
-                if (strong and valid_deep_pullback(retrace, (impulse_high - float(pullback.low.min())) / atr, len(pullback))
-                        and ema_touch and confirm
-                        and float(pullback.low.min()) > impulse_low - 0.20 * atr):
-                    pb_high = float(pullback.high.max())
-                    pb_low = float(pullback.low.min())
-                    return {"entry":float(last.close), "origin_low":pb_low,
-                            "origin_high":pb_high, "sweep_extreme":pb_low,
-                            "atr":atr, "setup":"IMPULSE_PULLBACK_CONTINUATION"}
+                           and float(last.close) > body_high
+                           and float(last.close) > float(x.close.iloc[latest - 1]))
+                if (strong and valid_deep_pullback(retrace, (impulse_high - pb_low) / atr, len(pullback))
+                        and touched and confirm
+                        and pb_low >= float(origin.low) - 0.20 * atr):
+                    return {
+                        "entry": body_high, "origin_low": float(origin.low),
+                        "origin_high": float(origin.high), "origin_body_low": body_low,
+                        "origin_body_high": body_high, "origin_time": str(x.index[origin_i]),
+                        "sweep_extreme": pb_low, "atr": atr,
+                        "setup": "IMPULSE_PULLBACK_CONTINUATION",
+                    }
+            else:
+                if float(origin.close) <= float(origin.open):
+                    continue
+                body_low, body_high = sorted((float(origin.open), float(origin.close)))
+                strong = (
+                    int((leg.close < leg.open).sum()) >= 3
+                    and float((leg.open - leg.close).clip(lower=0).sum()) >= 1.25 * atr
+                    and float(leg.high.max() - leg.low.min()) >= 1.8 * atr
+                    and float(leg.close.iloc[-1]) <= impulse_low + 0.30 * atr
+                )
+                pb_high = float(pullback.high.max())
+                retrace = (pb_high - impulse_low) / max(impulse_high - impulse_low, 1e-12)
+                touched = bool(((pullback.high >= body_low) & (pullback.low <= body_high)).any())
+                confirm = (float(last.close) < float(last.open)
+                           and float(last.close) < body_low
+                           and float(last.close) < float(x.close.iloc[latest - 1]))
+                if (strong and valid_deep_pullback(retrace, (pb_high - impulse_low) / atr, len(pullback))
+                        and touched and confirm
+                        and pb_high <= float(origin.high) + 0.20 * atr):
+                    return {
+                        "entry": body_low, "origin_low": float(origin.low),
+                        "origin_high": float(origin.high), "origin_body_low": body_low,
+                        "origin_body_high": body_high, "origin_time": str(x.index[origin_i]),
+                        "sweep_extreme": pb_high, "atr": atr,
+                        "setup": "IMPULSE_PULLBACK_CONTINUATION",
+                    }
     return None
 
 def find_trend_consolidation_break_retest(df: pd.DataFrame, side: str,
@@ -623,5 +703,8 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: floa
         "ema21": float(cur.ema21), "atr": atr, "setup": pattern["setup"],
         "origin_low": float(pattern["origin_low"]),
         "origin_high": float(pattern["origin_high"]),
+        "origin_body_low": float(pattern.get("origin_body_low", pattern["origin_low"])),
+        "origin_body_high": float(pattern.get("origin_body_high", pattern["origin_high"])),
+        "origin_time": pattern.get("origin_time", ""),
     }
 
