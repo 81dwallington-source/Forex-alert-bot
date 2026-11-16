@@ -279,6 +279,81 @@ def find_impulse_origin_retest(df: pd.DataFrame, side: str,
     return None
 
 
+
+def find_impulse_pullback_continuation(df: pd.DataFrame, side: str,
+                                      max_pattern_bars: int = 24) -> dict | None:
+    """Strong directional impulse, measured retracement, then confirmed continuation.
+
+    The latest completed M5 candle must reject a pullback into the EMA21/EMA50
+    area. The stop reference is the full pullback extreme, not the impulse candle.
+    BUY is the exact mirror of SELL.
+    """
+    if side not in ("BUY", "SELL") or len(df) < 30:
+        return None
+    x = indicators(df).dropna().reset_index(drop=True)
+    latest = len(x) - 1
+    first_end = max(12, latest - max_pattern_bars)
+    for impulse_end in range(latest - 2, first_end - 1, -1):
+        # Pullback must contain at least two completed candles after the impulse.
+        pullback = x.iloc[impulse_end + 1:latest + 1]
+        if len(pullback) < 2 or len(pullback) > 9:
+            continue
+        # Test impulse legs of 3–7 candles, ending at the candidate extreme.
+        for leg_len in range(3, 8):
+            start = impulse_end - leg_len + 1
+            if start < 1:
+                continue
+            leg = x.iloc[start:impulse_end + 1]
+            atr = float(x.atr.iloc[impulse_end])
+            if not pd.notna(atr) or atr <= 0:
+                continue
+            total_range = float(leg.high.max() - leg.low.min())
+            if side == "SELL":
+                bearish_count = int((leg.close < leg.open).sum())
+                body_sum = float((leg.open - leg.close).clip(lower=0).sum())
+                impulse_high, impulse_low = float(leg.high.max()), float(leg.low.min())
+                strong = (bearish_count >= 3 and body_sum >= 1.25 * atr
+                          and total_range >= 1.8 * atr
+                          and float(leg.close.iloc[-1]) <= impulse_low + 0.30 * atr)
+                retrace = (float(pullback.high.max()) - impulse_low) / max(impulse_high - impulse_low, 1e-12)
+                ema_touch = bool(((pullback.high >= pullback.ema21) & (pullback.low <= pullback.ema21)).any()
+                                 or ((pullback.high >= pullback.ema50) & (pullback.low <= pullback.ema50)).any())
+                last = x.iloc[latest]
+                confirm = (float(last.close) < float(last.open)
+                           and float(last.close) < float(x.close.iloc[latest - 1])
+                           and float(last.close) < float(last.ema21)
+                           and float(last.close) <= float(last.low) + 0.55 * float(last.high - last.low))
+                if (strong and 0.25 <= retrace <= 0.70 and ema_touch and confirm
+                        and float(pullback.high.max()) < impulse_high + 0.20 * atr):
+                    pb_high = float(pullback.high.max())
+                    pb_low = float(pullback.low.min())
+                    return {"entry":float(last.close), "origin_low":pb_low,
+                            "origin_high":pb_high, "sweep_extreme":pb_high,
+                            "atr":atr, "setup":"IMPULSE_PULLBACK_CONTINUATION"}
+            else:
+                bullish_count = int((leg.close > leg.open).sum())
+                body_sum = float((leg.close - leg.open).clip(lower=0).sum())
+                impulse_high, impulse_low = float(leg.high.max()), float(leg.low.min())
+                strong = (bullish_count >= 3 and body_sum >= 1.25 * atr
+                          and total_range >= 1.8 * atr
+                          and float(leg.close.iloc[-1]) >= impulse_high - 0.30 * atr)
+                retrace = (impulse_high - float(pullback.low.min())) / max(impulse_high - impulse_low, 1e-12)
+                ema_touch = bool(((pullback.high >= pullback.ema21) & (pullback.low <= pullback.ema21)).any()
+                                 or ((pullback.high >= pullback.ema50) & (pullback.low <= pullback.ema50)).any())
+                last = x.iloc[latest]
+                confirm = (float(last.close) > float(last.open)
+                           and float(last.close) > float(x.close.iloc[latest - 1])
+                           and float(last.close) > float(last.ema21)
+                           and float(last.close) >= float(last.high) - 0.55 * float(last.high - last.low))
+                if (strong and 0.25 <= retrace <= 0.70 and ema_touch and confirm
+                        and float(pullback.low.min()) > impulse_low - 0.20 * atr):
+                    pb_high = float(pullback.high.max())
+                    pb_low = float(pullback.low.min())
+                    return {"entry":float(last.close), "origin_low":pb_low,
+                            "origin_high":pb_high, "sweep_extreme":pb_low,
+                            "atr":atr, "setup":"IMPULSE_PULLBACK_CONTINUATION"}
+    return None
+
 def find_trend_consolidation_break_retest(df: pd.DataFrame, side: str,
                                           range_bars: int = 10,
                                           max_break_bars: int = 5) -> dict | None:
@@ -450,7 +525,7 @@ def find_liquidity_sweep_retest(df: pd.DataFrame, side: str,
     return None
 
 def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: float) -> dict | None:
-    """Allow only the three user-approved M5 patterns, with M15/H1 agreement."""
+    """Allow approved M5 patterns, with M15/H1 agreement."""
     if len(m5) < 210 or len(m15) < 55 or len(h1) < 55:
         return None
     a = indicators(m5).dropna()
@@ -467,6 +542,7 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: floa
         find_origin_retest(a, direction),
         find_liquidity_sweep_retest(a, direction),
         find_impulse_origin_retest(a, direction),
+        find_impulse_pullback_continuation(a, direction),
         find_trend_consolidation_break_retest(a, direction),
     )
     allowed = {
@@ -474,6 +550,7 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: floa
         "LIQUIDITY_SWEEP_RANGE_RETEST",
         "LIQUIDITY_SWEEP_OPPOSITE_RANGE_BREAK_RETEST",
         "IMPULSE_ORIGIN_RETEST",
+        "IMPULSE_PULLBACK_CONTINUATION",
         "TREND_CONSOLIDATION_BREAK_RETEST",
     }
     pattern = next((p for p in candidates if p and p.get("setup") in allowed), None)
