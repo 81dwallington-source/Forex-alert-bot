@@ -269,6 +269,7 @@ def scan():
                 "TWO_SIDED_SWEEP_ORIGIN_RETEST",
                 "LIQUIDITY_SWEEP_RANGE_RETEST",
                 "IMPULSE_ORIGIN_RETEST",
+                "TREND_CONSOLIDATION_BREAK_RETEST",
             }
             if sig.get("setup") not in allowed_setups:
                 print(f"{pair}: rejected — setup is not one of the three approved patterns", flush=True)
