@@ -154,83 +154,145 @@ def valid_deep_pullback(retracement: float, depth_atr: float, bars: int) -> bool
 
 def find_origin_retest(df: pd.DataFrame, side: str, range_bars: int = 12,
                        max_pattern_bars: int = 30) -> dict | None:
-    """Find a two-sided consolidation sweep, displacement, then origin-candle retest.
+    """Two-sided range sweep, then retest of the FIRST candle that starts displacement.
 
-    Uses completed candles only. A BUY requires both range edges to be swept,
-    then a bullish displacement through range high and a confirmed retest of
-    the last bearish candle before displacement. SELL is the exact inverse.
+    BUY: sweep below range low, then break above range high. The origin is the
+    first bullish candle after the low sweep that begins the sustained upward leg.
+    SELL is the exact inverse: sweep above range high, then break below range low;
+    origin is the first bearish candle after the high sweep.
     """
     if side not in ("BUY", "SELL") or len(df) < range_bars + 8:
         return None
     x = df.reset_index(drop=True)
     start = max(range_bars + 2, len(x) - max_pattern_bars)
-    # Search the most recent candidate pattern first.
     for breakout_i in range(len(x) - 2, start, -1):
-        # Build the range before an eight-candle sweep window. This allows
-        # the two liquidity grabs to occur separately, not only in two bars.
         sweep_start = breakout_i - 8
         base = x.iloc[sweep_start-range_bars:sweep_start]
         if len(base) != range_bars or sweep_start < range_bars:
             continue
         rh, rl = float(base.high.max()), float(base.low.min())
-        atr_series = indicators(x.iloc[:breakout_i+1])["atr"]
-        atr = float(atr_series.iloc[-1])
-        if not atr or atr <= 0 or (rh-rl) > 4.0*atr:
+        atr = float(indicators(x.iloc[:breakout_i+1])["atr"].iloc[-1])
+        if not pd.notna(atr) or atr <= 0 or (rh-rl) > 4.0*atr:
             continue
         prior = x.iloc[sweep_start:breakout_i]
-        # Both edges must have been taken during the pattern before displacement.
-        # A sweep must take the level AND close back inside the range.
-        # A mere wick through a level is not enough to count as a rejected sweep.
-        swept_high = bool(((prior.high > rh) & (prior.close < rh)).any())
-        swept_low = bool(((prior.low < rl) & (prior.close > rl)).any())
-        if not (swept_high and swept_low):
+        high_sweep_mask = (prior.high > rh) & (prior.close < rh)
+        low_sweep_mask = (prior.low < rl) & (prior.close > rl)
+        if not (bool(high_sweep_mask.any()) and bool(low_sweep_mask.any())):
             continue
+        high_sweep_i = int(high_sweep_mask[high_sweep_mask].index[-1])
+        low_sweep_i = int(low_sweep_mask[low_sweep_mask].index[-1])
         impulse = x.iloc[breakout_i]
         body = abs(float(impulse.close)-float(impulse.open))
         if side == "BUY":
-            displacement = (impulse.close > rh and impulse.close > impulse.open
-                            and body >= 0.60*atr)
-            opposite = [j for j in range(max(start, breakout_i-4), breakout_i)
-                        if x.open.iloc[j] > x.close.iloc[j]]
-            if not displacement or not opposite:
+            if not (low_sweep_i > high_sweep_i and impulse.close > rh
+                    and impulse.close > impulse.open and body >= 0.60*atr):
                 continue
-            origin_i = opposite[-1]
+            # The first bullish candle after the downside sweep is the launch candle.
+            candidates = [j for j in range(low_sweep_i + 1, breakout_i)
+                          if float(x.close.iloc[j]) > float(x.open.iloc[j])]
+            if not candidates:
+                continue
+            origin_i = candidates[0]
+            # Reject a one-candle pop: require a sustained upward leg from the origin.
+            leg = x.iloc[origin_i:breakout_i+1]
+            if int((leg.close > leg.open).sum()) < 2 or float(leg.close.iloc[-1]) <= rh:
+                continue
             origin = x.iloc[origin_i]
             zone_low, zone_high = sorted((float(origin.open), float(origin.close)))
-            sweep_extreme = float(prior.low.min())
             retest = x.iloc[breakout_i+1:]
             if retest.empty:
                 continue
-            for _, bar in retest.iterrows():
-                touched = float(bar.low) <= zone_high and float(bar.high) >= zone_low
-                confirmed = float(bar.close) > float(bar.open) and float(bar.close) > zone_high
-                if touched and confirmed and bar.name == retest.index[-1]:
-                    return {"entry":float(bar.close),"origin_low":float(origin.low),
-                            "origin_high":float(origin.high),"sweep_extreme":sweep_extreme,
-                            "atr":atr,"range_high":rh,"range_low":rl,"setup":"TWO_SIDED_SWEEP_ORIGIN_RETEST"}
+            last = retest.iloc[-1]
+            touched = float(last.low) <= zone_high and float(last.high) >= zone_low
+            confirmed = float(last.close) > float(last.open) and float(last.close) > zone_high
+            if touched and confirmed:
+                return {"entry":float(last.close),"origin_low":float(origin.low),
+                        "origin_high":float(origin.high),"origin_body_low":zone_low,
+                        "origin_body_high":zone_high,"origin_time":str(origin.get("time", origin_i)),
+                        "sweep_extreme":float(prior.low.min()),"atr":atr,
+                        "range_high":rh,"range_low":rl,"setup":"TWO_SIDED_SWEEP_ORIGIN_RETEST"}
         else:
-            displacement = (impulse.close < rl and impulse.close < impulse.open
-                            and body >= 0.60*atr)
-            opposite = [j for j in range(max(start, breakout_i-4), breakout_i)
-                        if x.open.iloc[j] < x.close.iloc[j]]
-            if not displacement or not opposite:
+            if not (high_sweep_i > low_sweep_i and impulse.close < rl
+                    and impulse.close < impulse.open and body >= 0.60*atr):
                 continue
-            origin_i = opposite[-1]
+            # The first bearish candle after the upside sweep is the launch candle.
+            candidates = [j for j in range(high_sweep_i + 1, breakout_i)
+                          if float(x.close.iloc[j]) < float(x.open.iloc[j])]
+            if not candidates:
+                continue
+            origin_i = candidates[0]
+            leg = x.iloc[origin_i:breakout_i+1]
+            if int((leg.close < leg.open).sum()) < 2 or float(leg.close.iloc[-1]) >= rl:
+                continue
             origin = x.iloc[origin_i]
             zone_low, zone_high = sorted((float(origin.open), float(origin.close)))
-            sweep_extreme = float(prior.high.max())
             retest = x.iloc[breakout_i+1:]
             if retest.empty:
                 continue
-            for _, bar in retest.iterrows():
-                touched = float(bar.high) >= zone_low and float(bar.low) <= zone_high
-                confirmed = float(bar.close) < float(bar.open) and float(bar.close) < zone_low
-                if touched and confirmed and bar.name == retest.index[-1]:
-                    return {"entry":float(bar.close),"origin_low":float(origin.low),
-                            "origin_high":float(origin.high),"sweep_extreme":sweep_extreme,
-                            "atr":atr,"range_high":rh,"range_low":rl,"setup":"TWO_SIDED_SWEEP_ORIGIN_RETEST"}
+            last = retest.iloc[-1]
+            touched = float(last.high) >= zone_low and float(last.low) <= zone_high
+            confirmed = float(last.close) < float(last.open) and float(last.close) < zone_low
+            if touched and confirmed:
+                return {"entry":float(last.close),"origin_low":float(origin.low),
+                        "origin_high":float(origin.high),"origin_body_low":zone_low,
+                        "origin_body_high":zone_high,"origin_time":str(origin.get("time", origin_i)),
+                        "sweep_extreme":float(prior.high.max()),"atr":atr,
+                        "range_high":rh,"range_low":rl,"setup":"TWO_SIDED_SWEEP_ORIGIN_RETEST"}
     return None
 
+
+def find_two_sided_origin_approach(df: pd.DataFrame, side: str,
+                                   range_bars: int = 12,
+                                   max_pattern_bars: int = 30) -> dict | None:
+    """Return the first launch candle for a completed two-sided range sweep/breakout,
+    but only while price has not yet retested its body.
+    """
+    if side not in ("BUY", "SELL") or len(df) < range_bars + 10:
+        return None
+    x = df.reset_index(drop=True)
+    start = max(range_bars + 2, len(x) - max_pattern_bars)
+    for breakout_i in range(len(x) - 1, start, -1):
+        sweep_start = breakout_i - 8
+        base = x.iloc[sweep_start-range_bars:sweep_start]
+        if len(base) != range_bars or sweep_start < range_bars:
+            continue
+        rh, rl = float(base.high.max()), float(base.low.min())
+        atr = float(indicators(x.iloc[:breakout_i+1])["atr"].iloc[-1])
+        if not pd.notna(atr) or atr <= 0 or (rh-rl) > 4.0*atr:
+            continue
+        prior = x.iloc[sweep_start:breakout_i]
+        hs = (prior.high > rh) & (prior.close < rh)
+        ls = (prior.low < rl) & (prior.close > rl)
+        if not (bool(hs.any()) and bool(ls.any())):
+            continue
+        hi = int(hs[hs].index[-1]); lo = int(ls[ls].index[-1])
+        if side == "BUY":
+            if not (lo > hi and float(x.close.iloc[breakout_i]) > rh
+                    and float(x.close.iloc[breakout_i]) > float(x.open.iloc[breakout_i])):
+                continue
+            origins = [j for j in range(lo+1, breakout_i)
+                       if float(x.close.iloc[j]) > float(x.open.iloc[j])]
+            if not origins: continue
+            oi = origins[0]
+            low, high = sorted((float(x.open.iloc[oi]), float(x.close.iloc[oi])))
+            later = x.iloc[breakout_i+1:]
+            if later.empty or float(later.low.min()) <= high: continue
+        else:
+            if not (hi > lo and float(x.close.iloc[breakout_i]) < rl
+                    and float(x.close.iloc[breakout_i]) < float(x.open.iloc[breakout_i])):
+                continue
+            origins = [j for j in range(hi+1, breakout_i)
+                       if float(x.close.iloc[j]) < float(x.open.iloc[j])]
+            if not origins: continue
+            oi = origins[0]
+            low, high = sorted((float(x.open.iloc[oi]), float(x.close.iloc[oi])))
+            later = x.iloc[breakout_i+1:]
+            if later.empty or float(later.high.max()) >= low: continue
+        return {"direction":side,"origin_time":str(x.index[oi]),
+                "origin_low":float(x.low.iloc[oi]),"origin_high":float(x.high.iloc[oi]),
+                "origin_body_low":low,"origin_body_high":high,"atr":atr,
+                "setup":"TWO_SIDED_SWEEP_ORIGIN_RETEST"}
+    return None
 
 def find_impulse_origin_retest(df: pd.DataFrame, side: str,
                               max_pattern_bars: int = 28) -> dict | None:
