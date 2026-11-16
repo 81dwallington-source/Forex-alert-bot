@@ -17,7 +17,7 @@ import requests
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
-from strategy import make_signal, find_impulse_origin_approach, trend  # noqa: E402
+from strategy import make_signal, find_impulse_origin_approach, find_two_sided_origin_approach, trend  # noqa: E402
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
@@ -292,7 +292,8 @@ def scan():
             # Early warning only: notify as price approaches the exact launch candle body.
             direction = trend(m15)
             if direction and trend(h1) == direction:
-                approach = find_impulse_origin_approach(m5, direction)
+                approach = (find_two_sided_origin_approach(m5, direction)
+                            or find_impulse_origin_approach(m5, direction))
                 if approach:
                     body_low = float(approach["origin_body_low"])
                     body_high = float(approach["origin_body_high"])
