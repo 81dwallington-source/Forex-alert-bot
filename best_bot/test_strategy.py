@@ -109,3 +109,18 @@ def test_indicator_alignment_alone_never_creates_a_signal():
     assert trend(m15) == "BUY"
     assert trend(h1) == "BUY"
     assert make_signal(m5, m15, h1, 0.0001) is None
+
+
+def test_impulse_retracement_uses_full_origin_to_extreme_move():
+    from strategy import impulse_retracement
+    # 20% retracement of the complete move is rejected; 60% qualifies.
+    assert impulse_retracement("BUY", 1.00, 1.10, 1.08) == 0.20
+    assert impulse_retracement("BUY", 1.00, 1.10, 1.04) == 0.60
+    assert impulse_retracement("SELL", 1.10, 1.00, 1.02) == 0.20
+    assert impulse_retracement("SELL", 1.10, 1.00, 1.06) == 0.60
+
+
+def test_invalid_impulse_retracement_returns_zero():
+    from strategy import impulse_retracement
+    assert impulse_retracement("BUY", 1.10, 1.00, 1.05) == 0.0
+    assert impulse_retracement("SELL", 1.00, 1.10, 1.05) == 0.0
