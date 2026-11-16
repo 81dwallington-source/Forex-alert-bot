@@ -1,9 +1,11 @@
 name: Best Bot live scanner
 
 on:
+  # Each run stays active for 5h40m and scans every five minutes.
+  # Six-hour starts avoid a backlog of overlapping scheduled runs.
   schedule:
-    - cron: "*/5 * * * 1-5"
-    - cron: "*/5 21-23 * * 0"
+    - cron: "0 0,6,12,18 * * 1-5"
+    - cron: "0 22 * * 0"
   workflow_dispatch:
   push:
     paths:
@@ -21,7 +23,7 @@ concurrency:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 360
     steps:
       - name: Check out scanner
         uses: actions/checkout@v4
@@ -41,13 +43,13 @@ jobs:
           pip install -r requirements.txt
 
       - name: Check scanner syntax
-        run: python -m py_compile best_bot/strategy.py best_bot/live_bot.py
+        run: python -m py_compile best_bot/strategy.py best_bot/live_bot.py best_bot/run_loop.py
 
-      - name: Run one live scan
+      - name: Run five-minute live scan loop
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python best_bot/live_bot.py
+        run: python best_bot/run_loop.py
 
       - name: Save signal log and outcome state
         if: always()
