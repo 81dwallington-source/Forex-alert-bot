@@ -176,11 +176,11 @@ def poll_telegram_photos() -> int:
         except Exception as exc:
             safe_error = str(exc)
             if "OPENAI_API_KEY" in safe_error:
-                reply = ("📷 Screenshot received. Image analysis is not enabled yet. "
-                         "Add OPENAI_API_KEY to the repository's GitHub Actions secrets, "
-                         "then send the screenshot again.")
-            else:
-                reply = f"📷 Screenshot received, but review failed: {type(exc).__name__}: {safe_error[:250]}"
+                # Leave this update unacknowledged. The listener will retry after
+                # the repository secret is added, without spamming the chat.
+                print("Screenshot queued: OPENAI_API_KEY is not configured yet", flush=True)
+                break
+            reply = f"📷 Screenshot received, but review failed: {type(exc).__name__}: {safe_error[:250]}"
             _reply(incoming_chat, reply)
         _save_offset(next_offset)
         processed += 1
