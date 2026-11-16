@@ -113,6 +113,24 @@
       "data_source": "BiQuote public FX OHLC; not broker-verified"
     }
   ],
-  "pending": [],
-  "last_scan_utc": "2026-11-16T09:32:46.215018+00:00"
+  "pending": [
+    {
+      "signal_time_utc": "2026-11-16T18:10:00+00:00",
+      "pair": "GBPUSD",
+      "direction": "SELL",
+      "entry_reference": 1.318305,
+      "stop_loss": 1.319311607142857,
+      "take_profit": 1.3167950892857148,
+      "risk_pips": 10.1,
+      "planned_rr": 1.5,
+      "setup_type": "IMPULSE_PULLBACK_CONTINUATION",
+      "origin_candle_low": 1.318145,
+      "origin_candle_high": 1.319205,
+      "outcome": "PENDING",
+      "outcome_time_utc": "",
+      "outcome_note": "",
+      "data_source": "BiQuote public FX OHLC; not broker-verified"
+    }
+  ],
+  "last_scan_utc": "2026-11-16T18:40:54.904386+00:00"
 }
