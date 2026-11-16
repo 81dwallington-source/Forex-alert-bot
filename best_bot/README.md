@@ -23,6 +23,7 @@ All three patterns have BUY and SELL versions. The bot calculates its own entry,
 - Maximum entry drift is 0.20 ATR from the signal close.
 - Public BiQuote OHLC data is not broker-verified. Confirm broker price and spread before any manual trade; suggested risk ceiling is 0.25%.
 - Signal-only: no automatic execution, no watchlists, no 1-minute entries.
+- Telegram notifications are confirmed trade-entry alerts only. No approaching-origin, setup-watch, or setup-invalidated alerts are sent.
 
 ## Operation and records
 
