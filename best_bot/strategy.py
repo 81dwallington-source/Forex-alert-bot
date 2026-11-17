@@ -762,7 +762,7 @@ def find_double_break_origin_retest(df: pd.DataFrame, side: str,
                              and float(last.close) > body_high)
                 if not (latest > break_i and touched and confirmed):
                     continue
-                return {"entry":float(last.close),"origin_low":float(origin.low),
+                return {"entry":(body_high if side == "BUY" else body_low),"origin_low":float(origin.low),
                         "origin_high":float(origin.high),"origin_body_low":body_low,
                         "origin_body_high":body_high,"origin_time":str(df.index[oi]),
                         "sweep_extreme":float(x.low.iloc[sweep_i:break_i+1].min()),
@@ -814,10 +814,14 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: floa
     atr, entry = float(pattern["atr"]), float(pattern["entry"])
     buffer = max(0.25*atr, 1.0*pip)
     if direction == "BUY":
-        stop = min(float(pattern["sweep_extreme"]), float(pattern["origin_low"])) - buffer
+        # Stop below the latest confirmed M5 swing low, with volatility buffer.
+        structural_low = confirmed_swing(m5, "LOW", lookback=36)
+        stop = structural_low - buffer
         risk, target = entry-stop, entry + MIN_RR*(entry-stop)
     else:
-        stop = max(float(pattern["sweep_extreme"]), float(pattern["origin_high"])) + buffer
+        # Stop above the latest confirmed M5 swing high, with volatility buffer.
+        structural_high = confirmed_swing(m5, "HIGH", lookback=36)
+        stop = structural_high + buffer
         risk, target = stop-entry, entry - MIN_RR*(stop-entry)
     if risk <= 0 or not valid_stop_distance(risk, pip, atr):
         return None
