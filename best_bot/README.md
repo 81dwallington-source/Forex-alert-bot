@@ -13,8 +13,9 @@ No entry on either breakout. No alert if the sequence is incomplete, ambiguous, 
 ## Filters and risk
 - M5 completed candles define the pattern and entry confirmation.
 - M15 and H1 trend must agree with direction.
-- Entry, structural stop and 1.5R target are calculated from current market data.
-- Stop is beyond the sweep extreme / origin structure plus a volatility buffer; invalid stop distances are rejected.
+- Entry is the origin candle body edge: BUY at the top of the last bearish origin candle; SELL at the bottom of the last bullish origin candle. Alert only after a completed retest rejection.
+- BUY stop is below the latest confirmed M5 swing low; SELL stop is above the latest confirmed M5 swing high, each with a volatility buffer. Invalid stop distances are rejected.
+- Take profit is calculated from the origin entry and structural stop at a minimum 1:1.5 risk/reward.
 - Maximum entry drift remains 0.20 ATR.
 - Public BiQuote OHLC is not broker-verified; confirm broker price and spread before manual entry. Risk ceiling 0.25%.
 - Signal-only; no auto-trading, watchlists or 1-minute entries.
