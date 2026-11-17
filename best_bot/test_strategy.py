@@ -203,3 +203,16 @@ def test_double_break_sell_entry_is_origin_candle_body_low():
     result = find_double_break_origin_retest(_multi_bar_sweep_pattern("SELL"), "SELL")
     assert result is not None
     assert result["entry"] == result["origin_body_low"]
+
+
+def test_make_signal_uses_only_the_approved_double_break_setup(monkeypatch):
+    import strategy
+    m5 = sample_frame()
+    m15 = sample_frame()
+    h1 = sample_frame()
+    monkeypatch.setattr(strategy, "find_double_break_origin_retest", lambda frame, side: None)
+    def forbidden(*args, **kwargs):
+        raise AssertionError("A non-approved Bot 5 setup was evaluated")
+    monkeypatch.setattr(strategy, "find_origin_retest", forbidden)
+    monkeypatch.setattr(strategy, "find_impulse_pullback_continuation", forbidden)
+    assert strategy.make_signal(m5, m15, h1, 0.0001) is None
