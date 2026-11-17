@@ -845,27 +845,28 @@ def find_double_break_origin_retest(df: pd.DataFrame, side: str,
 
 
 def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: float) -> dict | None:
-    """Generate signals only from the double-break consolidation origin retest."""
+    """Generate only the approved impulse + exact origin-candle retest setup."""
     if len(m5) < 210 or len(m15) < 55 or len(h1) < 55:
         return None
     a = indicators(m5).dropna()
     if len(a) < 3:
         return None
+    # M15 and H1 must agree; H1 is mandatory and cannot be overridden by M15.
     direction = trend(m15)
     if not direction or trend(h1) != direction:
         return None
-    pattern = find_double_break_origin_retest(a, direction)
+    pattern = find_impulse_pullback_continuation(a, direction)
     if not pattern:
         return None
+    # Entry is the near edge of the last opposing candle's body, not the
+    # confirmation candle close or a broad zone.
     atr, entry = float(pattern["atr"]), float(pattern["entry"])
     buffer = max(0.25*atr, 1.0*pip)
     if direction == "BUY":
-        # Stop below the latest confirmed M5 swing low, with volatility buffer.
         structural_low = confirmed_swing(m5, "LOW", lookback=36)
         stop = structural_low - buffer
         risk, target = entry-stop, entry + MIN_RR*(entry-stop)
     else:
-        # Stop above the latest confirmed M5 swing high, with volatility buffer.
         structural_high = confirmed_swing(m5, "HIGH", lookback=36)
         stop = structural_high + buffer
         risk, target = stop-entry, entry - MIN_RR*(stop-entry)
