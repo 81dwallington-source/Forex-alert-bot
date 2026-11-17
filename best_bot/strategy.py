@@ -701,72 +701,125 @@ def find_liquidity_sweep_retest(df: pd.DataFrame, side: str,
                             "setup":"LIQUIDITY_SWEEP_OPPOSITE_RANGE_BREAK_RETEST"}
     return None
 
+
+
+def find_double_break_origin_retest(df: pd.DataFrame, side: str,
+                                    range_bars: int = 12,
+                                    max_pattern_bars: int = 36) -> dict | None:
+    """Only setup: compact range, sweep one edge, break opposite edge,
+    then retest the last opposing candle before displacement and reject."""
+    if side not in ("BUY", "SELL") or len(df) < range_bars + 12:
+        return None
+    x = df.reset_index(drop=True)
+    latest = len(x) - 1
+    first_break = max(range_bars + 2, latest - max_pattern_bars)
+    for break_i in range(latest - 1, first_break - 1, -1):
+        base_end = break_i - 1
+        base_start = base_end - range_bars
+        if base_start < 0:
+            continue
+        base = x.iloc[base_start:base_end]
+        if len(base) != range_bars:
+            continue
+        rh, rl = float(base.high.max()), float(base.low.min())
+        atr = float(indicators(x.iloc[:break_i + 1])["atr"].iloc[-1])
+        if not pd.notna(atr) or atr <= 0 or rh <= rl or rh-rl > 4.0*atr:
+            continue
+        bar = x.iloc[break_i]
+        if side == "SELL":
+            sweeps = [i for i in range(base_end, break_i)
+                      if float(x.high.iloc[i]) > rh and float(x.close.iloc[i]) < rh]
+            broke = (float(bar.close) < rl and float(bar.close) < float(bar.open)
+                     and abs(float(bar.close)-float(bar.open)) >= 0.50*atr)
+            if not sweeps or not broke:
+                continue
+            sweep_i = sweeps[0]
+            origins = [i for i in range(sweep_i+1, break_i)
+                       if float(x.close.iloc[i]) > float(x.open.iloc[i])]
+            if not origins:
+                continue
+            oi = origins[-1]
+            origin = x.iloc[oi]
+            body_low, body_high = sorted((float(origin.open), float(origin.close)))
+            later = x.iloc[break_i+1:latest+1]
+            if later.empty:
+                continue
+            touched = bool(((later.low <= body_high) & (later.high >= body_low)).any())
+            last = x.iloc[latest]
+            confirmed = (float(last.high) >= body_low and float(last.low) <= body_high
+                         and float(last.close) < float(last.open)
+                         and float(last.close) < body_low
+                         and float(last.close) < float(x.close.iloc[latest-1]))
+            if not (touched and confirmed):
+                continue
+            return {"entry":float(last.close),"origin_low":float(origin.low),
+                    "origin_high":float(origin.high),"origin_body_low":body_low,
+                    "origin_body_high":body_high,"origin_time":str(df.index[oi]),
+                    "sweep_extreme":float(x.high.iloc[sweep_i:break_i+1].max()),
+                    "atr":atr,"range_high":rh,"range_low":rl,
+                    "setup":"DOUBLE_BREAK_ORIGIN_RETEST"}
+        else:
+            sweeps = [i for i in range(base_end, break_i)
+                      if float(x.low.iloc[i]) < rl and float(x.close.iloc[i]) > rl]
+            broke = (float(bar.close) > rh and float(bar.close) > float(bar.open)
+                     and abs(float(bar.close)-float(bar.open)) >= 0.50*atr)
+            if not sweeps or not broke:
+                continue
+            sweep_i = sweeps[0]
+            origins = [i for i in range(sweep_i+1, break_i)
+                       if float(x.close.iloc[i]) < float(x.open.iloc[i])]
+            if not origins:
+                continue
+            oi = origins[-1]
+            origin = x.iloc[oi]
+            body_low, body_high = sorted((float(origin.open), float(origin.close)))
+            later = x.iloc[break_i+1:latest+1]
+            if later.empty:
+                continue
+            touched = bool(((later.high >= body_low) & (later.low <= body_high)).any())
+            last = x.iloc[latest]
+            confirmed = (float(last.low) <= body_high and float(last.high) >= body_low
+                         and float(last.close) > float(last.open)
+                         and float(last.close) > body_high
+                         and float(last.close) > float(x.close.iloc[latest-1]))
+            if not (touched and confirmed):
+                continue
+            return {"entry":float(last.close),"origin_low":float(origin.low),
+                    "origin_high":float(origin.high),"origin_body_low":body_low,
+                    "origin_body_high":body_high,"origin_time":str(df.index[oi]),
+                    "sweep_extreme":float(x.low.iloc[sweep_i:break_i+1].min()),
+                    "atr":atr,"range_high":rh,"range_low":rl,
+                    "setup":"DOUBLE_BREAK_ORIGIN_RETEST"}
+    return None
+
+
 def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: float) -> dict | None:
-    """Allow approved M5 patterns, with M15/H1 agreement."""
+    """Generate signals only from the double-break consolidation origin retest."""
     if len(m5) < 210 or len(m15) < 55 or len(h1) < 55:
         return None
     a = indicators(m5).dropna()
     if len(a) < 3:
         return None
-    cur = a.iloc[-1]
     direction = trend(m15)
     if not direction or trend(h1) != direction:
         return None
-
-    # The only permitted live setups. Each detector requires a completed
-    # M5 confirmation candle at the end of its sequence.
-    candidates = (
-        find_origin_retest(a, direction),
-        find_liquidity_sweep_retest(a, direction),
-        find_impulse_origin_retest(a, direction),
-        find_impulse_pullback_continuation(a, direction),
-        find_trend_consolidation_break_retest(a, direction),
-    )
-    allowed = {
-        "TWO_SIDED_SWEEP_ORIGIN_RETEST",
-        "LIQUIDITY_SWEEP_RANGE_RETEST",
-        "LIQUIDITY_SWEEP_OPPOSITE_RANGE_BREAK_RETEST",
-        "IMPULSE_ORIGIN_RETEST",
-        "IMPULSE_PULLBACK_CONTINUATION",
-        "TREND_CONSOLIDATION_BREAK_RETEST",
-    }
-    pattern = next((p for p in candidates if p and p.get("setup") in allowed), None)
+    pattern = find_double_break_origin_retest(a, direction)
     if not pattern:
         return None
-
-    atr = float(pattern["atr"])
-    entry = float(pattern["entry"])
-    buffer = max(0.25 * atr, 1.0 * pip)
+    atr, entry = float(pattern["atr"]), float(pattern["entry"])
+    buffer = max(0.25*atr, 1.0*pip)
     if direction == "BUY":
         stop = min(float(pattern["sweep_extreme"]), float(pattern["origin_low"])) - buffer
-        risk = entry - stop
-        target = entry + MIN_RR * risk
+        risk, target = entry-stop, entry + MIN_RR*(entry-stop)
     else:
         stop = max(float(pattern["sweep_extreme"]), float(pattern["origin_high"])) + buffer
-        risk = stop - entry
-        target = entry - MIN_RR * risk
-
-    # For the video-based range sweep, aim at the opposite range boundary.
-    # Reject the setup if that structural target cannot still deliver >= 1.5R.
-    actual_rr = MIN_RR
-    if pattern.get("setup") == "LIQUIDITY_SWEEP_RANGE_RETEST":
-        target = float(pattern["range_high"] if direction == "BUY" else pattern["range_low"])
-        reward = (target - entry) if direction == "BUY" else (entry - target)
-        actual_rr = reward / risk if risk > 0 else 0.0
-        if actual_rr < MIN_RR:
-            return None
-
+        risk, target = stop-entry, entry - MIN_RR*(stop-entry)
     if risk <= 0 or not valid_stop_distance(risk, pip, atr):
         return None
-    return {
-        "direction": direction, "signal_close": entry,
-        "stop": float(stop), "target": float(target),
-        "risk_pips": round(risk / pip, 1), "rr": round(actual_rr, 2),
-        "ema21": float(cur.ema21), "atr": atr, "setup": pattern["setup"],
-        "origin_low": float(pattern["origin_low"]),
-        "origin_high": float(pattern["origin_high"]),
-        "origin_body_low": float(pattern.get("origin_body_low", pattern["origin_low"])),
-        "origin_body_high": float(pattern.get("origin_body_high", pattern["origin_high"])),
-        "origin_time": pattern.get("origin_time", ""),
-    }
-
+    return {"direction":direction,"signal_close":entry,"stop":float(stop),
+            "target":float(target),"risk_pips":round(risk/pip,1),"rr":MIN_RR,
+            "atr":atr,"setup":pattern["setup"],"origin_low":float(pattern["origin_low"]),
+            "origin_high":float(pattern["origin_high"]),
+            "origin_body_low":float(pattern["origin_body_low"]),
+            "origin_body_high":float(pattern["origin_body_high"]),
+            "origin_time":pattern["origin_time"]}
