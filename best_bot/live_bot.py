@@ -274,9 +274,9 @@ def scan():
             sig = make_signal(m5, m15, h1, pip)
             if not sig:
                 continue
-            # Bot 5 is deliberately single-pattern: sweep one range edge, break
-            # the opposite edge, then confirm the exact origin-candle retest.
-            allowed_setups = {"DOUBLE_BREAK_ORIGIN_RETEST"}
+            # Bot 5 is deliberately single-pattern: strong impulse, exact
+            # opposing origin-candle retest, and completed rejection.
+            allowed_setups = {"IMPULSE_PULLBACK_CONTINUATION"}
             if sig.get("setup") not in allowed_setups:
                 print(f"{pair}: rejected — setup is not one of the approved patterns", flush=True)
                 continue
