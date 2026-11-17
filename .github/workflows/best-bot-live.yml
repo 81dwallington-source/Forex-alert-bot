@@ -16,7 +16,7 @@ permissions:
 
 concurrency:
   group: best-bot-five-minute-scan
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   scan:
