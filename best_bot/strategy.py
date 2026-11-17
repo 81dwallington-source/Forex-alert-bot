@@ -703,6 +703,58 @@ def find_liquidity_sweep_retest(df: pd.DataFrame, side: str,
 
 
 
+def _double_break_origin_zone(x: pd.DataFrame, sweep_i: int, break_i: int,
+                               side: str, atr: float) -> dict | None:
+    """Use one meaningful opposing candle, or combine adjacent tiny indecision candles.
+
+    Tiny bars are grouped only when consecutive immediately before displacement.
+    Their combined OHLC defines one cluster zone; they are never treated as
+    several separate origin candles.
+    """
+    start = sweep_i + 1
+    end = break_i
+    if end <= start:
+        return None
+    tail_start = end
+    while tail_start > start:
+        row = x.iloc[tail_start - 1]
+        body = abs(float(row.close) - float(row.open))
+        full_range = float(row.high) - float(row.low)
+        if body <= 0.20 * atr and full_range <= 0.65 * atr:
+            tail_start -= 1
+        else:
+            break
+    if end - tail_start >= 2:
+        cluster = x.iloc[tail_start:end]
+        cluster_open = float(cluster.open.iloc[0])
+        cluster_close = float(cluster.close.iloc[-1])
+        directional = (cluster_close < cluster_open if side == "BUY"
+                       else cluster_close > cluster_open)
+        if directional:
+            return {
+                "low": float(cluster.low.min()),
+                "high": float(cluster.high.max()),
+                "body_low": min(cluster_open, cluster_close),
+                "body_high": max(cluster_open, cluster_close),
+                "time": str(x.index[tail_start]),
+            }
+
+    if side == "BUY":
+        candidates = [i for i in range(start, end)
+                      if float(x.close.iloc[i]) < float(x.open.iloc[i])]
+    else:
+        candidates = [i for i in range(start, end)
+                      if float(x.close.iloc[i]) > float(x.open.iloc[i])]
+    if not candidates:
+        return None
+    i = candidates[-1]
+    row = x.iloc[i]
+    body_low, body_high = sorted((float(row.open), float(row.close)))
+    return {"low": float(row.low), "high": float(row.high),
+            "body_low": body_low, "body_high": body_high,
+            "time": str(x.index[i])}
+
+
 def find_double_break_origin_retest(df: pd.DataFrame, side: str,
                                     range_bars: int = 12,
                                     max_pattern_bars: int = 36,
@@ -747,13 +799,10 @@ def find_double_break_origin_retest(df: pd.DataFrame, side: str,
                 if not (swept and broke):
                     continue
 
-                origins = [i for i in range(sweep_i + 1, break_i)
-                           if float(x.close.iloc[i]) < float(x.open.iloc[i])]
-                if not origins:
+                origin = _double_break_origin_zone(x, sweep_i, break_i, side, atr)
+                if origin is None:
                     continue
-                oi = origins[-1]
-                origin = x.iloc[oi]
-                body_low, body_high = sorted((float(origin.open), float(origin.close)))
+                body_low, body_high = origin["body_low"], origin["body_high"]
                 last = x.iloc[latest]
                 touched = float(last.low) <= body_high and float(last.high) >= body_low
                 # A retest candle need not close above the previous breakout
@@ -762,9 +811,9 @@ def find_double_break_origin_retest(df: pd.DataFrame, side: str,
                              and float(last.close) > body_high)
                 if not (latest > break_i and touched and confirmed):
                     continue
-                return {"entry":(body_high if side == "BUY" else body_low),"origin_low":float(origin.low),
-                        "origin_high":float(origin.high),"origin_body_low":body_low,
-                        "origin_body_high":body_high,"origin_time":str(df.index[oi]),
+                return {"entry":body_high,"origin_low":origin["low"],
+                        "origin_high":origin["high"],"origin_body_low":body_low,
+                        "origin_body_high":body_high,"origin_time":origin["time"],
                         "sweep_extreme":float(x.low.iloc[sweep_i:break_i+1].min()),
                         "atr":atr,"range_high":rh,"range_low":rl,
                         "setup":"DOUBLE_BREAK_ORIGIN_RETEST"}
@@ -776,22 +825,19 @@ def find_double_break_origin_retest(df: pd.DataFrame, side: str,
                 if not (swept and broke):
                     continue
 
-                origins = [i for i in range(sweep_i + 1, break_i)
-                           if float(x.close.iloc[i]) > float(x.open.iloc[i])]
-                if not origins:
+                origin = _double_break_origin_zone(x, sweep_i, break_i, side, atr)
+                if origin is None:
                     continue
-                oi = origins[-1]
-                origin = x.iloc[oi]
-                body_low, body_high = sorted((float(origin.open), float(origin.close)))
+                body_low, body_high = origin["body_low"], origin["body_high"]
                 last = x.iloc[latest]
                 touched = float(last.high) >= body_low and float(last.low) <= body_high
                 confirmed = (float(last.close) < float(last.open)
                              and float(last.close) < body_low)
                 if not (latest > break_i and touched and confirmed):
                     continue
-                return {"entry":float(last.close),"origin_low":float(origin.low),
-                        "origin_high":float(origin.high),"origin_body_low":body_low,
-                        "origin_body_high":body_high,"origin_time":str(df.index[oi]),
+                return {"entry":body_low,"origin_low":origin["low"],
+                        "origin_high":origin["high"],"origin_body_low":body_low,
+                        "origin_body_high":body_high,"origin_time":origin["time"],
                         "sweep_extreme":float(x.high.iloc[sweep_i:break_i+1].max()),
                         "atr":atr,"range_high":rh,"range_low":rl,
                         "setup":"DOUBLE_BREAK_ORIGIN_RETEST"}
