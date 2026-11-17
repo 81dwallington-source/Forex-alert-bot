@@ -189,3 +189,17 @@ def test_double_break_retest_does_not_need_to_close_beyond_previous_breakout_clo
     frame = _multi_bar_sweep_pattern("BUY")
     assert frame.iloc[-1].close < frame.iloc[-2].close
     assert find_double_break_origin_retest(frame, "BUY") is not None
+
+
+def test_double_break_buy_entry_is_origin_candle_body_high():
+    from strategy import find_double_break_origin_retest
+    result = find_double_break_origin_retest(_multi_bar_sweep_pattern("BUY"), "BUY")
+    assert result is not None
+    assert result["entry"] == result["origin_body_high"]
+
+
+def test_double_break_sell_entry_is_origin_candle_body_low():
+    from strategy import find_double_break_origin_retest
+    result = find_double_break_origin_retest(_multi_bar_sweep_pattern("SELL"), "SELL")
+    assert result is not None
+    assert result["entry"] == result["origin_body_low"]
