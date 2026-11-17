@@ -845,11 +845,11 @@ def find_double_break_origin_retest(df: pd.DataFrame, side: str,
 
 
 def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: float) -> dict | None:
-    """Generate only the approved M5 consolidation sweep/opposite-edge break/origin retest.
+    """Generate only the approved M5 impulse and exact origin-candle retest.
 
-    A sweep of one range boundary must be followed by a decisive break of the
-    opposite boundary, then a confirmed retest of the exact origin candle body.
-    No impulse-only or alternative setup is eligible. M15 and H1 must agree.
+    The last opposing candle before a strong 3–7 candle displacement is the
+    origin. Require a deep pullback to its body and a completed rejection close.
+    M15 and H1 must agree; no alternative setup family is eligible.
     """
     if len(m5) < 210 or len(m15) < 55 or len(h1) < 55:
         return None
@@ -862,9 +862,9 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: floa
     if not direction or trend(h1) != direction:
         return None
 
-    # Try only fully implemented patterns that return the exact origin candle
-    # and require a completed retest/rejection before a signal can be emitted.
-    pattern = find_double_break_origin_retest(a, direction)
+    # Bot 5 has one permitted setup: strong impulse, exact opposing origin,
+    # deep retest of that candle body, then completed rejection confirmation.
+    pattern = find_impulse_pullback_continuation(a, direction)
     if not pattern:
         return None
 
