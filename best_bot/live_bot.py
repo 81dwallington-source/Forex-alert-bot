@@ -274,14 +274,7 @@ def scan():
             sig = make_signal(m5, m15, h1, pip)
             if not sig:
                 continue
-            allowed_setups = {
-                "TWO_SIDED_SWEEP_ORIGIN_RETEST",
-                "LIQUIDITY_SWEEP_RANGE_RETEST",
-                "LIQUIDITY_SWEEP_OPPOSITE_RANGE_BREAK_RETEST",
-                "IMPULSE_ORIGIN_RETEST",
-                "IMPULSE_PULLBACK_CONTINUATION",
-                "TREND_CONSOLIDATION_BREAK_RETEST",
-            }
+            allowed_setups = {"DOUBLE_BREAK_ORIGIN_RETEST"}
             if sig.get("setup") not in allowed_setups:
                 print(f"{pair}: rejected — setup is not one of the approved patterns", flush=True)
                 continue
