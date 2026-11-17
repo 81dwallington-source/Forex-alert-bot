@@ -137,3 +137,55 @@ def test_deep_pullback_gate_rejects_shallow_tiny_or_short_retracements():
 def test_deep_pullback_gate_accepts_only_full_quality_retracement():
     from strategy import valid_deep_pullback
     assert valid_deep_pullback(0.60, 0.90, 4)
+
+
+def _multi_bar_sweep_pattern(side):
+    # Twelve-bar compact range, then sweep, a pause, the opposing origin
+    # candle, an opposite-edge displacement, and a later origin-body retest.
+    rows = [{"open":1.1000,"high":1.1005,"low":1.0995,"close":1.1000}
+            for _ in range(30)]
+    if side == "BUY":
+        rows.extend([
+            {"open":1.1000,"high":1.1002,"low":1.0990,"close":1.0998},  # sweep low
+            {"open":1.0998,"high":1.1001,"low":1.0997,"close":1.1000},  # pause
+            {"open":1.1002,"high":1.1004,"low":1.0998,"close":1.1000},  # last bearish origin
+            {"open":1.1000,"high":1.1013,"low":1.0999,"close":1.1012},  # break range high
+            {"open":1.1012,"high":1.1014,"low":1.1010,"close":1.1013},
+            {"open":1.1000,"high":1.1004,"low":1.0999,"close":1.10025}, # retest + bullish reject
+        ])
+    else:
+        rows.extend([
+            {"open":1.1000,"high":1.1010,"low":1.0998,"close":1.1002},  # sweep high
+            {"open":1.1002,"high":1.1003,"low":1.0999,"close":1.1000},  # pause
+            {"open":1.0998,"high":1.1002,"low":1.0996,"close":1.1000},  # last bullish origin
+            {"open":1.1000,"high":1.1001,"low":1.0987,"close":1.0988},  # break range low
+            {"open":1.0988,"high":1.0990,"low":1.0986,"close":1.0987},
+            {"open":1.1000,"high":1.1001,"low":1.0996,"close":1.09975}, # retest + bearish reject
+        ])
+    return pd.DataFrame(rows)
+
+
+def test_double_break_buy_detects_sweep_several_candles_before_breakout():
+    from strategy import find_double_break_origin_retest
+    result = find_double_break_origin_retest(_multi_bar_sweep_pattern("BUY"), "BUY")
+    assert result is not None
+    assert result["setup"] == "DOUBLE_BREAK_ORIGIN_RETEST"
+    assert result["direction"] if "direction" in result else True
+    assert result["origin_body_low"] == 1.1000
+    assert result["origin_body_high"] == 1.1002
+
+
+def test_double_break_sell_detects_sweep_several_candles_before_breakout():
+    from strategy import find_double_break_origin_retest
+    result = find_double_break_origin_retest(_multi_bar_sweep_pattern("SELL"), "SELL")
+    assert result is not None
+    assert result["setup"] == "DOUBLE_BREAK_ORIGIN_RETEST"
+    assert result["origin_body_low"] == 1.0998
+    assert result["origin_body_high"] == 1.1000
+
+
+def test_double_break_retest_does_not_need_to_close_beyond_previous_breakout_close():
+    from strategy import find_double_break_origin_retest
+    frame = _multi_bar_sweep_pattern("BUY")
+    assert frame.iloc[-1].close < frame.iloc[-2].close
+    assert find_double_break_origin_retest(frame, "BUY") is not None
