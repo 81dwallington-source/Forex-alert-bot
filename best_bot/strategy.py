@@ -705,91 +705,96 @@ def find_liquidity_sweep_retest(df: pd.DataFrame, side: str,
 
 def find_double_break_origin_retest(df: pd.DataFrame, side: str,
                                     range_bars: int = 12,
-                                    max_pattern_bars: int = 36) -> dict | None:
-    """Only setup: compact range, sweep one edge, break opposite edge,
-    then retest the last opposing candle before displacement and reject."""
+                                    max_pattern_bars: int = 36,
+                                    max_sweep_to_break_bars: int = 10) -> dict | None:
+    """Detect the approved two-sided range sweep, opposite-edge break and exact
+    origin-body retest. The sweep may occur several completed candles before
+    the breakout; the consolidation range is measured before the sweep.
+
+    BUY: sweep below range low and close back inside; later break above range
+    high; use the last bearish candle between sweep and bullish displacement as
+    the origin; alert only when the latest completed candle retests that body
+    and closes bullish above it. SELL is the exact inverse.
+    """
     if side not in ("BUY", "SELL") or len(df) < range_bars + 12:
         return None
     x = df.reset_index(drop=True)
     latest = len(x) - 1
     first_break = max(range_bars + 2, latest - max_pattern_bars)
+
     for break_i in range(latest - 1, first_break - 1, -1):
-        base_end = break_i - 1
-        base_start = base_end - range_bars
-        if base_start < 0:
-            continue
-        base = x.iloc[base_start:base_end]
-        if len(base) != range_bars:
-            continue
-        rh, rl = float(base.high.max()), float(base.low.min())
-        atr = float(indicators(x.iloc[:break_i + 1])["atr"].iloc[-1])
-        if not pd.notna(atr) or atr <= 0 or rh <= rl or rh-rl > 4.0*atr:
-            continue
         bar = x.iloc[break_i]
-        if side == "SELL":
-            sweeps = [i for i in range(base_end, break_i)
-                      if float(x.high.iloc[i]) > rh and float(x.close.iloc[i]) < rh]
-            broke = (float(bar.close) < rl and float(bar.close) < float(bar.open)
-                     and abs(float(bar.close)-float(bar.open)) >= 0.50*atr)
-            if not sweeps or not broke:
+        atr = float(indicators(x.iloc[:break_i + 1])["atr"].iloc[-1])
+        if not pd.notna(atr) or atr <= 0:
+            continue
+
+        # Search a multi-candle window for the sweep. For each candidate sweep,
+        # build the range only from candles that existed before that sweep.
+        sweep_first = max(range_bars, break_i - max_sweep_to_break_bars)
+        for sweep_i in range(break_i - 1, sweep_first - 1, -1):
+            base = x.iloc[sweep_i - range_bars:sweep_i]
+            if len(base) != range_bars:
                 continue
-            sweep_i = sweeps[0]
-            origins = [i for i in range(sweep_i+1, break_i)
-                       if float(x.close.iloc[i]) > float(x.open.iloc[i])]
-            if not origins:
+            rh, rl = float(base.high.max()), float(base.low.min())
+            if rh <= rl or rh - rl > 4.0 * atr:
                 continue
-            oi = origins[-1]
-            origin = x.iloc[oi]
-            body_low, body_high = sorted((float(origin.open), float(origin.close)))
-            later = x.iloc[break_i+1:latest+1]
-            if later.empty:
-                continue
-            touched = bool(((later.low <= body_high) & (later.high >= body_low)).any())
-            last = x.iloc[latest]
-            confirmed = (float(last.high) >= body_low and float(last.low) <= body_high
-                         and float(last.close) < float(last.open)
-                         and float(last.close) < body_low
-                         and float(last.close) < float(x.close.iloc[latest-1]))
-            if not (touched and confirmed):
-                continue
-            return {"entry":float(last.close),"origin_low":float(origin.low),
-                    "origin_high":float(origin.high),"origin_body_low":body_low,
-                    "origin_body_high":body_high,"origin_time":str(df.index[oi]),
-                    "sweep_extreme":float(x.high.iloc[sweep_i:break_i+1].max()),
-                    "atr":atr,"range_high":rh,"range_low":rl,
-                    "setup":"DOUBLE_BREAK_ORIGIN_RETEST"}
-        else:
-            sweeps = [i for i in range(base_end, break_i)
-                      if float(x.low.iloc[i]) < rl and float(x.close.iloc[i]) > rl]
-            broke = (float(bar.close) > rh and float(bar.close) > float(bar.open)
-                     and abs(float(bar.close)-float(bar.open)) >= 0.50*atr)
-            if not sweeps or not broke:
-                continue
-            sweep_i = sweeps[0]
-            origins = [i for i in range(sweep_i+1, break_i)
-                       if float(x.close.iloc[i]) < float(x.open.iloc[i])]
-            if not origins:
-                continue
-            oi = origins[-1]
-            origin = x.iloc[oi]
-            body_low, body_high = sorted((float(origin.open), float(origin.close)))
-            later = x.iloc[break_i+1:latest+1]
-            if later.empty:
-                continue
-            touched = bool(((later.high >= body_low) & (later.low <= body_high)).any())
-            last = x.iloc[latest]
-            confirmed = (float(last.low) <= body_high and float(last.high) >= body_low
-                         and float(last.close) > float(last.open)
-                         and float(last.close) > body_high
-                         and float(last.close) > float(x.close.iloc[latest-1]))
-            if not (touched and confirmed):
-                continue
-            return {"entry":float(last.close),"origin_low":float(origin.low),
-                    "origin_high":float(origin.high),"origin_body_low":body_low,
-                    "origin_body_high":body_high,"origin_time":str(df.index[oi]),
-                    "sweep_extreme":float(x.low.iloc[sweep_i:break_i+1].min()),
-                    "atr":atr,"range_high":rh,"range_low":rl,
-                    "setup":"DOUBLE_BREAK_ORIGIN_RETEST"}
+
+            sweep = x.iloc[sweep_i]
+            if side == "BUY":
+                swept = float(sweep.low) < rl and float(sweep.close) > rl
+                broke = (float(bar.close) > rh and float(bar.close) > float(bar.open)
+                         and abs(float(bar.close) - float(bar.open)) >= 0.50 * atr)
+                if not (swept and broke):
+                    continue
+
+                origins = [i for i in range(sweep_i + 1, break_i)
+                           if float(x.close.iloc[i]) < float(x.open.iloc[i])]
+                if not origins:
+                    continue
+                oi = origins[-1]
+                origin = x.iloc[oi]
+                body_low, body_high = sorted((float(origin.open), float(origin.close)))
+                last = x.iloc[latest]
+                touched = float(last.low) <= body_high and float(last.high) >= body_low
+                # A retest candle need not close above the previous breakout
+                # candle; it must reclaim the origin body with bullish intent.
+                confirmed = (float(last.close) > float(last.open)
+                             and float(last.close) > body_high)
+                if not (latest > break_i and touched and confirmed):
+                    continue
+                return {"entry":float(last.close),"origin_low":float(origin.low),
+                        "origin_high":float(origin.high),"origin_body_low":body_low,
+                        "origin_body_high":body_high,"origin_time":str(df.index[oi]),
+                        "sweep_extreme":float(x.low.iloc[sweep_i:break_i+1].min()),
+                        "atr":atr,"range_high":rh,"range_low":rl,
+                        "setup":"DOUBLE_BREAK_ORIGIN_RETEST"}
+
+            else:
+                swept = float(sweep.high) > rh and float(sweep.close) < rh
+                broke = (float(bar.close) < rl and float(bar.close) < float(bar.open)
+                         and abs(float(bar.close) - float(bar.open)) >= 0.50 * atr)
+                if not (swept and broke):
+                    continue
+
+                origins = [i for i in range(sweep_i + 1, break_i)
+                           if float(x.close.iloc[i]) > float(x.open.iloc[i])]
+                if not origins:
+                    continue
+                oi = origins[-1]
+                origin = x.iloc[oi]
+                body_low, body_high = sorted((float(origin.open), float(origin.close)))
+                last = x.iloc[latest]
+                touched = float(last.high) >= body_low and float(last.low) <= body_high
+                confirmed = (float(last.close) < float(last.open)
+                             and float(last.close) < body_low)
+                if not (latest > break_i and touched and confirmed):
+                    continue
+                return {"entry":float(last.close),"origin_low":float(origin.low),
+                        "origin_high":float(origin.high),"origin_body_low":body_low,
+                        "origin_body_high":body_high,"origin_time":str(df.index[oi]),
+                        "sweep_extreme":float(x.high.iloc[sweep_i:break_i+1].max()),
+                        "atr":atr,"range_high":rh,"range_low":rl,
+                        "setup":"DOUBLE_BREAK_ORIGIN_RETEST"}
     return None
 
 
