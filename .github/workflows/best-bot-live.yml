@@ -41,24 +41,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Install CPU screenshot vision model
-        run: |
-          pip install --index-url https://download.pytorch.org/whl/cpu torch
-          pip install "transformers>=4.51.1" "accelerate>=1.10.0" "Pillow>=11.0.0"
-
-      - name: Cache local vision model weights
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/huggingface
-          key: best-bot-moondream2-transformers-cpu-v1
-
       - name: Check scanner syntax
         run: python -m py_compile best_bot/strategy.py best_bot/live_bot.py best_bot/run_loop.py best_bot/photo_review.py
 
       - name: Run strategy regression tests
         run: python -m pytest -q best_bot/test_strategy.py
 
-      - name: Run one market scan and check Telegram photos
+      - name: Run one market scan and send Telegram alerts
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
