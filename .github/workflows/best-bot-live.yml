@@ -16,12 +16,13 @@ permissions:
 
 concurrency:
   group: best-bot-five-minute-scan
-  cancel-in-progress: true
+  # Never kill an in-progress 27-pair scan when the next five-minute tick arrives.
+  cancel-in-progress: false
 
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 9
+    timeout-minutes: 20
     steps:
       - name: Check out scanner
         uses: actions/checkout@v4
