@@ -274,7 +274,9 @@ def scan():
             sig = make_signal(m5, m15, h1, pip)
             if not sig:
                 continue
-            allowed_setups = {"TWO_SIDED_SWEEP_ORIGIN_RETEST", "DOUBLE_BREAK_ORIGIN_RETEST", "IMPULSE_PULLBACK_CONTINUATION"}
+            # Bot 5 is deliberately single-pattern: sweep one range edge, break
+            # the opposite edge, then confirm the exact origin-candle retest.
+            allowed_setups = {"DOUBLE_BREAK_ORIGIN_RETEST"}
             if sig.get("setup") not in allowed_setups:
                 print(f"{pair}: rejected — setup is not one of the approved patterns", flush=True)
                 continue
@@ -315,7 +317,8 @@ def scan():
             errors += 1
             print(f"{pair}: rejected/scan error: {type(exc).__name__}: {exc}", flush=True)
 
-    state["last_scan_utc"] = now.isoformat()
+    # Store completion time, not start time, so stale scans are easy to detect.
+    state["last_scan_utc"] = utc_now().isoformat()
     save_state(state)
     print(
         f"Scan complete. Telegram signals sent: {sent}; pair errors/rejections: {errors}; "
