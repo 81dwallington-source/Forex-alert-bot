@@ -742,6 +742,80 @@ def find_double_break_origin_retest(df: pd.DataFrame, side: str,
     return None
 
 
+def find_consolidation_break_origin_retest(df: pd.DataFrame, side: str,
+                                               range_bars: int = 18,
+                                               max_pattern_bars: int = 48) -> dict | None:
+    """Single setup only: range-edge break, reversal/displacement, exact origin retest.
+
+    BUY: price sweeps below a clear consolidation low and closes back above it;
+    bullish displacement follows; the last bearish candle immediately before
+    that push is the origin. Alert only on a later bullish retest of its body.
+    SELL is the exact inverse at the consolidation high.
+    """
+    if side not in ("BUY", "SELL") or len(df) < range_bars + 10:
+        return None
+    x = df.reset_index(drop=True)
+    latest = len(x) - 1
+    first = max(range_bars + 2, latest - max_pattern_bars)
+
+    for push_i in range(latest - 1, first, -1):
+        push = x.iloc[push_i]
+        atr = float(indicators(x.iloc[:push_i + 1])["atr"].iloc[-1])
+        if not pd.notna(atr) or atr <= 0:
+            continue
+        body = abs(float(push.close) - float(push.open))
+        if body < 0.60 * atr:
+            continue
+
+        sweep_first = max(range_bars, push_i - 12)
+        for sweep_i in range(push_i - 2, sweep_first - 1, -1):
+            base = x.iloc[sweep_i - range_bars:sweep_i]
+            if len(base) != range_bars:
+                continue
+            range_high, range_low = float(base.high.max()), float(base.low.min())
+            if range_high <= range_low or range_high - range_low > 4.0 * atr:
+                continue
+            sweep = x.iloc[sweep_i]
+
+            if side == "BUY":
+                swept = float(sweep.low) < range_low and float(sweep.close) > range_low
+                reversed = (float(push.close) > float(push.open)
+                            and float(push.close) > float(x.high.iloc[sweep_i + 1:push_i].max()))
+                origins = [j for j in range(sweep_i + 1, push_i)
+                           if float(x.close.iloc[j]) < float(x.open.iloc[j])]
+            else:
+                swept = float(sweep.high) > range_high and float(sweep.close) < range_high
+                reversed = (float(push.close) < float(push.open)
+                            and float(push.close) < float(x.low.iloc[sweep_i + 1:push_i].min()))
+                origins = [j for j in range(sweep_i + 1, push_i)
+                           if float(x.close.iloc[j]) > float(x.open.iloc[j])]
+            if not swept or not reversed or not origins:
+                continue
+
+            origin_i = origins[-1]
+            origin = x.iloc[origin_i]
+            body_low, body_high = sorted((float(origin.open), float(origin.close)))
+            last = x.iloc[latest]
+            touched = float(last.low) <= body_high and float(last.high) >= body_low
+            confirmed = ((float(last.close) > float(last.open) and float(last.close) > body_high)
+                         if side == "BUY" else
+                         (float(last.close) < float(last.open) and float(last.close) < body_low))
+            if latest <= push_i or not touched or not confirmed:
+                continue
+
+            return {
+                "entry": body_high if side == "BUY" else body_low,
+                "origin_low": float(origin.low), "origin_high": float(origin.high),
+                "origin_body_low": body_low, "origin_body_high": body_high,
+                "origin_time": str(df.index[origin_i]),
+                "sweep_extreme": float(x.low.iloc[sweep_i:push_i + 1].min()) if side == "BUY"
+                                 else float(x.high.iloc[sweep_i:push_i + 1].max()),
+                "atr": atr, "range_high": range_high, "range_low": range_low,
+                "setup": "CONSOLIDATION_BREAK_ORIGIN_RETEST",
+            }
+    return None
+
+
 def timeframe_direction(df: pd.DataFrame) -> str | None:
     """Require a clear EMA21/EMA50 trend on a completed higher-timeframe chart."""
     if len(df) < 55:
@@ -759,7 +833,7 @@ def timeframe_direction(df: pd.DataFrame) -> str | None:
 
 
 def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: float) -> dict | None:
-    """M5 pattern entry, with mandatory independent M15 and H1 trend agreement."""
+    """Only the consolidation edge-break, reversal and origin-candle retest setup."""
     if len(m5) < 210 or len(m15) < 55 or len(h1) < 55 or pip <= 0:
         return None
     m15_direction = timeframe_direction(m15)
@@ -769,23 +843,12 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: floa
 
     direction = m15_direction
     pattern = None
-    for range_bars in (24, 18, 36, 12):
-        pattern = find_double_break_origin_retest(
-            m5, direction, range_bars=range_bars,
-            max_pattern_bars=72, max_sweep_to_break_bars=24
+    for range_bars in (18, 24, 12, 30):
+        pattern = find_consolidation_break_origin_retest(
+            m5, direction, range_bars=range_bars, max_pattern_bars=48
         )
         if pattern is not None:
             break
-    if pattern is None:
-        for range_lookback in (36, 24, 48):
-            pattern = find_liquidity_sweep_retest(
-                m5, direction, range_lookback=range_lookback,
-                max_pattern_bars=48
-            )
-            if pattern is not None:
-                break
-    if pattern is None:
-        pattern = find_impulse_origin_retest(m5, direction)
     if pattern is None:
         return None
 
@@ -801,18 +864,16 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: floa
     if risk <= 0 or not valid_stop_distance(risk, pip, atr):
         return None
 
-    result = {
+    return {
         "direction": direction, "signal_close": entry, "stop": float(stop),
         "target": float(target), "risk_pips": round(risk / pip, 1),
         "rr": MIN_RR, "atr": atr, "setup": pattern["setup"],
         "origin_low": float(pattern["origin_low"]),
         "origin_high": float(pattern["origin_high"]),
-        "origin_body_low": float(pattern.get("origin_body_low", pattern["origin_low"])),
-        "origin_body_high": float(pattern.get("origin_body_high", pattern["origin_high"])),
+        "origin_body_low": float(pattern["origin_body_low"]),
+        "origin_body_high": float(pattern["origin_body_high"]),
         "origin_time": pattern.get("origin_time", ""),
         "m15_trend": m15_direction, "h1_trend": h1_direction,
+        "range_high": float(pattern["range_high"]),
+        "range_low": float(pattern["range_low"]),
     }
-    if "range_high" in pattern:
-        result["range_high"] = float(pattern["range_high"])
-        result["range_low"] = float(pattern["range_low"])
-    return result
