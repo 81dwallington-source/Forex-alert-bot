@@ -512,7 +512,7 @@ def find_liquidity_sweep_retest(df: pd.DataFrame, side: str,
 
         sweep = x.iloc[sweep_i]
         if side == "BUY":
-            swept = float(sweep.low) < rl and float(sweep.close) > rl
+            swept = float(sweep.low) < rl
             sweep_extreme = float(sweep.low)
             if not swept:
                 continue
@@ -555,7 +555,7 @@ def find_liquidity_sweep_retest(df: pd.DataFrame, side: str,
                             "atr":atr,"range_high":rh,"range_low":rl,
                             "setup":"LIQUIDITY_SWEEP_OPPOSITE_RANGE_BREAK_RETEST"}
         else:
-            swept = float(sweep.high) > rh and float(sweep.close) < rh
+            swept = float(sweep.high) > rh
             sweep_extreme = float(sweep.high)
             if not swept:
                 continue
@@ -843,9 +843,13 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: floa
 
     direction = m15_direction
     pattern = None
+    # The live strategy must match the taught two-sided setup: first break one
+    # edge of the same range, then a decisive close through the opposite edge,
+    # followed by a retest and completed confirmation at the exact origin body.
     for range_bars in (18, 24, 12, 30):
-        pattern = find_consolidation_break_origin_retest(
-            m5, direction, range_bars=range_bars, max_pattern_bars=48
+        pattern = find_double_break_origin_retest(
+            m5, direction, range_bars=range_bars,
+            max_pattern_bars=48, max_sweep_to_break_bars=10
         )
         if pattern is not None:
             break
