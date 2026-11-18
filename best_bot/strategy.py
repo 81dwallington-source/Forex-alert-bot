@@ -742,40 +742,45 @@ def find_double_break_origin_retest(df: pd.DataFrame, side: str,
     return None
 
 
-def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: float) -> dict | None:
-    """Only trade the user-approved two-sided consolidation break and origin retest.
-
-    BUY: price sweeps below one consolidation low, returns inside, then breaks
-    above that same consolidation high. Wait for a later retest of the exact
-    last bearish origin candle before the bullish displacement, with a bullish
-    close above its body. SELL is the exact inverse. No EMA or generic pullback.
-    """
-    if len(m5) < 210 or pip <= 0:
+def timeframe_direction(df: pd.DataFrame) -> str | None:
+    """Require a clear EMA21/EMA50 trend on a completed higher-timeframe chart."""
+    if len(df) < 55:
         return None
-    # Consolidations vary in length. Test several completed-candle box sizes
-    # and allow more time between the first boundary sweep and opposite break.
-    # The sequence, displacement, exact origin-body retest and confirmation
-    # remain mandatory; this only removes the brittle single-window assumption.
+    close = pd.to_numeric(df.close, errors="coerce")
+    ema21 = close.ewm(span=21, adjust=False).mean()
+    ema50 = close.ewm(span=50, adjust=False).mean()
+    last = float(close.iloc[-1])
+    fast, slow = float(ema21.iloc[-1]), float(ema50.iloc[-1])
+    if fast > slow and last > fast:
+        return "BUY"
+    if fast < slow and last < fast:
+        return "SELL"
+    return None
+
+
+def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: float) -> dict | None:
+    """M5 pattern entry, with mandatory independent M15 and H1 trend agreement."""
+    if len(m5) < 210 or len(m15) < 55 or len(h1) < 55 or pip <= 0:
+        return None
+    m15_direction = timeframe_direction(m15)
+    h1_direction = timeframe_direction(h1)
+    if not m15_direction or not h1_direction or m15_direction != h1_direction:
+        return None
+
+    direction = m15_direction
     pattern = None
-    direction = "BUY"
     for range_bars in (24, 18, 36, 12):
         pattern = find_double_break_origin_retest(
-            m5, "BUY", range_bars=range_bars,
+            m5, direction, range_bars=range_bars,
             max_pattern_bars=72, max_sweep_to_break_bars=24
         )
         if pattern is not None:
             break
     if pattern is None:
-        direction = "SELL"
-        for range_bars in (24, 18, 36, 12):
-            pattern = find_double_break_origin_retest(
-                m5, "SELL", range_bars=range_bars,
-                max_pattern_bars=72, max_sweep_to_break_bars=24
-            )
-            if pattern is not None:
-                break
+        pattern = find_impulse_origin_retest(m5, direction)
     if pattern is None:
         return None
+
     atr = float(pattern["atr"])
     entry = float(pattern["entry"])
     buffer = max(0.25 * atr, 1.0 * pip)
@@ -787,15 +792,19 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: floa
         risk, target = stop - entry, entry - MIN_RR * (stop - entry)
     if risk <= 0 or not valid_stop_distance(risk, pip, atr):
         return None
-    return {
+
+    result = {
         "direction": direction, "signal_close": entry, "stop": float(stop),
         "target": float(target), "risk_pips": round(risk / pip, 1),
         "rr": MIN_RR, "atr": atr, "setup": pattern["setup"],
         "origin_low": float(pattern["origin_low"]),
         "origin_high": float(pattern["origin_high"]),
-        "origin_body_low": float(pattern["origin_body_low"]),
-        "origin_body_high": float(pattern["origin_body_high"]),
-        "origin_time": pattern["origin_time"],
-        "range_high": float(pattern["range_high"]),
-        "range_low": float(pattern["range_low"]),
+        "origin_body_low": float(pattern.get("origin_body_low", pattern["origin_low"])),
+        "origin_body_high": float(pattern.get("origin_body_high", pattern["origin_high"])),
+        "origin_time": pattern.get("origin_time", ""),
+        "m15_trend": m15_direction, "h1_trend": h1_direction,
     }
+    if "range_high" in pattern:
+        result["range_high"] = float(pattern["range_high"])
+        result["range_low"] = float(pattern["range_low"])
+    return result
