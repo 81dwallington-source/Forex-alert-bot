@@ -845,57 +845,42 @@ def find_double_break_origin_retest(df: pd.DataFrame, side: str,
 
 
 def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: float) -> dict | None:
-    """Generate only the approved M5 impulse and exact origin-candle retest.
+    """Only trade the user-approved two-sided consolidation break and origin retest.
 
-    The last opposing candle before a strong 3–7 candle displacement is the
-    origin. Require a deep pullback to its body and a completed rejection close.
-    M15 and H1 must agree; no alternative setup family is eligible.
+    BUY: price sweeps below one consolidation low, returns inside, then breaks
+    above that same consolidation high. Wait for a later retest of the exact
+    last bearish origin candle before the bullish displacement, with a bullish
+    close above its body. SELL is the exact inverse. No EMA or generic pullback.
     """
-    if len(m5) < 210 or len(m15) < 55 or len(h1) < 55:
+    if len(m5) < 210 or pip <= 0:
         return None
-    a = indicators(m5).dropna()
-    if len(a) < 3:
+    pattern = find_double_break_origin_retest(m5, "BUY")
+    direction = "BUY"
+    if pattern is None:
+        pattern = find_double_break_origin_retest(m5, "SELL")
+        direction = "SELL"
+    if pattern is None:
         return None
-
-    # H1 is mandatory; M15 cannot override it.
-    direction = trend(m15)
-    if not direction or trend(h1) != direction:
-        return None
-
-    # Bot 5 has one permitted setup: strong impulse, exact opposing origin,
-    # deep retest of that candle body, then completed rejection confirmation.
-    pattern = find_impulse_pullback_continuation(a, direction)
-    if not pattern:
-        return None
-
     atr = float(pattern["atr"])
     entry = float(pattern["entry"])
     buffer = max(0.25 * atr, 1.0 * pip)
     if direction == "BUY":
-        structural_low = confirmed_swing(m5, "LOW", lookback=36)
-        stop = structural_low - buffer
+        stop = confirmed_swing(m5, "LOW", lookback=36) - buffer
         risk, target = entry - stop, entry + MIN_RR * (entry - stop)
     else:
-        structural_high = confirmed_swing(m5, "HIGH", lookback=36)
-        stop = structural_high + buffer
+        stop = confirmed_swing(m5, "HIGH", lookback=36) + buffer
         risk, target = stop - entry, entry - MIN_RR * (stop - entry)
-
     if risk <= 0 or not valid_stop_distance(risk, pip, atr):
         return None
-
-    # All enabled detectors provide these exact origin-candle fields.
     return {
-        "direction": direction,
-        "signal_close": entry,
-        "stop": float(stop),
-        "target": float(target),
-        "risk_pips": round(risk / pip, 1),
-        "rr": MIN_RR,
-        "atr": atr,
-        "setup": pattern["setup"],
+        "direction": direction, "signal_close": entry, "stop": float(stop),
+        "target": float(target), "risk_pips": round(risk / pip, 1),
+        "rr": MIN_RR, "atr": atr, "setup": pattern["setup"],
         "origin_low": float(pattern["origin_low"]),
         "origin_high": float(pattern["origin_high"]),
         "origin_body_low": float(pattern["origin_body_low"]),
         "origin_body_high": float(pattern["origin_body_high"]),
         "origin_time": pattern["origin_time"],
+        "range_high": float(pattern["range_high"]),
+        "range_low": float(pattern["range_low"]),
     }
