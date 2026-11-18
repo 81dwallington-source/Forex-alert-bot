@@ -228,7 +228,7 @@ def format_signal(pair, direction, entry, stop, target, risk_pips, stamp, rr, at
         f"PATTERN CONFIRMED: {setup}\n"
         f"Origin candle body: {(origin_body_low if origin_body_low is not None else origin_low):.5f}–{(origin_body_high if origin_body_high is not None else origin_high):.5f}\n"
         + (f"Origin candle started: {origin_time}\n" if origin_time else "")
-        + f"M5 entry + M15/H1 trend aligned\n"
+        + f"M5 two-sided consolidation break + origin-candle retest\n"
         + f"Completed candle: {stamp.strftime('%Y-%m-%d %H:%M UTC')}\n"
         + f"Public BiQuote feed — NOT broker-verified. Check MT4 spread and price before entry; "
         + f"skip if price has moved more than 0.20 ATR. Risk no more than 0.25%."
@@ -276,7 +276,7 @@ def scan():
                 continue
             # Bot 5 is deliberately single-pattern: strong impulse, exact
             # opposing origin-candle retest, and completed rejection.
-            allowed_setups = {"IMPULSE_PULLBACK_CONTINUATION"}
+            allowed_setups = {"DOUBLE_BREAK_ORIGIN_RETEST"}
             if sig.get("setup") not in allowed_setups:
                 print(f"{pair}: rejected — setup is not one of the approved patterns", flush=True)
                 continue
