@@ -2,7 +2,6 @@
 from __future__ import annotations
 import pandas as pd
 
-EMA_FAST, EMA_MID, EMA_SLOW = 21, 50, 200
 ATR_PERIOD = 14
 SWING_LOOKBACK = 8
 MIN_RR = 1.5
@@ -20,14 +19,10 @@ def indicators(df: pd.DataFrame) -> pd.DataFrame:
         if c not in x:
             raise ValueError(f"Missing OHLC column: {c}")
         x[c] = pd.to_numeric(x[c], errors="raise")
-    x["ema21"] = x.close.ewm(span=EMA_FAST, adjust=False).mean()
-    x["ema50"] = x.close.ewm(span=EMA_MID, adjust=False).mean()
-    x["ema200"] = x.close.ewm(span=EMA_SLOW, adjust=False).mean()
     prev = x.close.shift()
     tr = pd.concat([x.high-x.low, (x.high-prev).abs(), (x.low-prev).abs()], axis=1).max(axis=1)
     x["atr"] = tr.rolling(ATR_PERIOD).mean()
     return x
-
 
 def trend(df: pd.DataFrame) -> str | None:
     if len(df) < 55:
