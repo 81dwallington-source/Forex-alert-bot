@@ -1,7 +1,8 @@
 name: Best Bot five-minute scanner
 
 on:
-  # Temporary fallback until the external Cloudflare scheduler is deployed.
+  # GitHub's schedule can be delayed; the runner itself scans every five minutes
+  # for 55 minutes, while this schedule provides the next hand-off opportunity.
   schedule:
     - cron: "2-59/5 * * * *"
   workflow_dispatch:
@@ -16,13 +17,13 @@ permissions:
 
 concurrency:
   group: best-bot-five-minute-scan
-  # Never kill an in-progress 27-pair scan when the next five-minute tick arrives.
+  # Keep one active scanner and the newest pending run ready to take over.
   cancel-in-progress: false
 
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 70
     steps:
       - name: Check out scanner
         uses: actions/checkout@v4
@@ -48,7 +49,7 @@ jobs:
       - name: Run strategy regression tests
         run: python -m pytest -q best_bot/test_strategy.py
 
-      - name: Run one market scan and send Telegram alerts
+      - name: Run continuous five-minute scans and send Telegram alerts
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
