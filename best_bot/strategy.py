@@ -713,7 +713,7 @@ def find_double_break_origin_retest(df: pd.DataFrame, side: str,
                         "origin_high":origin["high"],"origin_body_low":body_low,
                         "origin_body_high":body_high,"origin_time":origin["time"],
                         "sweep_extreme":float(x.low.iloc[sweep_i:break_i+1].min()),
-                        "atr":atr,"range_high":rh,"range_low":rl,
+                        "atr":atr,"range_high":rh,"range_low":rl,"break_index":break_i,"sweep_index":sweep_i,
                         "setup":"DOUBLE_BREAK_ORIGIN_RETEST"}
 
             else:
@@ -737,7 +737,7 @@ def find_double_break_origin_retest(df: pd.DataFrame, side: str,
                         "origin_high":origin["high"],"origin_body_low":body_low,
                         "origin_body_high":body_high,"origin_time":origin["time"],
                         "sweep_extreme":float(x.high.iloc[sweep_i:break_i+1].max()),
-                        "atr":atr,"range_high":rh,"range_low":rl,
+                        "atr":atr,"range_high":rh,"range_low":rl,"break_index":break_i,"sweep_index":sweep_i,
                         "setup":"DOUBLE_BREAK_ORIGIN_RETEST"}
     return None
 
@@ -838,20 +838,23 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame | None = None,
     if len(m5) < 210 or pip <= 0:
         return None
 
-    # Direction comes from the actual M5 sequence, not a higher-timeframe filter.
-    pattern = None
-    direction = None
-    for candidate in ("SELL", "BUY"):
+    # Evaluate both directions and choose the newest completed breakout.
+    # Never give SELL priority simply because it is checked first.
+    candidates = []
+    for candidate in ("BUY", "SELL"):
         for range_bars in (18, 24, 12, 30):
-            pattern = find_double_break_origin_retest(
+            found = find_double_break_origin_retest(
                 m5, candidate, range_bars=range_bars,
                 max_pattern_bars=48, max_sweep_to_break_bars=10
             )
-            if pattern is not None:
-                direction = candidate
-                break
-        if pattern is not None:
-            break
+            if found is not None:
+                candidates.append((int(found["break_index"]), candidate, found))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    if len(candidates) > 1 and candidates[0][0] == candidates[1][0] and candidates[0][1] != candidates[1][1]:
+        return None
+    _, direction, pattern = candidates[0]
     if pattern is None or direction is None:
         return None
 
