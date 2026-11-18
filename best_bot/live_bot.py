@@ -276,7 +276,7 @@ def scan():
                 print(f"{pair}: no alert — required consolidation break, reversal and confirmed origin-candle retest not present, or M15/H1 disagree", flush=True)
                 continue
             # One permitted setup only: consolidation edge break, reversal and origin retest.
-            allowed_setups = {"CONSOLIDATION_BREAK_ORIGIN_RETEST"}
+            allowed_setups = {"DOUBLE_BREAK_ORIGIN_RETEST"}
             if sig.get("setup") not in allowed_setups:
                 print(f"{pair}: rejected — setup is not one of the approved patterns", flush=True)
                 continue
