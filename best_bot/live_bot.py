@@ -255,12 +255,8 @@ def scan():
             continue
         try:
             m5, live = fetch_bars(pair, "5m")
-            m15, _ = fetch_bars(pair, "15m")
-            h1, _ = fetch_bars(pair, "1h")
             candle_cache[pair] = m5
             validate_freshness(pair, m5, "5m", MAX_M5_AGE_MINUTES)
-            validate_freshness(pair, m15, "15m", MAX_M15_AGE_MINUTES)
-            validate_freshness(pair, h1, "1h", MAX_H1_AGE_MINUTES)
             pip = pip_size(pair)
             stamp = m5.index[-1]
             live_bars = [b for b in live if b.get("time") and b["time"] >= stamp]
@@ -271,9 +267,9 @@ def scan():
 
             if sent_today + sent >= MAX_ALERTS_PER_UTC_DAY:
                 continue  # Daily cap applies to confirmed trade-entry alerts.
-            sig = make_signal(m5, m15, h1, pip)
+            sig = make_signal(m5, pip=pip)
             if not sig:
-                print(f"{pair}: no alert — required consolidation break, reversal and confirmed origin-candle retest not present, or M15/H1 disagree", flush=True)
+                print(f"{pair}: no alert — required M5 sweep, opposite-range break and confirmed origin-candle retest not present", flush=True)
                 continue
             # One permitted setup only: consolidation edge break, reversal and origin retest.
             allowed_setups = {"DOUBLE_BREAK_ORIGIN_RETEST"}
@@ -281,9 +277,6 @@ def scan():
                 print(f"{pair}: rejected — setup is not one of the approved patterns", flush=True)
                 continue
             atr = float(sig["atr"])
-            if abs(live_price - float(sig["signal_close"])) > MAX_ENTRY_DRIFT_ATR * atr:
-                print(f"{pair}: current price drifted > {MAX_ENTRY_DRIFT_ATR} ATR; rejected", flush=True)
-                continue
             entry = float(sig["signal_close"])
             row = {
                 "signal_time_utc": stamp.isoformat(), "pair":pair,
