@@ -752,11 +752,28 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: floa
     """
     if len(m5) < 210 or pip <= 0:
         return None
-    pattern = find_double_break_origin_retest(m5, "BUY")
+    # Consolidations vary in length. Test several completed-candle box sizes
+    # and allow more time between the first boundary sweep and opposite break.
+    # The sequence, displacement, exact origin-body retest and confirmation
+    # remain mandatory; this only removes the brittle single-window assumption.
+    pattern = None
     direction = "BUY"
+    for range_bars in (24, 18, 36, 12):
+        pattern = find_double_break_origin_retest(
+            m5, "BUY", range_bars=range_bars,
+            max_pattern_bars=72, max_sweep_to_break_bars=24
+        )
+        if pattern is not None:
+            break
     if pattern is None:
-        pattern = find_double_break_origin_retest(m5, "SELL")
         direction = "SELL"
+        for range_bars in (24, 18, 36, 12):
+            pattern = find_double_break_origin_retest(
+                m5, "SELL", range_bars=range_bars,
+                max_pattern_bars=72, max_sweep_to_break_bars=24
+            )
+            if pattern is not None:
+                break
     if pattern is None:
         return None
     atr = float(pattern["atr"])
