@@ -777,6 +777,14 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: floa
         if pattern is not None:
             break
     if pattern is None:
+        for range_lookback in (36, 24, 48):
+            pattern = find_liquidity_sweep_retest(
+                m5, direction, range_lookback=range_lookback,
+                max_pattern_bars=48
+            )
+            if pattern is not None:
+                break
+    if pattern is None:
         pattern = find_impulse_origin_retest(m5, direction)
     if pattern is None:
         return None
