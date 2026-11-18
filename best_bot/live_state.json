@@ -128,6 +128,26 @@
       "outcome_time_utc": "2026-11-16T19:30:00+00:00",
       "outcome_note": "Public-feed M5 candle touched stop",
       "data_source": "BiQuote public FX OHLC; not broker-verified"
+    },
+    {
+      "signal_time_utc": "2026-11-18T06:45:00+00:00",
+      "pair": "EURNZD",
+      "direction": "SELL",
+      "entry_reference": 2.000055,
+      "stop_loss": 2.0009305357142857,
+      "take_profit": 1.9987416964285718,
+      "risk_pips": 8.8,
+      "planned_rr": 1.5,
+      "setup_type": "DOUBLE_BREAK_ORIGIN_RETEST",
+      "origin_candle_low": 2.000025,
+      "origin_candle_high": 2.000405,
+      "origin_candle_body_low": 2.000055,
+      "origin_candle_body_high": 2.000315,
+      "origin_candle_time_utc": "272",
+      "outcome": "WIN",
+      "outcome_time_utc": "2026-11-18T07:40:00+00:00",
+      "outcome_note": "Public-feed M5 candle touched target",
+      "data_source": "BiQuote public FX OHLC; not broker-verified"
     }
   ],
   "pending": [
@@ -150,29 +170,9 @@
       "outcome_time_utc": "",
       "outcome_note": "",
       "data_source": "BiQuote public FX OHLC; not broker-verified"
-    },
-    {
-      "signal_time_utc": "2026-11-18T06:45:00+00:00",
-      "pair": "EURNZD",
-      "direction": "SELL",
-      "entry_reference": 2.000055,
-      "stop_loss": 2.0009305357142857,
-      "take_profit": 1.9987416964285718,
-      "risk_pips": 8.8,
-      "planned_rr": 1.5,
-      "setup_type": "DOUBLE_BREAK_ORIGIN_RETEST",
-      "origin_candle_low": 2.000025,
-      "origin_candle_high": 2.000405,
-      "origin_candle_body_low": 2.000055,
-      "origin_candle_body_high": 2.000315,
-      "origin_candle_time_utc": "272",
-      "outcome": "PENDING",
-      "outcome_time_utc": "",
-      "outcome_note": "",
-      "data_source": "BiQuote public FX OHLC; not broker-verified"
     }
   ],
-  "last_scan_utc": "2026-11-18T07:35:21.297059+00:00",
+  "last_scan_utc": "2026-11-18T07:53:52.696603+00:00",
   "origin_prealerts": [],
   "origin_watch_state": {}
 }
