@@ -275,7 +275,12 @@ def scan():
             if not sig:
                 continue
             # Only the two approved M5 origin-retest patterns are eligible.
-            allowed_setups = {"DOUBLE_BREAK_ORIGIN_RETEST", "IMPULSE_ORIGIN_RETEST"}
+            allowed_setups = {
+                "DOUBLE_BREAK_ORIGIN_RETEST",
+                "LIQUIDITY_SWEEP_RANGE_RETEST",
+                "LIQUIDITY_SWEEP_OPPOSITE_RANGE_BREAK_RETEST",
+                "IMPULSE_ORIGIN_RETEST",
+            }
             if sig.get("setup") not in allowed_setups:
                 print(f"{pair}: rejected — setup is not one of the approved patterns", flush=True)
                 continue
