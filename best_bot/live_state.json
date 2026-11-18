@@ -148,9 +148,7 @@
       "outcome_time_utc": "2026-11-18T07:40:00+00:00",
       "outcome_note": "Public-feed M5 candle touched target",
       "data_source": "BiQuote public FX OHLC; not broker-verified"
-    }
-  ],
-  "pending": [
+    },
     {
       "signal_time_utc": "2026-11-18T06:45:00+00:00",
       "pair": "NZDUSD",
@@ -166,13 +164,55 @@
       "origin_candle_body_low": 0.54903,
       "origin_candle_body_high": 0.54909,
       "origin_candle_time_utc": "277",
+      "outcome": "LOSS",
+      "outcome_time_utc": "2026-11-18T07:55:00+00:00",
+      "outcome_note": "Public-feed M5 candle touched stop",
+      "data_source": "BiQuote public FX OHLC; not broker-verified"
+    }
+  ],
+  "pending": [
+    {
+      "signal_time_utc": "2026-11-18T08:40:00+00:00",
+      "pair": "EURGBP",
+      "direction": "BUY",
+      "entry_reference": 0.833065,
+      "stop_loss": 0.832755,
+      "take_profit": 0.8335300000000001,
+      "risk_pips": 3.1,
+      "planned_rr": 1.5,
+      "setup_type": "DOUBLE_BREAK_ORIGIN_RETEST",
+      "origin_candle_low": 0.832865,
+      "origin_candle_high": 0.833065,
+      "origin_candle_body_low": 0.832915,
+      "origin_candle_body_high": 0.833065,
+      "origin_candle_time_utc": "270",
+      "outcome": "PENDING",
+      "outcome_time_utc": "",
+      "outcome_note": "",
+      "data_source": "BiQuote public FX OHLC; not broker-verified"
+    },
+    {
+      "signal_time_utc": "2026-11-18T08:40:00+00:00",
+      "pair": "NZDCHF",
+      "direction": "BUY",
+      "entry_reference": 0.46176,
+      "stop_loss": 0.4617,
+      "take_profit": 0.46185,
+      "risk_pips": 0.6,
+      "planned_rr": 1.5,
+      "setup_type": "DOUBLE_BREAK_ORIGIN_RETEST",
+      "origin_candle_low": 0.46168,
+      "origin_candle_high": 0.46183,
+      "origin_candle_body_low": 0.46173,
+      "origin_candle_body_high": 0.46176,
+      "origin_candle_time_utc": "273",
       "outcome": "PENDING",
       "outcome_time_utc": "",
       "outcome_note": "",
       "data_source": "BiQuote public FX OHLC; not broker-verified"
     }
   ],
-  "last_scan_utc": "2026-11-18T07:53:52.696603+00:00",
+  "last_scan_utc": "2026-11-18T08:45:59.178500+00:00",
   "origin_prealerts": [],
   "origin_watch_state": {}
 }
