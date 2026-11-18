@@ -691,7 +691,7 @@ def find_double_break_origin_retest(df: pd.DataFrame, side: str,
 
             sweep = x.iloc[sweep_i]
             if side == "BUY":
-                swept = float(sweep.low) < rl and float(sweep.close) > rl
+                swept = float(sweep.low) < rl
                 broke = (float(bar.close) > rh and float(bar.close) > float(bar.open)
                          and abs(float(bar.close) - float(bar.open)) >= 0.50 * atr)
                 if not (swept and broke):
@@ -717,7 +717,7 @@ def find_double_break_origin_retest(df: pd.DataFrame, side: str,
                         "setup":"DOUBLE_BREAK_ORIGIN_RETEST"}
 
             else:
-                swept = float(sweep.high) > rh and float(sweep.close) < rh
+                swept = float(sweep.high) > rh
                 broke = (float(bar.close) < rl and float(bar.close) < float(bar.open)
                          and abs(float(bar.close) - float(bar.open)) >= 0.50 * atr)
                 if not (swept and broke):
@@ -832,28 +832,27 @@ def timeframe_direction(df: pd.DataFrame) -> str | None:
     return None
 
 
-def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: float) -> dict | None:
-    """Only the consolidation edge-break, reversal and origin-candle retest setup."""
-    if len(m5) < 210 or len(m15) < 55 or len(h1) < 55 or pip <= 0:
-        return None
-    m15_direction = timeframe_direction(m15)
-    h1_direction = timeframe_direction(h1)
-    if not m15_direction or not h1_direction or m15_direction != h1_direction:
+def make_signal(m5: pd.DataFrame, m15: pd.DataFrame | None = None,
+                h1: pd.DataFrame | None = None, pip: float = 0.0001) -> dict | None:
+    """Trade only the user's M5 two-sided sweep -> opposite break -> origin retest."""
+    if len(m5) < 210 or pip <= 0:
         return None
 
-    direction = m15_direction
+    # Direction comes from the actual M5 sequence, not a higher-timeframe filter.
     pattern = None
-    # The live strategy must match the taught two-sided setup: first break one
-    # edge of the same range, then a decisive close through the opposite edge,
-    # followed by a retest and completed confirmation at the exact origin body.
-    for range_bars in (18, 24, 12, 30):
-        pattern = find_double_break_origin_retest(
-            m5, direction, range_bars=range_bars,
-            max_pattern_bars=48, max_sweep_to_break_bars=10
-        )
+    direction = None
+    for candidate in ("SELL", "BUY"):
+        for range_bars in (18, 24, 12, 30):
+            pattern = find_double_break_origin_retest(
+                m5, candidate, range_bars=range_bars,
+                max_pattern_bars=48, max_sweep_to_break_bars=10
+            )
+            if pattern is not None:
+                direction = candidate
+                break
         if pattern is not None:
             break
-    if pattern is None:
+    if pattern is None or direction is None:
         return None
 
     atr = float(pattern["atr"])
@@ -865,7 +864,9 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: floa
     else:
         stop = confirmed_swing(m5, "HIGH", lookback=36) + buffer
         risk, target = stop - entry, entry - MIN_RR * (stop - entry)
-    if risk <= 0 or not valid_stop_distance(risk, pip, atr):
+    # Keep a valid structural stop and positive risk; do not reject the setup
+    # using arbitrary minimum/maximum ATR or pip-distance filters.
+    if risk <= 0:
         return None
 
     return {
@@ -877,7 +878,6 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pip: floa
         "origin_body_low": float(pattern["origin_body_low"]),
         "origin_body_high": float(pattern["origin_body_high"]),
         "origin_time": pattern.get("origin_time", ""),
-        "m15_trend": m15_direction, "h1_trend": h1_direction,
         "range_high": float(pattern["range_high"]),
         "range_low": float(pattern["range_low"]),
     }
