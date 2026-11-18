@@ -273,14 +273,10 @@ def scan():
                 continue  # Daily cap applies to confirmed trade-entry alerts.
             sig = make_signal(m5, m15, h1, pip)
             if not sig:
+                print(f"{pair}: no alert — required consolidation break, reversal and confirmed origin-candle retest not present, or M15/H1 disagree", flush=True)
                 continue
-            # Only the two approved M5 origin-retest patterns are eligible.
-            allowed_setups = {
-                "DOUBLE_BREAK_ORIGIN_RETEST",
-                "LIQUIDITY_SWEEP_RANGE_RETEST",
-                "LIQUIDITY_SWEEP_OPPOSITE_RANGE_BREAK_RETEST",
-                "IMPULSE_ORIGIN_RETEST",
-            }
+            # One permitted setup only: consolidation edge break, reversal and origin retest.
+            allowed_setups = {"CONSOLIDATION_BREAK_ORIGIN_RETEST"}
             if sig.get("setup") not in allowed_setups:
                 print(f"{pair}: rejected — setup is not one of the approved patterns", flush=True)
                 continue
