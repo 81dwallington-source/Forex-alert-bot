@@ -3,7 +3,7 @@ name: Best Bot five-minute scanner
 on:
   # One short run every five minutes; no multi-hour listener process.
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "2-59/5 * * * *"
   workflow_dispatch:
   push:
     paths:
