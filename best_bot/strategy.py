@@ -24,46 +24,6 @@ def indicators(df: pd.DataFrame) -> pd.DataFrame:
     x["atr"] = tr.rolling(ATR_PERIOD).mean()
     return x
 
-def trend(df: pd.DataFrame) -> str | None:
-    if len(df) < 55:
-        return None
-    close = pd.to_numeric(df["close"], errors="coerce")
-    ema21 = close.ewm(span=EMA_FAST, adjust=False).mean()
-    ema50 = close.ewm(span=EMA_MID, adjust=False).mean()
-    if close.isna().any():
-        return None
-    if close.iloc[-1] > ema21.iloc[-1] > ema50.iloc[-1] and ema21.iloc[-1] > ema21.iloc[-2]:
-        return "BUY"
-    if close.iloc[-1] < ema21.iloc[-1] < ema50.iloc[-1] and ema21.iloc[-1] < ema21.iloc[-2]:
-        return "SELL"
-    return None
-
-
-def m5_trend_aligned(df: pd.DataFrame, side: str) -> bool:
-    """Require price and all three M5 EMAs to agree; reject countertrend entries."""
-    if len(df) < EMA_SLOW + 3:
-        return False
-    x = indicators(df).dropna()
-    if len(x) < 3:
-        return False
-    cur, prev = x.iloc[-1], x.iloc[-2]
-    if side == "BUY":
-        return bool(
-            cur.close > cur.ema21 > cur.ema50 > cur.ema200
-            and cur.ema21 > prev.ema21
-            and cur.ema50 > prev.ema50
-            and cur.ema200 >= prev.ema200
-        )
-    if side == "SELL":
-        return bool(
-            cur.close < cur.ema21 < cur.ema50 < cur.ema200
-            and cur.ema21 < prev.ema21
-            and cur.ema50 < prev.ema50
-            and cur.ema200 <= prev.ema200
-        )
-    return False
-
-
 def confirmed_swing(df: pd.DataFrame, side: str, lookback: int = 36) -> float:
     """Latest confirmed two-bars-left/two-bars-right M5 swing; conservative fallback."""
     window = df.iloc[-lookback:]
@@ -525,63 +485,6 @@ def find_impulse_pullback_continuation(df: pd.DataFrame, side: str,
                         "setup": "IMPULSE_PULLBACK_CONTINUATION",
                     }
     return None
-
-def find_trend_consolidation_break_retest(df: pd.DataFrame, side: str,
-                                          range_bars: int = 10,
-                                          max_break_bars: int = 5) -> dict | None:
-    """Trend-aligned consolidation break followed by a retest of the range edge.
-
-    BUY mirrors SELL: EMA stack establishes direction, a compact pause forms,
-    price closes out of the pause, then the latest completed candle retests
-    the broken edge and rejects it in the trend direction.
-    """
-    if side not in ("BUY", "SELL") or len(df) < 210:
-        return None
-    x = indicators(df).dropna().reset_index(drop=True)
-    if len(x) < range_bars + max_break_bars + 3:
-        return None
-    cur = x.iloc[-1]
-    prev = x.iloc[-2]
-    if side == "SELL":
-        aligned = (cur.close < cur.ema21 < cur.ema50 < cur.ema200
-                   and cur.ema21 < prev.ema21 and cur.ema50 <= prev.ema50)
-    else:
-        aligned = (cur.close > cur.ema21 > cur.ema50 > cur.ema200
-                   and cur.ema21 > prev.ema21 and cur.ema50 >= prev.ema50)
-    if not aligned:
-        return None
-
-    # A breakout must have occurred shortly before the current retest candle.
-    for break_i in range(len(x)-2, max(10, len(x)-max_break_bars-1), -1):
-        base = x.iloc[break_i-range_bars:break_i]
-        if len(base) != range_bars:
-            continue
-        rh, rl = float(base.high.max()), float(base.low.min())
-        atr = float(x.atr.iloc[break_i])
-        if not pd.notna(atr) or atr <= 0 or rh-rl > 2.5*atr:
-            continue
-        impulse = x.iloc[break_i]
-        if side == "SELL":
-            broke = (float(impulse.close) < rl and float(impulse.close) < float(impulse.open)
-                     and abs(float(impulse.close)-float(impulse.open)) >= 0.55*atr)
-            retest = float(cur.high) >= rl and float(cur.low) <= rl + 0.20*atr
-            rejected = float(cur.close) < rl and float(cur.close) < float(cur.open)
-            if broke and retest and rejected:
-                return {"entry":float(cur.close), "origin_low":rl,
-                        "origin_high":rh, "sweep_extreme":float(x.high.iloc[break_i: ].max()),
-                        "atr":atr, "setup":"TREND_CONSOLIDATION_BREAK_RETEST"}
-        else:
-            broke = (float(impulse.close) > rh and float(impulse.close) > float(impulse.open)
-                     and abs(float(impulse.close)-float(impulse.open)) >= 0.55*atr)
-            retest = float(cur.low) <= rh and float(cur.high) >= rh - 0.20*atr
-            rejected = float(cur.close) > rh and float(cur.close) > float(cur.open)
-            if broke and retest and rejected:
-                return {"entry":float(cur.close), "origin_low":rl,
-                        "origin_high":rh, "sweep_extreme":float(x.low.iloc[break_i:].min()),
-                        "atr":atr, "setup":"TREND_CONSOLIDATION_BREAK_RETEST"}
-    return None
-
-
 
 def find_liquidity_sweep_retest(df: pd.DataFrame, side: str,
                                 range_lookback: int = 36,
