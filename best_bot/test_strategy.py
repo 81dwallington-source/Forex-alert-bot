@@ -56,3 +56,13 @@ def test_double_break_sell_uses_inverse_origin_body_retest():
 def test_ema_or_trend_alignment_alone_never_creates_signal():
     frame = sample_frame()
     assert make_signal(frame,frame,frame,0.0001) is None
+
+def test_missing_higher_timeframes_reject_signal():
+    frame = sample_frame()
+    assert make_signal(frame, pip=0.0001) is None
+
+def test_stop_distance_enforces_eight_pip_floor_and_three_atr_ceiling():
+    pip, atr = 0.0001, 0.001
+    assert not valid_stop_distance(7.9 * pip, pip, atr)
+    assert valid_stop_distance(8.0 * pip, pip, atr)
+    assert not valid_stop_distance(3.01 * atr, pip, atr)
