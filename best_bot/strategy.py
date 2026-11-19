@@ -834,14 +834,20 @@ def timeframe_direction(df: pd.DataFrame) -> str | None:
 
 def make_signal(m5: pd.DataFrame, m15: pd.DataFrame | None = None,
                 h1: pd.DataFrame | None = None, pip: float = 0.0001) -> dict | None:
-    """Trade only the user's M5 two-sided sweep -> opposite break -> origin retest."""
-    if len(m5) < 210 or pip <= 0:
+    """Trade the approved M5 double-break/origin retest with mandatory M15/H1 alignment."""
+    if len(m5) < 210 or pip <= 0 or m15 is None or h1 is None:
         return None
 
-    # Evaluate both directions and choose the newest completed breakout.
-    # Never give SELL priority simply because it is checked first.
+    # Higher-timeframe direction is mandatory. M15 cannot override H1.
+    m15_direction = timeframe_direction(m15)
+    h1_direction = timeframe_direction(h1)
+    if m15_direction is None or h1_direction is None or m15_direction != h1_direction:
+        return None
+
     candidates = []
     for candidate in ("BUY", "SELL"):
+        if candidate != h1_direction:
+            continue
         for range_bars in (18, 24, 12, 30):
             found = find_double_break_origin_retest(
                 m5, candidate, range_bars=range_bars,
@@ -867,9 +873,10 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame | None = None,
     else:
         stop = confirmed_swing(m5, "HIGH", lookback=36) + buffer
         risk, target = stop - entry, entry - MIN_RR * (stop - entry)
-    # Keep a valid structural stop and positive risk; do not reject the setup
-    # using arbitrary minimum/maximum ATR or pip-distance filters.
-    if risk <= 0:
+
+    # Keep the structural swing stop; reject it if too tight or too wide.
+    # Never move a stop closer just to manufacture an attractive R:R.
+    if not valid_stop_distance(risk, pip, atr):
         return None
 
     return {
@@ -883,4 +890,6 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame | None = None,
         "origin_time": pattern.get("origin_time", ""),
         "range_high": float(pattern["range_high"]),
         "range_low": float(pattern["range_low"]),
+        "m15_direction": m15_direction,
+        "h1_direction": h1_direction,
     }
