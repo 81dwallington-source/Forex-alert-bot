@@ -229,6 +229,7 @@ def format_signal(pair, direction, entry, stop, target, risk_pips, stamp, rr, at
         f"Origin candle body: {(origin_body_low if origin_body_low is not None else origin_low):.5f}–{(origin_body_high if origin_body_high is not None else origin_high):.5f}\n"
         + (f"Origin candle started: {origin_time}\n" if origin_time else "")
         + f"M5 two-sided consolidation break + origin-candle retest\n"
+        + f"M15 + H1 trend aligned\n"
         + f"Completed candle: {stamp.strftime('%Y-%m-%d %H:%M UTC')}\n"
         + f"Public BiQuote feed — NOT broker-verified. Check MT4 spread and price before entry; "
         + f"skip if price has moved more than 0.20 ATR. Risk no more than 0.25%."
@@ -257,6 +258,11 @@ def scan():
             m5, live = fetch_bars(pair, "5m")
             candle_cache[pair] = m5
             validate_freshness(pair, m5, "5m", MAX_M5_AGE_MINUTES)
+            # Require fresh completed M15 and H1 candles for directional agreement.
+            m15, _ = fetch_bars(pair, "15m")
+            h1, _ = fetch_bars(pair, "1h")
+            validate_freshness(pair, m15, "15m", MAX_M15_AGE_MINUTES)
+            validate_freshness(pair, h1, "1h", MAX_H1_AGE_MINUTES)
             pip = pip_size(pair)
             stamp = m5.index[-1]
             live_bars = [b for b in live if b.get("time") and b["time"] >= stamp]
@@ -267,7 +273,7 @@ def scan():
 
             if sent_today + sent >= MAX_ALERTS_PER_UTC_DAY:
                 continue  # Daily cap applies to confirmed trade-entry alerts.
-            sig = make_signal(m5, pip=pip)
+            sig = make_signal(m5, m15=m15, h1=h1, pip=pip)
             if not sig:
                 print(f"{pair}: no alert — required M5 sweep, opposite-range break and confirmed origin-candle retest not present", flush=True)
                 continue
