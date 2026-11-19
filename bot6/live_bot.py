@@ -290,10 +290,10 @@ def scan():
         if len(todays) + sent >= MAX_ALERTS_PER_UTC_DAY:
             break
         try:
-            # BiQuote returns about 192 completed candles even with limit=500.
-            # Require 180 so the EMA strategy can scan the available history.
+            # BiQuote currently returns 168 completed H1 candles even with limit=500.
+            # Require 150; keep the H1 EMA21/50/200 alignment filter intact.
             m15 = fetch_bars(pair, "15m", 180)
-            h1 = fetch_bars(pair, "1h", 180)
+            h1 = fetch_bars(pair, "1h", 150)
             check_fresh(m15, 15, 25)
             check_fresh(h1, 60, 75)
             signal = get_signal(m15, h1, pair)
