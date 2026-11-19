@@ -11,11 +11,11 @@ The live signal-only scanner is `live_bot.py`, run by `.github/workflows/best-bo
 No entry on the impulse itself. No broad substitute zone, early touch alert, or alternate setup family. Reject incomplete, ambiguous, stale, overextended or invalid patterns.
 
 ## Filters and risk
-- M5 completed candles define the impulse, origin, pullback and entry confirmation.
-- M15 and H1 trend must agree with direction. H1 is mandatory; M15 cannot override it.
+- M5 completed candles define the two-sided range sweep, opposite-edge displacement break, exact opposing origin candle and confirmed retest.
+- Fresh completed M15 and H1 trend must both agree with the trade direction. If either is unclear or they disagree, reject the trade.
 - Entry is the near edge of the exact origin candle body: BUY at its upper body edge; SELL at its lower body edge.
 - BUY stop is below the latest confirmed M5 swing low; SELL stop is above the latest confirmed M5 swing high, each with a volatility buffer.
-- Reject stops below the minimum distance or beyond the volatility limit. Take profit is at least 1:1.5 from the structural stop.
+- Keep the stop beyond the latest confirmed M5 swing plus a volatility buffer. Reject, never tighten, any structural stop under 8 pips or under 0.65 ATR, or wider than 3 ATR. Take profit is at least 1:1.5 from the structural stop.
 - Maximum entry drift remains 0.20 ATR.
 - Public BiQuote OHLC is not broker-verified; confirm broker price and spread before manual entry. Risk ceiling 0.25%.
 - Signal-only; no auto-trading, watchlists or 1-minute entries.
