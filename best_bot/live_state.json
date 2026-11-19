@@ -328,9 +328,7 @@
       "outcome_time_utc": "2026-11-19T00:30:00+00:00",
       "outcome_note": "Public-feed M5 candle touched stop",
       "data_source": "BiQuote public FX OHLC; not broker-verified"
-    }
-  ],
-  "pending": [
+    },
     {
       "signal_time_utc": "2026-11-18T23:55:00+00:00",
       "pair": "EURUSD",
@@ -346,9 +344,9 @@
       "origin_candle_body_low": 1.09718,
       "origin_candle_body_high": 1.09734,
       "origin_candle_time_utc": "277",
-      "outcome": "PENDING",
-      "outcome_time_utc": "",
-      "outcome_note": "",
+      "outcome": "LOSS",
+      "outcome_time_utc": "2026-11-19T00:45:00+00:00",
+      "outcome_note": "Public-feed M5 candle touched stop",
       "data_source": "BiQuote public FX OHLC; not broker-verified"
     },
     {
@@ -366,13 +364,14 @@
       "origin_candle_body_low": 1.09718,
       "origin_candle_body_high": 1.09734,
       "origin_candle_time_utc": "276",
-      "outcome": "PENDING",
-      "outcome_time_utc": "",
-      "outcome_note": "",
+      "outcome": "LOSS",
+      "outcome_time_utc": "2026-11-19T00:45:00+00:00",
+      "outcome_note": "Public-feed M5 candle touched stop",
       "data_source": "BiQuote public FX OHLC; not broker-verified"
     }
   ],
-  "last_scan_utc": "2026-11-19T00:38:13.748425+00:00",
+  "pending": [],
+  "last_scan_utc": "2026-11-19T01:33:39.334595+00:00",
   "origin_prealerts": [],
   "origin_watch_state": {}
 }
