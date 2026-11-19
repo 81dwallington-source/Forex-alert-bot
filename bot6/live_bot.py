@@ -283,6 +283,9 @@ def scan():
     resolve_outcomes(state)
     sent = 0
     errors = 0
+    analysed = 0
+    no_setup = 0
+    error_details = []
     print(f"BOT 6 starting 15-minute pullback scan: {len(PAIRS)} pairs", flush=True)
     for pair in PAIRS:
         if MAX_ONE_PER_PAIR_PER_UTC_DAY and pair in used_pairs:
@@ -292,12 +295,16 @@ def scan():
         try:
             # BiQuote currently returns 168 completed H1 candles even with limit=500.
             # Require 150; keep the H1 EMA21/50/200 alignment filter intact.
-            m15 = fetch_bars(pair, "15m", 180)
+            # Match the H1 minimum: this feed can return fewer than 180 completed M15 bars.
+            # EMA200 and both timeframe trend-alignment filters remain in force.
+            m15 = fetch_bars(pair, "15m", 150)
             h1 = fetch_bars(pair, "1h", 150)
             check_fresh(m15, 15, 25)
             check_fresh(h1, 60, 75)
+            analysed += 1
             signal = get_signal(m15, h1, pair)
             if not signal:
+                no_setup += 1
                 continue
             trade = {
                 "signal_time_utc": signal["signal_time"], "pair": pair,
@@ -325,10 +332,14 @@ def scan():
             print(f"BOT 6 alert sent: {pair} {signal['direction']}", flush=True)
         except Exception as exc:
             errors += 1
-            print(f"{pair}: rejected/error: {type(exc).__name__}: {exc}", flush=True)
+            detail = f"{pair}: {type(exc).__name__}: {exc}"
+            error_details.append(detail)
+            print(f"BOT 6 data/error: {detail}", flush=True)
     state["last_scan_utc"] = now_utc().isoformat()
     save_state(state)
-    print(f"BOT 6 scan complete. Alerts sent={sent}; errors/rejections={errors}; pending={len(state['pending'])}; outcomes={len(state['completed'])}", flush=True)
+    print(f"BOT 6 scan complete. Alerts sent={sent}; pairs analysed={analysed}; no setup={no_setup}; data/errors={errors}; pending={len(state['pending'])}; outcomes={len(state['completed'])}", flush=True)
+    if error_details:
+        print("BOT 6 error summary: " + " | ".join(error_details[:8]), flush=True)
 
 
 if __name__ == "__main__":
