@@ -834,53 +834,39 @@ def timeframe_direction(df: pd.DataFrame) -> str | None:
 
 def make_signal(m5: pd.DataFrame, m15: pd.DataFrame | None = None,
                 h1: pd.DataFrame | None = None, pip: float = 0.0001) -> dict | None:
-    """Trade the approved M5 double-break/origin retest with mandatory M15/H1 alignment."""
+    """Trade only the approved 3–7 candle impulse and exact origin-body retest."""
     if len(m5) < 210 or pip <= 0 or m15 is None or h1 is None:
         return None
 
-    # Higher-timeframe direction is mandatory. M15 cannot override H1.
+    # Both completed higher timeframes must agree; H1 is mandatory.
     m15_direction = timeframe_direction(m15)
     h1_direction = timeframe_direction(h1)
     if m15_direction is None or h1_direction is None or m15_direction != h1_direction:
         return None
 
-    candidates = []
-    for candidate in ("BUY", "SELL"):
-        if candidate != h1_direction:
-            continue
-        for range_bars in (18, 24, 12, 30):
-            found = find_double_break_origin_retest(
-                m5, candidate, range_bars=range_bars,
-                max_pattern_bars=48, max_sweep_to_break_bars=10
-            )
-            if found is not None:
-                candidates.append((int(found["break_index"]), candidate, found))
-    if not candidates:
-        return None
-    candidates.sort(key=lambda item: item[0], reverse=True)
-    if len(candidates) > 1 and candidates[0][0] == candidates[1][0] and candidates[0][1] != candidates[1][1]:
-        return None
-    _, direction, pattern = candidates[0]
-    if pattern is None or direction is None:
+    pattern = find_impulse_pullback_continuation(m5, h1_direction)
+    if pattern is None or pattern.get("setup") != "IMPULSE_PULLBACK_CONTINUATION":
         return None
 
     atr = float(pattern["atr"])
     entry = float(pattern["entry"])
     buffer = max(0.25 * atr, 1.0 * pip)
-    if direction == "BUY":
+    if h1_direction == "BUY":
         stop = confirmed_swing(m5, "LOW", lookback=36) - buffer
-        risk, target = entry - stop, entry + MIN_RR * (entry - stop)
+        risk = entry - stop
+        target = entry + MIN_RR * risk
     else:
         stop = confirmed_swing(m5, "HIGH", lookback=36) + buffer
-        risk, target = stop - entry, entry - MIN_RR * (stop - entry)
+        risk = stop - entry
+        target = entry - MIN_RR * risk
 
-    # Keep the structural swing stop; reject it if too tight or too wide.
-    # Never move a stop closer just to manufacture an attractive R:R.
+    # Preserve the structural swing stop. Reject undersized or excessive risk;
+    # never pull the stop closer merely to force a signal.
     if not valid_stop_distance(risk, pip, atr):
         return None
 
     return {
-        "direction": direction, "signal_close": entry, "stop": float(stop),
+        "direction": h1_direction, "signal_close": entry, "stop": float(stop),
         "target": float(target), "risk_pips": round(risk / pip, 1),
         "rr": MIN_RR, "atr": atr, "setup": pattern["setup"],
         "origin_low": float(pattern["origin_low"]),
@@ -888,8 +874,6 @@ def make_signal(m5: pd.DataFrame, m15: pd.DataFrame | None = None,
         "origin_body_low": float(pattern["origin_body_low"]),
         "origin_body_high": float(pattern["origin_body_high"]),
         "origin_time": pattern.get("origin_time", ""),
-        "range_high": float(pattern["range_high"]),
-        "range_low": float(pattern["range_low"]),
         "m15_direction": m15_direction,
         "h1_direction": h1_direction,
     }
