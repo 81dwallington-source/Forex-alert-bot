@@ -118,7 +118,7 @@ def get_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pair: str)
     n = len(m)
     setup = None
     # Find a recent compact 12-candle range, decisive break, later retest, then final confirmation.
-    for i in range(n - 9, n - 3):
+    for i in range(n - 4, n - 10, -1):
         if i < 15:
             continue
         base, b = m.iloc[i - 12:i], m.iloc[i]
