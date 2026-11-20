@@ -99,7 +99,7 @@ def get_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pair: str)
     m = indicators(m5)
     mt = indicators(m15)
     ht = indicators(h1)
-    if len(m) < 40 or len(mt) < 210 or len(ht) < 150:
+    if len(m) < 40 or len(mt) < 150 or len(ht) < 150:
         return None
     c, prev, mc, hc = m.iloc[-1], m.iloc[-2], mt.iloc[-1], ht.iloc[-1]
     if pd.isna(c["atr"]) or c["atr"] <= 0:
@@ -284,7 +284,7 @@ def scan():
             break
         try:
             m5 = fetch_bars(pair, "5m", 210)
-            m15 = fetch_bars(pair, "15m", 210)
+            m15 = fetch_bars(pair, "15m", 150)
             h1 = fetch_bars(pair, "1h", 150)
             check_fresh(m5, 5, 10)
             check_fresh(m15, 15, 25)
