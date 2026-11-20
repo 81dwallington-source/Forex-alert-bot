@@ -85,6 +85,16 @@ def valid_stop_distance(risk: float, pip: float, atr: float) -> bool:
     return minimum <= risk <= MAX_STOP_ATR * atr
 
 
+
+def valid_entry_drift(entry: float, live_price: float, atr: float,
+                      max_drift_atr: float = 0.20) -> bool:
+    """Reject a signal if the executable quote has moved too far from its entry."""
+    values = (entry, live_price, atr, max_drift_atr)
+    if not all(pd.notna(v) for v in values) or atr <= 0 or max_drift_atr < 0:
+        return False
+    return abs(float(live_price) - float(entry)) <= float(max_drift_atr) * float(atr)
+
+
 def impulse_retracement(side: str, origin_level: float,
                         impulse_extreme: float, pullback_extreme: float) -> float:
     """Measure pullback against the complete origin-to-impulse move."""
