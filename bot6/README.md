@@ -1,11 +1,12 @@
-# Bot 6 — 15-minute pullback entries
+# Bot 6 — M5 compression breakout and retest
 
-- Separate scanner and records from the existing bots.
-- Scans the same 27 major/cross pairs using completed 15-minute candles.
-- Requires 15M EMA21/50/200 alignment and matching H1 trend (EMA21/50/200).
-- Waits for a recent pullback into the EMA21/EMA50 area, then a completed rejection/continuation candle that closes beyond the prior candle.
-- Structural stop beyond the recent confirmed 15M swing with an ATR buffer; rejects risk below 0.65 ATR or above 2.5 ATR rather than squeezing the stop.
-- Target is 1.5R. Maximum five alerts per UTC day and one per pair per day.
-- Sends to the existing TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID secrets and therefore the same Telegram bot/chat.
-- Logs every signal and resolves WIN/LOSS only from later completed 15M candles. If SL and TP are both touched in one candle, marks AMBIGUOUS rather than guessing.
-- Uses public BiQuote FX OHLC, not broker-verified. Signal-only; no auto-trading.
+- Independent signal strategy, separate from Bot 5.
+- Scans 27 major/cross pairs every five minutes using completed M5 candles.
+- Directional filter: H1 and M15 must both agree using EMA21/50/200 alignment. If either disagrees or is unclear, no trade.
+- Identifies a compact 12-candle M5 range, then requires a decisive breakout close at least 0.10 ATR beyond the range, with a strong body and close near the candle extreme.
+- Does not enter on the breakout. Waits for a later retest of the broken range boundary, then a separate completed M5 confirmation candle that closes beyond the prior candle in the breakout direction.
+- Structural stop beyond the recent M5 swing with an ATR/spread buffer; rejects stops below 0.65 ATR or above 2.5 ATR.
+- Fixed planned target of at least 1:1.5. No forced signals and no stop squeezing.
+- Maximum five alerts per UTC day and one alert per pair per UTC day.
+- Logs every alert and resolves outcomes from subsequent completed M5 candles. If SL and TP are both touched in one candle, records AMBIGUOUS rather than guessing; expires unresolved trades after 24 hours.
+- Uses public BiQuote FX OHLC, not broker-verified. Signal-only; no auto-trading. Check broker price and spread before entry.
