@@ -41,7 +41,7 @@ MAX_ENTRY_DRIFT_ATR = 0.20
 MAX_HOLDING_M5_BARS = 288
 SPREAD_ASSUMPTION_PIPS = 1.2  # informational backtest assumption; not applied to public live quotes
 SESSION = requests.Session()
-SESSION.headers.update({"User-Agent": "ForexBestBot/1.0"})
+SESSION.headers.update({"User-Agent": "ForexBot5/1.0"})
 
 
 def utc_now() -> pd.Timestamp:
@@ -220,7 +220,7 @@ def outcome_updates(state, candle_cache):
 
 def format_signal(pair, direction, entry, stop, target, risk_pips, stamp, rr, atr, setup, origin_low, origin_high, origin_body_low=None, origin_body_high=None, origin_time=None):
     return (
-        f"📣 BEST BOT — {direction} {pair}\n"
+        f"📣 BOT 5 — {direction} {pair}\n"
         f"Entry reference: {entry:.5f}\n"
         f"Stop loss: {stop:.5f}\n"
         f"Take profit: {target:.5f}\n"
