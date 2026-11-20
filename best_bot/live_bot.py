@@ -17,7 +17,7 @@ import requests
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
-from strategy import make_signal  # noqa: E402
+from strategy import make_signal, valid_entry_drift  # noqa: E402
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
@@ -284,6 +284,11 @@ def scan():
                 continue
             atr = float(sig["atr"])
             entry = float(sig["signal_close"])
+            # Do not alert if the current quote has run more than 0.20 ATR
+            # away from the exact origin-body entry reference.
+            if not valid_entry_drift(entry, live_price, atr, MAX_ENTRY_DRIFT_ATR):
+                print(f"{pair}: rejected — live price drift exceeds {MAX_ENTRY_DRIFT_ATR:.2f} ATR from entry", flush=True)
+                continue
             row = {
                 "signal_time_utc": stamp.isoformat(), "pair":pair,
                 "direction":sig["direction"], "entry_reference":entry,
