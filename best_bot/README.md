@@ -11,7 +11,7 @@ The live signal-only scanner is `live_bot.py`, run by `.github/workflows/best-bo
 No entry on the impulse itself. No broad substitute zone, early touch alert, or alternate setup family. Reject incomplete, ambiguous, stale, overextended or invalid patterns.
 
 ## Filters and risk
-- M5 completed candles define the two-sided range sweep, opposite-edge displacement break, exact opposing origin candle and confirmed retest.
+- M5 completed candles define the 3–7 candle displacement leg, the immediately preceding opposing origin candle, the 50–85% pullback and the confirmed retest of that exact candle body.
 - Fresh completed M15 and H1 trend must both agree with the trade direction. If either is unclear or they disagree, reject the trade.
 - Entry is the near edge of the exact origin candle body: BUY at its upper body edge; SELL at its lower body edge.
 - BUY stop is below the latest confirmed M5 swing low; SELL stop is above the latest confirmed M5 swing high, each with a volatility buffer.
