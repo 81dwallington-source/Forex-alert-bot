@@ -277,8 +277,8 @@ def scan():
             if not sig:
                 print(f"{pair}: no alert — required M5 impulse, deep pullback and confirmed origin-candle retest not present", flush=True)
                 continue
-            # One permitted setup only: consolidation edge break, reversal and origin retest.
-            allowed_setups = {"DOUBLE_BREAK_ORIGIN_RETEST"}
+            # One permitted setup only: strong 3–7 candle impulse and exact origin-body retest.
+            allowed_setups = {"IMPULSE_PULLBACK_CONTINUATION"}
             if sig.get("setup") not in allowed_setups:
                 print(f"{pair}: rejected — setup is not one of the approved patterns", flush=True)
                 continue
