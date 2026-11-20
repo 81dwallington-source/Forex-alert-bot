@@ -240,11 +240,11 @@ def resolve_outcomes(state):
                 hit_sl = float(candle["high"]) >= float(trade["stop_loss"])
                 hit_tp = float(candle["low"]) <= float(trade["take_profit"])
             if hit_sl and hit_tp:
-                result, note = "AMBIGUOUS", "Both SL and TP touched in same 15m candle; not guessed"
+                result, note = "AMBIGUOUS", "Both SL and TP touched in same M5 candle; not guessed"
             elif hit_sl:
-                result, note = "LOSS", "Completed public-feed 15m candle touched stop"
+                result, note = "LOSS", "Completed public-feed M5 candle touched stop"
             elif hit_tp:
-                result, note = "WIN", "Completed public-feed 15m candle touched target"
+                result, note = "WIN", "Completed public-feed M5 candle touched target"
             if result:
                 result_time = stamp.isoformat()
                 break
