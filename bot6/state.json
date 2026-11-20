@@ -27,8 +27,22 @@
       "outcome_time_utc": "",
       "outcome_note": "",
       "data_source": "BiQuote public FX OHLC; not broker-verified"
+    },
+    {
+      "signal_time_utc": "2026-11-20T17:15:00+00:00",
+      "pair": "AUDJPY",
+      "direction": "SELL",
+      "entry": 105.266,
+      "stop_loss": 105.423,
+      "take_profit": 105.0305,
+      "risk_pips": 15.7,
+      "planned_rr": 1.5,
+      "outcome": "PENDING",
+      "outcome_time_utc": "",
+      "outcome_note": "",
+      "data_source": "BiQuote public FX OHLC; not broker-verified"
     }
   ],
   "completed": [],
-  "last_scan_utc": "2026-11-20T16:27:36.953664+00:00"
+  "last_scan_utc": "2026-11-20T17:24:14.629078+00:00"
 }
