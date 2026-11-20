@@ -388,9 +388,7 @@
       "outcome_time_utc": "2026-11-20T02:25:00+00:00",
       "outcome_note": "Public-feed M5 candle touched stop",
       "data_source": "BiQuote public FX OHLC; not broker-verified"
-    }
-  ],
-  "pending": [
+    },
     {
       "signal_time_utc": "2026-11-20T01:40:00+00:00",
       "pair": "AUDJPY",
@@ -406,13 +404,55 @@
       "origin_candle_body_low": 106.021,
       "origin_candle_body_high": 106.118,
       "origin_candle_time_utc": "278",
+      "outcome": "WIN",
+      "outcome_time_utc": "2026-11-20T03:05:00+00:00",
+      "outcome_note": "Public-feed M5 candle touched target",
+      "data_source": "BiQuote public FX OHLC; not broker-verified"
+    },
+    {
+      "signal_time_utc": "2026-11-20T03:25:00+00:00",
+      "pair": "AUDCAD",
+      "direction": "SELL",
+      "entry_reference": 0.95377,
+      "stop_loss": 0.9545825,
+      "take_profit": 0.95255125,
+      "risk_pips": 8.1,
+      "planned_rr": 1.5,
+      "setup_type": "DOUBLE_BREAK_ORIGIN_RETEST",
+      "origin_candle_low": 0.95377,
+      "origin_candle_high": 0.95445,
+      "origin_candle_body_low": 0.95377,
+      "origin_candle_body_high": 0.9542,
+      "origin_candle_time_utc": "281",
+      "outcome": "LOSS",
+      "outcome_time_utc": "2026-11-20T03:40:00+00:00",
+      "outcome_note": "Public-feed M5 candle touched stop",
+      "data_source": "BiQuote public FX OHLC; not broker-verified"
+    }
+  ],
+  "pending": [
+    {
+      "signal_time_utc": "2026-11-20T03:05:00+00:00",
+      "pair": "AUDCHF",
+      "direction": "SELL",
+      "entry_reference": 0.56066,
+      "stop_loss": 0.5616375892857143,
+      "take_profit": 0.5591936160714287,
+      "risk_pips": 9.8,
+      "planned_rr": 1.5,
+      "setup_type": "DOUBLE_BREAK_ORIGIN_RETEST",
+      "origin_candle_low": 0.56055,
+      "origin_candle_high": 0.56124,
+      "origin_candle_body_low": 0.56066,
+      "origin_candle_body_high": 0.5612,
+      "origin_candle_time_utc": "261",
       "outcome": "PENDING",
       "outcome_time_utc": "",
       "outcome_note": "",
       "data_source": "BiQuote public FX OHLC; not broker-verified"
     }
   ],
-  "last_scan_utc": "2026-11-20T02:55:05.068650+00:00",
+  "last_scan_utc": "2026-11-20T03:50:53.450986+00:00",
   "origin_prealerts": [],
   "origin_watch_state": {}
 }
