@@ -16,7 +16,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: best-bot-five-minute-scan
+  group: bot5-trend-displacement-pullback-v2
   # Keep one active scanner and the newest pending run ready to take over.
   cancel-in-progress: false
 
