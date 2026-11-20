@@ -528,9 +528,7 @@
       "outcome_time_utc": "2026-11-20T13:00:00+00:00",
       "outcome_note": "Public-feed M5 candle touched stop",
       "data_source": "BiQuote public FX OHLC; not broker-verified"
-    }
-  ],
-  "pending": [
+    },
     {
       "signal_time_utc": "2026-11-20T14:30:00+00:00",
       "pair": "NZDJPY",
@@ -546,13 +544,14 @@
       "origin_candle_body_low": 87.281,
       "origin_candle_body_high": 87.343,
       "origin_candle_time_utc": "2026-11-20 13:35:00+00:00",
-      "outcome": "PENDING",
-      "outcome_time_utc": "",
-      "outcome_note": "",
+      "outcome": "WIN",
+      "outcome_time_utc": "2026-11-20T15:50:00+00:00",
+      "outcome_note": "Public-feed M5 candle touched target",
       "data_source": "BiQuote public FX OHLC; not broker-verified"
     }
   ],
-  "last_scan_utc": "2026-11-20T15:30:57.349700+00:00",
+  "pending": [],
+  "last_scan_utc": "2026-11-20T16:26:36.883154+00:00",
   "origin_prealerts": [],
   "origin_watch_state": {}
 }
