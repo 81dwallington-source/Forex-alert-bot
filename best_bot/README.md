@@ -16,12 +16,12 @@ No entry on the impulse itself. No broad substitute zone, early touch alert, or 
 - Entry is the near edge of the exact origin candle body: BUY at its upper body edge; SELL at its lower body edge.
 - BUY stop is below the latest confirmed M5 swing low; SELL stop is above the latest confirmed M5 swing high, each with a volatility buffer.
 - Keep the stop beyond the latest confirmed M5 swing plus a volatility buffer. Reject, never tighten, any structural stop under 8 pips or under 0.65 ATR, or wider than 3 ATR. Take profit is at least 1:1.5 from the structural stop.
-- Maximum entry drift remains 0.20 ATR.
+- Maximum entry drift is enforced against the current live quote: reject if it is more than 0.20 ATR from the exact entry reference.
 - Public BiQuote OHLC is not broker-verified; confirm broker price and spread before manual entry. Risk ceiling 0.25%.
 - Signal-only; no auto-trading, watchlists or 1-minute entries.
 
 ## Operation and records
 - 27 major/cross pairs; scheduled five-minute scans (GitHub schedule starts are best-effort).
-- Maximum five alerts per UTC day and one per pair per UTC day.
+- Maximum 15 alerts per UTC day and one per pair per UTC day.
 - Every alert is recorded in `live_signals.csv`; pending and resolved outcomes are stored in `live_state.json`.
 - Outcomes use later completed public-feed M5 candles; same-candle SL/TP ambiguity is not guessed.
