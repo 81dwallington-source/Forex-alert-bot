@@ -94,87 +94,77 @@ def indicators(frame: pd.DataFrame):
     return x
 
 
-def get_signal(m15: pd.DataFrame, h1: pd.DataFrame, pair: str):
-    m = indicators(m15)
-    h = indicators(h1)
-    # All decisions use completed candles only.
-    c = m.iloc[-1]
-    p = m.iloc[-2]
-    hcur = h.iloc[-1]
+def get_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pair: str):
+    """Compression breakout, retest and continuation; completed candles only."""
+    m = indicators(m5)
+    mt = indicators(m15)
+    ht = indicators(h1)
+    if len(m) < 40 or len(mt) < 210 or len(ht) < 150:
+        return None
+    c, prev, mc, hc = m.iloc[-1], m.iloc[-2], mt.iloc[-1], ht.iloc[-1]
     if pd.isna(c["atr"]) or c["atr"] <= 0:
         return None
-
-    # Higher-timeframe trend must be unambiguous and aligned.
-    h1_up = hcur["close"] > hcur["ema50"] > hcur["ema200"] and hcur["ema21"] > hcur["ema50"]
-    h1_down = hcur["close"] < hcur["ema50"] < hcur["ema200"] and hcur["ema21"] < hcur["ema50"]
-    m15_up = c["close"] > c["ema50"] > c["ema200"] and c["ema21"] > c["ema50"]
-    m15_down = c["close"] < c["ema50"] < c["ema200"] and c["ema21"] < c["ema50"]
-
-    atr = float(c["atr"])
-    body = abs(float(c["close"]) - float(c["open"]))
-    candle_range = max(float(c["high"] - c["low"]), 1e-12)
-    lower_wick = min(float(c["open"]), float(c["close"])) - float(c["low"])
-    upper_wick = float(c["high"]) - max(float(c["open"]), float(c["close"]))
-
-    direction = None
+    h1_up = hc["close"] > hc["ema50"] > hc["ema200"] and hc["ema21"] > hc["ema50"]
+    h1_down = hc["close"] < hc["ema50"] < hc["ema200"] and hc["ema21"] < hc["ema50"]
+    m15_up = mc["close"] > mc["ema50"] > mc["ema200"] and mc["ema21"] > mc["ema50"]
+    m15_down = mc["close"] < mc["ema50"] < mc["ema200"] and mc["ema21"] < mc["ema50"]
     if h1_up and m15_up:
-        # Pullback within last 4 completed candles must tag the EMA21/EMA50 band.
-        recent = m.iloc[-4:-1]
-        touched = ((recent["low"] <= recent["ema21"] + 0.15 * recent["atr"]) &
-                   (recent["low"] >= recent["ema50"] - 0.25 * recent["atr"])).any()
-        rejection = (
-            c["close"] > c["open"]
-            and c["close"] > p["high"]
-            and lower_wick >= max(body * 0.5, candle_range * 0.15)
-            and c["close"] > c["ema21"]
-            and body >= 0.20 * atr
-        )
-        if touched and rejection:
-            direction = "BUY"
+        direction = "BUY"
     elif h1_down and m15_down:
-        recent = m.iloc[-4:-1]
-        touched = ((recent["high"] >= recent["ema21"] - 0.15 * recent["atr"]) &
-                   (recent["high"] <= recent["ema50"] + 0.25 * recent["atr"])).any()
-        rejection = (
-            c["close"] < c["open"]
-            and c["close"] < p["low"]
-            and upper_wick >= max(body * 0.5, candle_range * 0.15)
-            and c["close"] < c["ema21"]
-            and body >= 0.20 * atr
-        )
-        if touched and rejection:
-            direction = "SELL"
-
-    if not direction:
+        direction = "SELL"
+    else:
         return None
-
-    # Structural stop beyond the recent confirmed M15 swing, with an ATR buffer.
-    recent_swing = m.iloc[-7:-1]
-    buffer = max(0.15 * atr, 1.5 * pip_size(pair))
+    atr = float(c["atr"])
+    n = len(m)
+    setup = None
+    # Find a recent compact 12-candle range, decisive break, later retest, then final confirmation.
+    for i in range(n - 9, n - 3):
+        if i < 15:
+            continue
+        base, b = m.iloc[i - 12:i], m.iloc[i]
+        b_atr = float(b["atr"]) if pd.notna(b["atr"]) else 0.0
+        if b_atr <= 0:
+            continue
+        box_high, box_low = float(base["high"].max()), float(base["low"].min())
+        box_width = box_high - box_low
+        if not (0.8 * b_atr <= box_width <= 3.2 * b_atr):
+            continue
+        body = abs(float(b["close"]) - float(b["open"]))
+        candle_range = max(float(b["high"] - b["low"]), 1e-12)
+        if body < 0.65 * b_atr:
+            continue
+        level = box_high if direction == "BUY" else box_low
+        if direction == "BUY":
+            broke = (float(b["close"]) >= level + 0.10 * b_atr and float(b["close"]) > float(b["open"]) and (float(b["close"]) - float(b["low"])) / candle_range >= 0.75)
+            later = m.iloc[i + 1:n - 1]
+            retested = ((later["low"] <= level + 0.15 * b_atr) & (later["low"] >= level - 0.20 * b_atr) & (later["close"] >= level)).any()
+            confirmed = float(c["close"]) > float(c["open"]) and float(c["close"]) > float(prev["high"]) and float(c["close"]) > level and float(c["close"]) > float(c["ema21"])
+        else:
+            broke = (float(b["close"]) <= level - 0.10 * b_atr and float(b["close"]) < float(b["open"]) and (float(b["high"]) - float(b["close"])) / candle_range >= 0.75)
+            later = m.iloc[i + 1:n - 1]
+            retested = ((later["high"] >= level - 0.15 * b_atr) & (later["high"] <= level + 0.20 * b_atr) & (later["close"] <= level)).any()
+            confirmed = float(c["close"]) < float(c["open"]) and float(c["close"]) < float(prev["low"]) and float(c["close"]) < level and float(c["close"]) < float(c["ema21"])
+        if broke and retested and confirmed:
+            setup = {"level": level, "breakout_time": m.index[i].isoformat()}
+            break
+    if setup is None:
+        return None
     entry = float(c["close"])
+    buffer = max(0.15 * atr, 1.5 * pip_size(pair))
+    recent = m.iloc[-7:-1]
     if direction == "BUY":
-        swing = float(recent_swing["low"].min())
-        stop = swing - buffer
+        stop = float(recent["low"].min()) - buffer
         risk = entry - stop
     else:
-        swing = float(recent_swing["high"].max())
-        stop = swing + buffer
+        stop = float(recent["high"].max()) + buffer
         risk = stop - entry
-    # Reject poor geometry; never squeeze the stop to force a trade.
-    if risk < 0.65 * atr or risk > 2.5 * atr:
+    if risk <= 0 or risk < 0.65 * atr or risk > 2.5 * atr:
         return None
     target = entry + 1.5 * risk if direction == "BUY" else entry - 1.5 * risk
-    return {
-        "direction": direction,
-        "entry": entry,
-        "stop": stop,
-        "target": target,
-        "risk_pips": risk / pip_size(pair),
-        "rr": 1.5,
-        "atr": atr,
-        "signal_time": m.index[-1].isoformat(),
-    }
-
+    return {"direction": direction, "entry": entry, "stop": stop, "target": target,
+            "risk_pips": risk / pip_size(pair), "rr": 1.5, "atr": atr,
+            "breakout_level": float(setup["level"]), "breakout_time": setup["breakout_time"],
+            "signal_time": m.index[-1].isoformat()}
 
 def send_telegram(message: str):
     if not TOKEN or not CHAT_ID:
@@ -233,7 +223,7 @@ def resolve_outcomes(state):
     remaining = []
     for trade in state["pending"]:
         try:
-            bars = fetch_bars(trade["pair"], "15m", 3)
+            bars = fetch_bars(trade["pair"], "5m", 3)
         except Exception as exc:
             print(f"Outcome check deferred for {trade['pair']}: {exc}", flush=True)
             remaining.append(trade)
@@ -242,7 +232,7 @@ def resolve_outcomes(state):
         result = None
         result_time = ""
         note = ""
-        for stamp, candle in future.iloc[:96].iterrows():
+        for stamp, candle in future.iloc[:288].iterrows():
             if trade["direction"] == "BUY":
                 hit_sl = float(candle["low"]) <= float(trade["stop_loss"])
                 hit_tp = float(candle["high"]) >= float(trade["take_profit"])
@@ -263,9 +253,9 @@ def resolve_outcomes(state):
             state["completed"].append(trade)
             write_log(trade)
             print(f"Outcome {trade['pair']} {trade['direction']}: {result}", flush=True)
-        elif len(future) >= 96:
-            trade.update({"outcome": "EXPIRED", "outcome_time_utc": future.index[95].isoformat(),
-                          "outcome_note": "No SL/TP within 24 hours of completed M15 candles"})
+        elif len(future) >= 288:
+            trade.update({"outcome": "EXPIRED", "outcome_time_utc": future.index[287].isoformat(),
+                          "outcome_note": "No SL/TP within 24 hours of completed M5 candles"})
             state["completed"].append(trade)
             write_log(trade)
         else:
@@ -286,23 +276,21 @@ def scan():
     analysed = 0
     no_setup = 0
     error_details = []
-    print(f"BOT 6 starting 15-minute pullback scan: {len(PAIRS)} pairs", flush=True)
+    print(f"BOT 6 starting M5 compression-breakout retest scan: {len(PAIRS)} pairs", flush=True)
     for pair in PAIRS:
         if MAX_ONE_PER_PAIR_PER_UTC_DAY and pair in used_pairs:
             continue
         if len(todays) + sent >= MAX_ALERTS_PER_UTC_DAY:
             break
         try:
-            # BiQuote currently returns 168 completed H1 candles even with limit=500.
-            # Require 150; keep the H1 EMA21/50/200 alignment filter intact.
-            # Match the H1 minimum: this feed can return fewer than 180 completed M15 bars.
-            # EMA200 and both timeframe trend-alignment filters remain in force.
-            m15 = fetch_bars(pair, "15m", 150)
+            m5 = fetch_bars(pair, "5m", 210)
+            m15 = fetch_bars(pair, "15m", 210)
             h1 = fetch_bars(pair, "1h", 150)
+            check_fresh(m5, 5, 10)
             check_fresh(m15, 15, 25)
             check_fresh(h1, 60, 75)
             analysed += 1
-            signal = get_signal(m15, h1, pair)
+            signal = get_signal(m5, m15, h1, pair)
             if not signal:
                 no_setup += 1
                 continue
@@ -315,12 +303,12 @@ def scan():
                 "data_source": "BiQuote public FX OHLC; not broker-verified",
             }
             message = (
-                f"📣 BOT 6 — 15M PULLBACK {trade['direction']} {pair}\n"
+                f"📣 BOT 6 — M5 BREAKOUT RETEST {trade['direction']} {pair}\n"
                 f"Entry: {trade['entry']}\nStop loss: {trade['stop_loss']}\n"
                 f"Take profit: {trade['take_profit']}\n"
                 f"Risk: {trade['risk_pips']} pips | Planned R:R 1:{trade['planned_rr']}\n"
-                f"15M EMA21/50/200 trend + confirmed EMA21/50 pullback rejection\n"
-                f"H1 trend aligned | Completed 15M candle: {trade['signal_time_utc']}\n"
+                f"M5 compression breakout + retest + confirmation\n"
+                f"M15 and H1 trend aligned | Completed M5 candle: {trade['signal_time_utc']}\n"
                 f"Source: public BiQuote feed, not broker-verified. Check broker price/spread before entry. "
                 f"Manual signal only; risk no more than 0.25%."
             )
