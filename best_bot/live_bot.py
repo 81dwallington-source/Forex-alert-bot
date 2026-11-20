@@ -228,7 +228,7 @@ def format_signal(pair, direction, entry, stop, target, risk_pips, stamp, rr, at
         f"PATTERN CONFIRMED: {setup}\n"
         f"Origin candle body: {(origin_body_low if origin_body_low is not None else origin_low):.5f}–{(origin_body_high if origin_body_high is not None else origin_high):.5f}\n"
         + (f"Origin candle started: {origin_time}\n" if origin_time else "")
-        + f"M5 two-sided consolidation break + origin-candle retest\n"
+        + f"M5 3–7 candle impulse + exact origin-candle pullback retest\n"
         + f"M15 + H1 trend aligned\n"
         + f"Completed candle: {stamp.strftime('%Y-%m-%d %H:%M UTC')}\n"
         + f"Public BiQuote feed — NOT broker-verified. Check MT4 spread and price before entry; "
@@ -275,7 +275,7 @@ def scan():
                 continue  # Daily cap applies to confirmed trade-entry alerts.
             sig = make_signal(m5, m15=m15, h1=h1, pip=pip)
             if not sig:
-                print(f"{pair}: no alert — required M5 sweep, opposite-range break and confirmed origin-candle retest not present", flush=True)
+                print(f"{pair}: no alert — required M5 impulse, deep pullback and confirmed origin-candle retest not present", flush=True)
                 continue
             # One permitted setup only: consolidation edge break, reversal and origin retest.
             allowed_setups = {"DOUBLE_BREAK_ORIGIN_RETEST"}
