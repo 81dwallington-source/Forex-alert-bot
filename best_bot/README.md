@@ -1,4 +1,8 @@
-# Bot 5 — single-pattern impulse-origin retest scanner
+# Bot 5 — Trend, Displacement and Pullback Confirmation
+
+This replaces the discontinued Bot 5 setup with one selective, signal-only strategy: H1 trend direction, M15 agreement, a strong M5 displacement leg, a deep pullback to the exact origin candle, and a completed confirmation candle. It is not a guaranteed-win system; performance must be established by logged forward results.
+
+
 
 The live signal-only scanner is `live_bot.py`, run by `.github/workflows/best-bot-live.yml`.
 
