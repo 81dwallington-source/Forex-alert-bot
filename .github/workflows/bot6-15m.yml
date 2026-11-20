@@ -1,8 +1,8 @@
-name: Bot 6 15-minute pullback scanner
+name: Bot 6 M5 compression breakout retest scanner
 
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
   push:
     paths:
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: bot6-15m-pullback
+  group: bot6-m5-breakout-retest
   cancel-in-progress: false
 
 jobs:
