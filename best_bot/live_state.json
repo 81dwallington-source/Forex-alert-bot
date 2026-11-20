@@ -508,9 +508,7 @@
       "outcome_time_utc": "2026-11-20T12:15:00+00:00",
       "outcome_note": "Public-feed M5 candle touched stop",
       "data_source": "BiQuote public FX OHLC; not broker-verified"
-    }
-  ],
-  "pending": [
+    },
     {
       "signal_time_utc": "2026-11-20T12:30:00+00:00",
       "pair": "GBPJPY",
@@ -526,13 +524,14 @@
       "origin_candle_body_low": 208.108,
       "origin_candle_body_high": 208.199,
       "origin_candle_time_utc": "2026-11-20 11:20:00+00:00",
-      "outcome": "PENDING",
-      "outcome_time_utc": "",
-      "outcome_note": "",
+      "outcome": "LOSS",
+      "outcome_time_utc": "2026-11-20T13:00:00+00:00",
+      "outcome_note": "Public-feed M5 candle touched stop",
       "data_source": "BiQuote public FX OHLC; not broker-verified"
     }
   ],
-  "last_scan_utc": "2026-11-20T12:40:47.682374+00:00",
+  "pending": [],
+  "last_scan_utc": "2026-11-20T13:36:19.231359+00:00",
   "origin_prealerts": [],
   "origin_watch_state": {}
 }
