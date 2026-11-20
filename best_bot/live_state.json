@@ -552,7 +552,7 @@
       "data_source": "BiQuote public FX OHLC; not broker-verified"
     }
   ],
-  "last_scan_utc": "2026-11-20T14:35:19.711060+00:00",
+  "last_scan_utc": "2026-11-20T15:30:57.349700+00:00",
   "origin_prealerts": [],
   "origin_watch_state": {}
 }
