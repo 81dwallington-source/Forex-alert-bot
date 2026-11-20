@@ -450,8 +450,29 @@
       "data_source": "BiQuote public FX OHLC; not broker-verified"
     }
   ],
-  "pending": [],
-  "last_scan_utc": "2026-11-20T04:46:36.747301+00:00",
+  "pending": [
+    {
+      "signal_time_utc": "2026-11-20T05:30:00+00:00",
+      "pair": "GBPAUD",
+      "direction": "BUY",
+      "entry_reference": 1.96756,
+      "stop_loss": 1.965553392857143,
+      "take_profit": 1.9705699107142856,
+      "risk_pips": 20.1,
+      "planned_rr": 1.5,
+      "setup_type": "DOUBLE_BREAK_ORIGIN_RETEST",
+      "origin_candle_low": 1.96624,
+      "origin_candle_high": 1.96756,
+      "origin_candle_body_low": 1.96709,
+      "origin_candle_body_high": 1.96756,
+      "origin_candle_time_utc": "256",
+      "outcome": "PENDING",
+      "outcome_time_utc": "",
+      "outcome_note": "",
+      "data_source": "BiQuote public FX OHLC; not broker-verified"
+    }
+  ],
+  "last_scan_utc": "2026-11-20T05:42:17.915800+00:00",
   "origin_prealerts": [],
   "origin_watch_state": {}
 }
