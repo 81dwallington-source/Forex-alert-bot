@@ -1,5 +1,6 @@
 {
-  "pending": [
+  "pending": [],
+  "completed": [
     {
       "signal_time_utc": "2026-11-20T16:20:00+00:00",
       "pair": "GBPJPY",
@@ -9,9 +10,9 @@
       "take_profit": 207.56345,
       "risk_pips": 25.0,
       "planned_rr": 1.5,
-      "outcome": "PENDING",
-      "outcome_time_utc": "",
-      "outcome_note": "",
+      "outcome": "WIN",
+      "outcome_time_utc": "2026-11-20T19:30:00+00:00",
+      "outcome_note": "Completed public-feed M5 candle touched target",
       "data_source": "BiQuote public FX OHLC; not broker-verified"
     },
     {
@@ -23,9 +24,9 @@
       "take_profit": 86.8685,
       "risk_pips": 15.1,
       "planned_rr": 1.5,
-      "outcome": "PENDING",
-      "outcome_time_utc": "",
-      "outcome_note": "",
+      "outcome": "WIN",
+      "outcome_time_utc": "2026-11-20T19:25:00+00:00",
+      "outcome_note": "Completed public-feed M5 candle touched target",
       "data_source": "BiQuote public FX OHLC; not broker-verified"
     },
     {
@@ -37,12 +38,11 @@
       "take_profit": 105.0305,
       "risk_pips": 15.7,
       "planned_rr": 1.5,
-      "outcome": "PENDING",
-      "outcome_time_utc": "",
-      "outcome_note": "",
+      "outcome": "WIN",
+      "outcome_time_utc": "2026-11-20T19:25:00+00:00",
+      "outcome_note": "Completed public-feed M5 candle touched target",
       "data_source": "BiQuote public FX OHLC; not broker-verified"
     }
   ],
-  "completed": [],
-  "last_scan_utc": "2026-11-20T19:25:47.647029+00:00"
+  "last_scan_utc": "2026-11-20T20:18:27.105518+00:00"
 }
