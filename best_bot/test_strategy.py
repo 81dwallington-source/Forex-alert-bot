@@ -1,5 +1,5 @@
 import pandas as pd
-from strategy import confirmed_swing, valid_stop_distance, find_double_break_origin_retest, make_signal, indicators
+from strategy import confirmed_swing, valid_stop_distance, valid_entry_drift, find_double_break_origin_retest, make_signal, indicators
 
 def sample_frame(n=260, slope=0.0002, start=1.0):
     close = [start + i*slope for i in range(n)]
@@ -66,3 +66,12 @@ def test_stop_distance_enforces_eight_pip_floor_and_three_atr_ceiling():
     assert not valid_stop_distance(7.9 * pip, pip, atr)
     assert valid_stop_distance(8.0 * pip, pip, atr)
     assert not valid_stop_distance(3.01 * atr, pip, atr)
+
+
+def test_live_entry_drift_accepts_only_quotes_within_point_two_atr():
+    entry, atr = 1.1000, 0.0010
+    assert valid_entry_drift(entry, 1.10015, atr)
+    assert valid_entry_drift(entry, 1.09985, atr)
+    assert not valid_entry_drift(entry, 1.10021, atr)
+    assert not valid_entry_drift(entry, 1.09979, atr)
+    assert not valid_entry_drift(entry, 1.1000, 0.0)
