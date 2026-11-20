@@ -1,4 +1,4 @@
-name: Best Bot five-minute scanner
+name: Bot 5 — Trend, Displacement and Pullback Scanner
 
 on:
   # GitHub's schedule can be delayed; the runner itself scans every five minutes
@@ -64,7 +64,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add best_bot/live_signals.csv best_bot/live_state.json best_bot/telegram_update_offset.json
           if ! git diff --cached --quiet; then
-            git commit -m "Update Best Bot signal and outcome state [skip ci]"
+            git commit -m "Update Bot 5 signal and outcome state [skip ci]"
             # Other bot workflows can update main while this scan is running.
             # Rebase our small state update onto the latest branch and retry push.
             for attempt in 1 2 3; do
@@ -74,6 +74,6 @@ jobs:
               fi
               sleep 2
             done
-            echo "Could not save Best Bot state after three push attempts."
+            echo "Could not save Bot 5 state after three push attempts."
             exit 1
           fi
