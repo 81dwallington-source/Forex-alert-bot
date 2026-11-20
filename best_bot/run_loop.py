@@ -1,4 +1,4 @@
-"""Continuous five-minute scanner loop for Best Bot.
+"""Continuous five-minute scanner loop for Bot 5.
 
 GitHub Actions may delay scheduled starts. Keep one runner alive and scan every
 five minutes; the workflow concurrency group keeps at most one newer run queued
@@ -23,18 +23,18 @@ def main() -> None:
         started_monotonic = time.monotonic()
         started = datetime.now(timezone.utc)
         print(
-            f"Best Bot scan {scan_number} starting: {started.isoformat()}",
+            f"Bot 5 scan {scan_number} starting: {started.isoformat()}",
             flush=True,
         )
         try:
             sent = scan()
             print(
-                f"Best Bot scan {scan_number} finished; Telegram signals sent: {sent}",
+                f"Bot 5 scan {scan_number} finished; Telegram signals sent: {sent}",
                 flush=True,
             )
         except Exception as exc:
             print(
-                f"Best Bot scan {scan_number} failed: {type(exc).__name__}: {exc}",
+                f"Bot 5 scan {scan_number} failed: {type(exc).__name__}: {exc}",
                 flush=True,
             )
 
@@ -45,10 +45,10 @@ def main() -> None:
         sleep_for = min(max(0, SCAN_INTERVAL_SECONDS - elapsed), remaining)
         if sleep_for <= 0:
             continue
-        print(f"Next Best Bot scan in {sleep_for:.0f} seconds", flush=True)
+        print(f"Next Bot 5 scan in {sleep_for:.0f} seconds", flush=True)
         time.sleep(sleep_for)
 
-    print("Best Bot continuous scan window complete.", flush=True)
+    print("Bot 5 continuous scan window complete.", flush=True)
 
 
 if __name__ == "__main__":
