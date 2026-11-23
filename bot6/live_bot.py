@@ -302,13 +302,16 @@ def scan():
                 "outcome": "PENDING", "outcome_time_utc": "", "outcome_note": "",
                 "data_source": "BiQuote public FX OHLC; not broker-verified",
             }
+            candle_open = pd.Timestamp(trade["signal_time_utc"])
+            candle_close = candle_open + pd.Timedelta(minutes=5)
+            candle_age = max(0.0, (now_utc() - candle_close).total_seconds() / 60)
             message = (
                 f"📣 BOT 6 — M5 BREAKOUT RETEST {trade['direction']} {pair}\n"
                 f"Entry: {trade['entry']}\nStop loss: {trade['stop_loss']}\n"
                 f"Take profit: {trade['take_profit']}\n"
                 f"Risk: {trade['risk_pips']} pips | Planned R:R 1:{trade['planned_rr']}\n"
                 f"M5 compression breakout + retest + confirmation\n"
-                f"M15 and H1 trend aligned | Completed M5 candle: {trade['signal_time_utc']}\n"
+                f"M15 and H1 trend aligned | M5 candle close (UTC): {candle_close.isoformat()} | Data age: {candle_age:.1f} min\n"
                 f"Source: public BiQuote feed, not broker-verified. Check broker price/spread before entry. "
                 f"Manual signal only; risk no more than 0.25%."
             )
