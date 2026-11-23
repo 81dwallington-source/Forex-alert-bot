@@ -57,7 +57,7 @@ jobs:
               echo "WARNING: scan $cycle exited with code $scan_status; continuing to next cycle."
             fi
 
-            git add bot6/signals.csv bot6/state.json
+            git add bot6/signals.csv bot6/state.json bot6/evidence/
             if ! git diff --cached --quiet; then
               git commit -m "Update Bot 6 signal and outcome records [skip ci]"
               pushed=0
