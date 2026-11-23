@@ -325,6 +325,11 @@ def resolve_outcomes(state):
 
 
 def scan():
+    # Emergency kill switch: a committed STOP file prevents pending/new runners
+    # from sending signals while the strategy is under review.
+    if (HERE / "STOP").exists():
+        print("BOT 6 PAUSED: bot6/STOP exists; no scan or Telegram alerts sent.", flush=True)
+        return
     if not TOKEN or not CHAT_ID:
         raise RuntimeError("Telegram secrets are not configured")
     state = load_state()
