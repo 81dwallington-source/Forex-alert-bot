@@ -2,7 +2,7 @@ name: Bot 6 M5 compression breakout retest scanner
 
 on:
   schedule:
-    - cron: "2-59/5 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
   push:
     paths:
