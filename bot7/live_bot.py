@@ -211,7 +211,7 @@ def scan():
               f"M5 EMA21 pullback + confirmation | M15/H1 trend aligned\n"
               f"M15 ADX: {s['adx_m15']:.1f} | RSI: {s['rsi']:.1f}\n"
               f"Live quote: {mid} ({age:.0f}s old)\n"
-              "PAPER ONLY — do not place a real trade. BiQuote feed is not broker-verified.")
+              "PAPER ONLY — do not place a real trade. Risk cap after validation: 0.25% max per trade. BiQuote feed is not broker-verified.")
             telegram(msg); d["pending"].append(t); log_trade(t); sent+=1
         except Exception as e: print(f"{pair}: {type(e).__name__}: {e}",flush=True)
     d["sent_today"][today]=d["sent_today"].get(today,0)+sent
