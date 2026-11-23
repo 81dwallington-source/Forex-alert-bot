@@ -17,6 +17,7 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
 BASE_URL = "https://biquote.io/api/{symbol}/ohlc"
 STATE_PATH = HERE / "state.json"
 LOG_PATH = HERE / "signals.csv"
+EVIDENCE_DIR = HERE / "evidence"
 PAIRS = [
     "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "USDCAD", "AUDUSD", "NZDUSD",
     "EURGBP", "EURJPY", "EURCHF", "EURAUD", "EURCAD", "EURNZD",
@@ -78,6 +79,68 @@ def check_fresh(frame: pd.DataFrame, interval_minutes: int, max_age_minutes: int
     age = (now_utc() - candle_close).total_seconds() / 60
     if age < -1 or age > max_age_minutes:
         raise ValueError(f"stale completed candle ({age:.1f} minutes old)")
+
+
+
+def fetch_live_quote(pair: str):
+    """Require a fresh live tick as a sanity check against the completed M5 close."""
+    response = SESSION.get(f"https://biquote.io/api/{pair}", params={"allowStale": "false"}, timeout=15)
+    response.raise_for_status()
+    quote = response.json()
+    mid = float(quote.get("mid") or 0)
+    age = float(quote.get("quoteAgeSeconds", 999999))
+    stamp = pd.to_datetime(quote.get("timestamp"), utc=True, errors="coerce")
+    if mid <= 0 or pd.isna(stamp) or age > 120 or quote.get("stale") is True:
+        raise ValueError(f"{pair}: live quote missing/stale (age={age:.0f}s)")
+    if quote.get("marketState") not in (None, "open"):
+        raise ValueError(f"{pair}: market is not open ({quote.get('marketState')})")
+    return {"mid": mid, "timestamp": stamp.isoformat(), "age_seconds": age,
+            "source": quote.get("source", "BiQuote live tick")}
+
+
+def confirmed_swing_stop(frame: pd.DataFrame, direction: str, entry: float, buffer: float):
+    """Use the nearest confirmed 2-left/2-right pivot, not an arbitrary six-bar extreme."""
+    window = frame.iloc[-42:-2]
+    pivots = []
+    for j in range(2, len(window) - 2):
+        row = window.iloc[j]
+        if direction == "SELL":
+            valid = (row["high"] > window.iloc[j-1]["high"] and
+                     row["high"] > window.iloc[j-2]["high"] and
+                     row["high"] >= window.iloc[j+1]["high"] and
+                     row["high"] >= window.iloc[j+2]["high"] and row["high"] > entry)
+            if valid:
+                pivots.append(float(row["high"]))
+        else:
+            valid = (row["low"] < window.iloc[j-1]["low"] and
+                     row["low"] < window.iloc[j-2]["low"] and
+                     row["low"] <= window.iloc[j+1]["low"] and
+                     row["low"] <= window.iloc[j+2]["low"] and row["low"] < entry)
+            if valid:
+                pivots.append(float(row["low"]))
+    if not pivots:
+        raise ValueError(f"No confirmed M5 swing available for {direction} stop")
+    pivot = pivots[-1]
+    return (pivot + buffer if direction == "SELL" else pivot - buffer), pivot
+
+
+def save_evidence(trade, m5, m15, h1, quote, signal):
+    EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
+    def serialise(frame, count):
+        data = frame.tail(count).reset_index()
+        data["time"] = data["time"].astype(str)
+        return data.to_dict(orient="records")
+    payload = {
+        "trade": trade, "live_quote": quote,
+        "breakout_level": signal["breakout_level"],
+        "breakout_time": signal["breakout_time"],
+        "confirmed_swing": signal["confirmed_swing"],
+        "candles": {"M5": serialise(m5, 60), "M15": serialise(m15, 40), "H1": serialise(h1, 40)},
+    }
+    filename = trade["signal_time_utc"].replace(":", "").replace("+00:00", "Z")
+    (EVIDENCE_DIR / f"{filename}_{trade['pair']}.json").write_text(
+        json.dumps(payload, indent=2), encoding="utf-8"
+    )
 
 
 def indicators(frame: pd.DataFrame):
@@ -150,21 +213,16 @@ def get_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pair: str)
     if setup is None:
         return None
     entry = float(c["close"])
-    buffer = max(0.15 * atr, 1.5 * pip_size(pair))
-    recent = m.iloc[-7:-1]
-    if direction == "BUY":
-        stop = float(recent["low"].min()) - buffer
-        risk = entry - stop
-    else:
-        stop = float(recent["high"].max()) + buffer
-        risk = stop - entry
+    buffer = max(0.15 * atr, 2.0 * pip_size(pair))
+    stop, swing = confirmed_swing_stop(m, direction, entry, buffer)
+    risk = entry - stop if direction == "BUY" else stop - entry
     if risk <= 0 or risk < 0.65 * atr or risk > 2.5 * atr:
         return None
     target = entry + 1.5 * risk if direction == "BUY" else entry - 1.5 * risk
     return {"direction": direction, "entry": entry, "stop": stop, "target": target,
             "risk_pips": risk / pip_size(pair), "rr": 1.5, "atr": atr,
             "breakout_level": float(setup["level"]), "breakout_time": setup["breakout_time"],
-            "signal_time": m.index[-1].isoformat()}
+            "confirmed_swing": swing, "signal_time": m.index[-1].isoformat()}
 
 def send_telegram(message: str):
     if not TOKEN or not CHAT_ID:
@@ -294,14 +352,27 @@ def scan():
             if not signal:
                 no_setup += 1
                 continue
+            quote = fetch_live_quote(pair)
+            max_price_gap = max(8 * pip_size(pair), 0.50 * float(signal["atr"]))
+            price_gap = abs(float(quote["mid"]) - float(m5.iloc[-1]["close"]))
+            if price_gap > max_price_gap:
+                raise ValueError(
+                    f"{pair}: live tick differs from completed M5 close by "
+                    f"{price_gap / pip_size(pair):.1f} pips "
+                    f"(limit {max_price_gap / pip_size(pair):.1f}); signal rejected"
+                )
             trade = {
                 "signal_time_utc": signal["signal_time"], "pair": pair,
                 "direction": signal["direction"], "entry": round(signal["entry"], 6),
                 "stop_loss": round(signal["stop"], 6), "take_profit": round(signal["target"], 6),
                 "risk_pips": round(signal["risk_pips"], 1), "planned_rr": signal["rr"],
                 "outcome": "PENDING", "outcome_time_utc": "", "outcome_note": "",
-                "data_source": "BiQuote public FX OHLC; not broker-verified",
+                "data_source": "BiQuote OHLC plus live tick cross-check; not broker-verified",
+                "live_quote_mid": round(quote["mid"], 6),
+                "live_quote_time_utc": quote["timestamp"],
+                "confirmed_swing": round(signal["confirmed_swing"], 6),
             }
+            save_evidence(trade, m5, m15, h1, quote, signal)
             candle_open = pd.Timestamp(trade["signal_time_utc"])
             candle_close = candle_open + pd.Timedelta(minutes=5)
             candle_age = max(0.0, (now_utc() - candle_close).total_seconds() / 60)
@@ -311,8 +382,10 @@ def scan():
                 f"Take profit: {trade['take_profit']}\n"
                 f"Risk: {trade['risk_pips']} pips | Planned R:R 1:{trade['planned_rr']}\n"
                 f"M5 compression breakout + retest + confirmation\n"
-                f"M15 and H1 trend aligned | M5 candle close (UTC): {candle_close.isoformat()} | Data age: {candle_age:.1f} min\n"
-                f"Source: public BiQuote feed, not broker-verified. Check broker price/spread before entry. "
+                f"M15 and H1 trend aligned | Confirmed swing: {trade['confirmed_swing']}\n"
+                f"M5 candle close (UTC): {candle_close.isoformat()} | Data age: {candle_age:.1f} min\n"
+                f"Live tick check: {quote['mid']} ({quote['age_seconds']:.0f}s old)\n"
+                f"Source: BiQuote OHLC + live tick check; not broker-verified. Check broker price/spread before entry. "
                 f"Manual signal only; risk no more than 0.25%."
             )
             send_telegram(message)
