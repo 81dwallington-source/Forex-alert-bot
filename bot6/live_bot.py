@@ -1,4 +1,4 @@
-"""Bot 6: 15-minute EMA pullback continuation scanner. Signal-only."""
+"""Bot 6: M5 compression breakout, retest and confirmation scanner. Signal-only."""
 from __future__ import annotations
 
 import csv
