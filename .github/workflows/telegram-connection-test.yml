@@ -32,7 +32,7 @@ jobs:
 
           payload = json.dumps({
               "chat_id": chat_id,
-              "text": "✅ Telegram connection test successful. Your Forex bot's Telegram delivery is working."
+              "text": "✅ Bot 6 Telegram delivery test successful. The Telegram connection is working."
           }).encode()
           request = urllib.request.Request(
               f"https://api.telegram.org/bot{token}/sendMessage",
