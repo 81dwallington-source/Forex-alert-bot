@@ -27,6 +27,9 @@ PAIRS = [
 ]
 MAX_ALERTS_PER_UTC_DAY = 5
 MAX_ONE_PER_PAIR_PER_UTC_DAY = True
+MAX_M5_CANDLE_AGE_MINUTES = 5
+MAX_ENTRY_DRIFT_PIPS = 2.0
+MAX_SIMULTANEOUS_JPY_TRADES = 1
 SESSION = requests.Session()
 SESSION.headers.update({"User-Agent": "ForexBot6/1.0"})
 
@@ -344,7 +347,7 @@ def scan():
             m5 = fetch_bars(pair, "5m", 210)
             m15 = fetch_bars(pair, "15m", 150)
             h1 = fetch_bars(pair, "1h", 150)
-            check_fresh(m5, 5, 10)
+            check_fresh(m5, 5, MAX_M5_CANDLE_AGE_MINUTES)
             check_fresh(m15, 15, 25)
             check_fresh(h1, 60, 75)
             analysed += 1
@@ -352,14 +355,32 @@ def scan():
             if not signal:
                 no_setup += 1
                 continue
+            # One open JPY-cross position at a time: avoid stacking the same
+            # JPY exposure across pairs such as AUDJPY and EURJPY.
+            if pair.endswith("JPY"):
+                open_jpy = sum(1 for t in state["pending"] if t.get("pair", "").endswith("JPY"))
+                if open_jpy >= MAX_SIMULTANEOUS_JPY_TRADES:
+                    raise ValueError(
+                        f"{pair}: rejected; {open_jpy} JPY-cross position(s) already pending"
+                    )
+
             quote = fetch_live_quote(pair)
-            max_price_gap = max(8 * pip_size(pair), 0.50 * float(signal["atr"]))
-            price_gap = abs(float(quote["mid"]) - float(m5.iloc[-1]["close"]))
+            candle_open = pd.Timestamp(signal["signal_time"])
+            candle_close = candle_open + pd.Timedelta(minutes=5)
+            quote_time = pd.Timestamp(quote["timestamp"])
+            if quote_time < candle_close:
+                raise ValueError(f"{pair}: live quote predates the completed M5 candle")
+            # Do not chase a move. The live mid must still be very close to
+            # the planned confirmation-candle close used as the entry.
+            price_gap = abs(float(quote["mid"]) - float(signal["entry"]))
+            max_price_gap = min(
+                MAX_ENTRY_DRIFT_PIPS * pip_size(pair),
+                0.15 * float(signal["atr"])
+            )
             if price_gap > max_price_gap:
                 raise ValueError(
-                    f"{pair}: live tick differs from completed M5 close by "
-                    f"{price_gap / pip_size(pair):.1f} pips "
-                    f"(limit {max_price_gap / pip_size(pair):.1f}); signal rejected"
+                    f"{pair}: entry has moved {price_gap / pip_size(pair):.1f} pips "
+                    f"from signal close (max {max_price_gap / pip_size(pair):.1f}); rejected"
                 )
             trade = {
                 "signal_time_utc": signal["signal_time"], "pair": pair,
