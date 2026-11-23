@@ -2,7 +2,7 @@ name: Bot 7 Paper Forward Test
 
 on:
   schedule:
-    - cron: "2/5 * * * *"
+    - cron: "7 0,6,12,18 * * *"
   workflow_dispatch:
 
 permissions:
@@ -15,7 +15,7 @@ concurrency:
 jobs:
   paper-scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -26,15 +26,20 @@ jobs:
         run: |
           python -m py_compile bot7/live_bot.py
           pytest -q bot7/test_bot7.py
-      - name: Paper scan
+      - name: Run 5-minute paper scans for this session
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python bot7/live_bot.py
-      - name: Save paper log and state
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add bot7/state.json bot7/signals.csv
-          git diff --cached --quiet || git commit -m "Update Bot 7 paper forward-test results"
-          git push
+          for i in $(seq 1 70); do
+            echo "Bot 7 paper scan $i/70"
+            python bot7/live_bot.py || echo "Scan failed; continuing next cycle"
+            git add bot7/state.json bot7/signals.csv
+            git diff --cached --quiet || {
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              git commit -m "Update Bot 7 paper forward-test results"
+              git push
+            }
+            if [ "$i" -lt 70 ]; then sleep 300; fi
+          done
