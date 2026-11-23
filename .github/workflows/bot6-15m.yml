@@ -1,8 +1,10 @@
 name: Bot 6 M5 compression breakout retest scanner
 
 on:
+  # Start a long-lived scan session four times daily. Each session scans every
+  # five minutes, avoiding reliance on GitHub delivering a separate 5-minute cron.
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "7 0,6,12,18 * * *"
   workflow_dispatch:
   push:
     paths:
@@ -19,7 +21,7 @@ concurrency:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 360
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -40,25 +42,39 @@ jobs:
       - name: Check Bot 6 syntax
         run: python -m py_compile bot6/live_bot.py
 
-      - name: Run Bot 6 scan and send Telegram alerts
+      - name: Run Bot 6 every five minutes for this session
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python bot6/live_bot.py
-
-      - name: Save Bot 6 trade log and outcome state
-        if: always()
+        shell: bash
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add bot6/signals.csv bot6/state.json
-          if ! git diff --cached --quiet; then
-            git commit -m "Update Bot 6 signal and outcome records [skip ci]"
-            for attempt in 1 2 3; do
-              git pull --rebase origin main
-              if git push; then exit 0; fi
-              sleep 2
-            done
-            echo "Could not save Bot 6 records after three push attempts."
-            exit 1
-          fi
+          set +e
+          for cycle in $(seq 1 70); do
+            echo "========== Bot 6 scan $cycle/70 =========="
+            python bot6/live_bot.py
+            scan_status=$?
+            if [ "$scan_status" -ne 0 ]; then
+              echo "WARNING: scan $cycle exited with code $scan_status; continuing to next cycle."
+            fi
+
+            git add bot6/signals.csv bot6/state.json
+            if ! git diff --cached --quiet; then
+              git commit -m "Update Bot 6 signal and outcome records [skip ci]"
+              pushed=0
+              for attempt in 1 2 3; do
+                if git pull --rebase origin main && git push; then
+                  pushed=1
+                  break
+                fi
+                git rebase --abort >/dev/null 2>&1
+                sleep 2
+              done
+              if [ "$pushed" -ne 1 ]; then
+                echo "WARNING: could not push Bot 6 records after three attempts."
+              fi
+            fi
+
+            if [ "$cycle" -lt 70 ]; then
+              sleep 300
+            fi
+          done
