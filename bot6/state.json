@@ -23,7 +23,7 @@
       "entry": 207.938,
       "stop_loss": 208.1877,
       "take_profit": 207.56345,
-      "risk_pips": 25.0,
+      "risk_pips": 25,
       "planned_rr": 1.5,
       "outcome": "WIN",
       "outcome_time_utc": "2026-11-20T19:30:00+00:00",
@@ -70,6 +70,34 @@
       "outcome": "LOSS",
       "outcome_time_utc": "2026-11-20T21:55:00+00:00",
       "outcome_note": "Completed public-feed M5 candle touched stop",
+      "data_source": "BiQuote public FX OHLC; not broker-verified"
+    },
+    {
+      "signal_time_utc": "2026-11-23T20:05:00+00:00",
+      "pair": "AUDJPY",
+      "direction": "SELL",
+      "entry": 105.252,
+      "stop_loss": 105.378,
+      "take_profit": 105.063,
+      "risk_pips": 12.6,
+      "planned_rr": 1.5,
+      "outcome": "LOSS",
+      "outcome_time_utc": "",
+      "outcome_note": "User-reported loss; not independently broker-verified",
+      "data_source": "BiQuote public FX OHLC; not broker-verified"
+    },
+    {
+      "signal_time_utc": "2026-11-23T20:05:00+00:00",
+      "pair": "EURJPY",
+      "direction": "SELL",
+      "entry": 173.2445,
+      "stop_loss": 173.3395,
+      "take_profit": 173.102,
+      "risk_pips": 9.5,
+      "planned_rr": 1.5,
+      "outcome": "LOSS",
+      "outcome_time_utc": "",
+      "outcome_note": "User-reported loss; not independently broker-verified",
       "data_source": "BiQuote public FX OHLC; not broker-verified"
     }
   ],
