@@ -1,20 +1,5 @@
 {
-  "pending": [
-    {
-      "signal_time_utc": "2026-11-20T21:00:00+00:00",
-      "pair": "GBPUSD",
-      "direction": "SELL",
-      "entry": 1.307815,
-      "stop_loss": 1.308695,
-      "take_profit": 1.306495,
-      "risk_pips": 8.8,
-      "planned_rr": 1.5,
-      "outcome": "PENDING",
-      "outcome_time_utc": "",
-      "outcome_note": "",
-      "data_source": "BiQuote public FX OHLC; not broker-verified"
-    }
-  ],
+  "pending": [],
   "completed": [
     {
       "signal_time_utc": "2026-11-20T16:20:00+00:00",
@@ -57,7 +42,21 @@
       "outcome_time_utc": "2026-11-20T19:25:00+00:00",
       "outcome_note": "Completed public-feed M5 candle touched target",
       "data_source": "BiQuote public FX OHLC; not broker-verified"
+    },
+    {
+      "signal_time_utc": "2026-11-20T21:00:00+00:00",
+      "pair": "GBPUSD",
+      "direction": "SELL",
+      "entry": 1.307815,
+      "stop_loss": 1.308695,
+      "take_profit": 1.306495,
+      "risk_pips": 8.8,
+      "planned_rr": 1.5,
+      "outcome": "LOSS",
+      "outcome_time_utc": "2026-11-20T21:55:00+00:00",
+      "outcome_note": "Completed public-feed M5 candle touched stop",
+      "data_source": "BiQuote public FX OHLC; not broker-verified"
     }
   ],
-  "last_scan_utc": "2026-11-22T21:10:47.969678+00:00"
+  "last_scan_utc": "2026-11-23T01:38:54.078349+00:00"
 }
