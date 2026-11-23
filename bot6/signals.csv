@@ -3,3 +3,4 @@ signal_time_utc,pair,direction,entry,stop_loss,take_profit,risk_pips,planned_rr,
 2026-11-20T16:20:00+00:00,NZDJPY,SELL,87.095,87.246,86.8685,15.1,1.5,WIN,2026-11-20T19:25:00+00:00,Completed public-feed M5 candle touched target,BiQuote public FX OHLC; not broker-verified
 2026-11-20T17:15:00+00:00,AUDJPY,SELL,105.266,105.423,105.0305,15.7,1.5,WIN,2026-11-20T19:25:00+00:00,Completed public-feed M5 candle touched target,BiQuote public FX OHLC; not broker-verified
 2026-11-20T21:00:00+00:00,GBPUSD,SELL,1.307815,1.308695,1.306495,8.8,1.5,LOSS,2026-11-20T21:55:00+00:00,Completed public-feed M5 candle touched stop,BiQuote public FX OHLC; not broker-verified
+2026-11-23T16:35:00+00:00,GBPUSD,SELL,1.301605,1.302935,1.29961,13.3,1.5,PENDING,,,BiQuote public FX OHLC; not broker-verified
