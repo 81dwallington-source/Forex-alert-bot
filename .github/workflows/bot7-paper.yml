@@ -2,7 +2,7 @@ name: Bot 7 Paper Forward Test
 
 on:
   schedule:
-    - cron: "7 0,6,12,18 * * *"
+    - cron: "7 */6 * * *"
   workflow_dispatch:
 
 permissions:
@@ -26,13 +26,13 @@ jobs:
         run: |
           python -m py_compile bot7/live_bot.py
           pytest -q bot7/test_bot7.py
-      - name: Run 5-minute paper scans for this session
+      - name: Run repeated 5-minute paper scans
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          for i in $(seq 1 65); do
-            echo "Bot 7 paper scan $i/65"
+          for i in $(seq 1 68); do
+            echo "Bot 7 paper scan $i/68"
             python bot7/live_bot.py || echo "Scan failed; continuing next cycle"
             git add bot7/state.json bot7/signals.csv
             git diff --cached --quiet || {
@@ -41,5 +41,5 @@ jobs:
               git commit -m "Update Bot 7 paper forward-test results"
               git push
             }
-            if [ "$i" -lt 65 ]; then sleep 300; fi
+            if [ "$i" -lt 68 ]; then sleep 300; fi
           done
