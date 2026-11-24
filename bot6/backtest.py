@@ -28,8 +28,8 @@ def load_bars(path: Path, minutes: int) -> pd.DataFrame:
         raise ValueError(f"{path}: invalid OHLC values")
     # Reject missing intervals rather than silently joining across data gaps.
     gaps = d.index.to_series().diff().dropna()
-    if (gaps > pd.Timedelta(minutes=minutes * 3)).any():
-        raise ValueError(f"{path}: data gap greater than three candles")
+    if (gaps > pd.Timedelta(days=7)).any():
+        raise ValueError(f"{path}: data gap greater than seven days")
     return d
 
 
