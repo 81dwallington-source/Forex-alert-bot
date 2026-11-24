@@ -6,6 +6,7 @@ on:
   push:
     paths:
       - ".github/workflows/bot6-15m.yml"
+      - "bot6/live_bot.py"
   workflow_dispatch:
   schedule:
     # GitHub Actions uses UTC. Forex market hours: Sunday reopen through Friday close.
