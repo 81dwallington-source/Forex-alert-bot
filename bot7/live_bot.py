@@ -84,17 +84,24 @@ def swing_stop(m5, side, entry, buffer):
     pivot=found[-1]
     return (pivot-buffer if side=="BUY" else pivot+buffer),pivot
 
+def trend_direction(row):
+    """Return BUY/SELL only when close and EMA21/50/200 structure agree."""
+    if row.close>row.ema200 and row.ema21>row.ema50>row.ema200:
+        return "BUY"
+    if row.close<row.ema200 and row.ema21<row.ema50<row.ema200:
+        return "SELL"
+    return None
+
 def signal(m5,m15,h1,pair):
     a,b,c=enrich(m5),enrich(m15),enrich(h1)
     if len(a)<220 or len(b)<220 or len(c)<220: return None
     x,prev=a.iloc[-1],a.iloc[-2]; mt=b.iloc[-1]; ht=c.iloc[-1]
     vals=[x.atr,x.rsi,mt.adx]
     if any(pd.isna(v) for v in vals) or x.atr<=0: return None
-    up=(ht.close>ht.ema200 and ht.ema50>ht.ema200 and ht.ema21>ht.ema50 and
-        mt.close>mt.ema200 and mt.ema50>mt.ema200 and mt.ema21>mt.ema50 and mt.adx>=20)
-    dn=(ht.close<ht.ema200 and ht.ema50<ht.ema200 and ht.ema21<ht.ema50 and
-        mt.close<mt.ema200 and mt.ema50<mt.ema200 and mt.ema21<mt.ema50 and mt.adx>=20)
-    side="BUY" if up else "SELL" if dn else None
+    # Both higher timeframes must independently agree; neither can override the other.
+    h1_side=trend_direction(ht)
+    m15_side=trend_direction(mt)
+    side=h1_side if h1_side==m15_side and mt.adx>=20 else None
     if not side: return None
     atr=float(x.atr)
     # Pullback must have touched the EMA21 band recently, then reclaim it.
