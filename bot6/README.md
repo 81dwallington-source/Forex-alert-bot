@@ -1,5 +1,9 @@
 # Bot 6 — M15 mini break of structure and deep pullback
 
+![Bot 6 M15 entry reference](entry_reference.svg)
+
+The illustration shows the SELL sequence. BUY uses the exact inverse: mini break above structure, deep pullback down into the 62–79% zone, then bullish rejection and confirmation.
+
 Bot 6 is a selective, signal-only 15-minute continuation strategy. It does not place broker orders.
 
 ## Required entry sequence
