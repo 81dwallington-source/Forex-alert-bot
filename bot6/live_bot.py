@@ -147,6 +147,10 @@ def save_evidence(trade, m5, m15, h1, quote, signal):
 
 
 def indicators(frame: pd.DataFrame):
+    # Backtests may pass causally precomputed columns to avoid recalculating
+    # the full EMA/ATR history at every walk-forward candle.
+    if {"ema21", "ema50", "ema200", "atr"}.issubset(frame.columns):
+        return frame
     x = frame.copy()
     for period in (21, 50, 200):
         x[f"ema{period}"] = x["close"].ewm(span=period, adjust=False).mean()
