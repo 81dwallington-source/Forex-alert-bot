@@ -1,6 +1,6 @@
 # Forex Alert Bot — Best Bot live scanner
 
-The default branch runs one active signal-only scanner: **Best Bot**.
+The default branch contains multiple signal-only workflows, including **Best Bot** and **Bot 6**. Bot 6's separate scanner is documented in `bot6/README.md`.
 
 ## Live operation
 - GitHub Actions scans every 5 minutes on weekdays and during the Sunday forex reopen window (UTC). GitHub scheduling is best-effort, not a guaranteed real-time service.
