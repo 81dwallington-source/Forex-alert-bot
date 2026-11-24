@@ -1,15 +1,34 @@
-# Bot 6 — M5 compression breakout and retest
+# Bot 6 — Institutional-style liquidity sweep and FVG retest
 
-- Independent signal strategy, separate from Bot 5.
-- Scans 27 major/cross pairs every five minutes using completed M5 candles.
-- Directional filter: H1 and M15 must both agree using EMA21/50/200 alignment. If either disagrees or is unclear, no trade.
-- Identifies a compact 12-candle M5 range, then requires a decisive breakout close at least 0.10 ATR beyond the range, with a strong body and close near the candle extreme.
-- Does not enter on the breakout. Waits for a later retest of the broken range boundary, then a separate completed M5 confirmation candle that closes beyond the prior candle in the breakout direction.
-- Structural stop beyond the recent M5 swing with an ATR/spread buffer; rejects stops below 0.65 ATR or above 2.5 ATR.
-- Fixed planned target of at least 1:1.5. No forced signals and no stop squeezing.
-- Maximum five alerts per UTC day and one alert per pair per UTC day.
-- M5 completed candle must be no more than 5 minutes old at scan time.
-- Before alerting, a fresh live quote must post-date the M5 close and remain within the tighter of 2 pips or 0.15 ATR of the planned entry; otherwise reject rather than chase.
-- Only one pending JPY-cross trade at a time, preventing stacked AUDJPY/EURJPY-style JPY exposure.
-- Logs every alert and resolves outcomes from subsequent completed M5 candles. If SL and TP are both touched in one candle, records AMBIGUOUS rather than guessing; expires unresolved trades after 24 hours.
-- Uses public BiQuote FX OHLC, not broker-verified. Signal-only; no auto-trading. Check broker price and spread before entry.
+Bot 6 has been changed from its compression-breakout strategy to a selective, institutional-style price-action proxy. It remains signal-only: it does not place broker orders.
+
+## Required sequence
+1. H1 and M15 trend alignment must agree; disagreement means no trade.
+2. On M5, price must sweep a recent 20-candle high/low and close back through that level.
+3. Within the next four completed M5 candles, require decisive displacement that breaks nearby structure (BOS).
+4. Require a three-candle fair-value gap (FVG) created by the displacement.
+5. Price must later retrace into that FVG and hold the relevant side.
+6. A separate, latest completed M5 candle must confirm continuation before an alert is considered.
+
+A liquidity sweep alone is never an entry. The bot detects patterns in public OHLC data; it cannot see bank orders, dealer flows or prove that a bank caused a move.
+
+## Risk and filters
+- Scans 27 major and cross pairs.
+- H1 and M15 alignment is mandatory.
+- Structural stop is beyond the sweep extreme with an ATR/spread-style buffer.
+- Rejects risk smaller than 0.65 ATR or larger than 3.0 ATR.
+- Planned target is 1:1.5 reward-to-risk.
+- Maximum five alerts per UTC day; one alert per pair per UTC day.
+- Maximum one pending JPY-cross trade.
+- Requires fresh completed M5/M15/H1 candles and a fresh live quote close to the planned entry.
+- Does not chase an entry after price has moved away.
+- Every alert is logged; outcomes are resolved from later completed M5 candles. If SL and TP both touch in one candle, outcome is marked AMBIGUOUS rather than guessed. Unresolved trades expire after 24 hours.
+
+## Data and safety
+- Feed: BiQuote public FX OHLC plus its live quote endpoint; not broker-verified.
+- Manual signals only. Check the broker's live price and spread before entry.
+- The existing trade log and state files are retained; historical Bot 6 results are not reset.
+- The STOP kill-switch file is intentionally retained during validation.
+
+## Current operating status
+The scheduled scanner remains paused while the replacement strategy is validated. The GitHub Actions workflow currently performs syntax validation only; it does not send Telegram alerts or execute trades.
