@@ -21,3 +21,18 @@ def test_no_stop_if_no_confirmed_pivot():
     idx=pd.date_range("2026-01-01",periods=50,freq="5min",tz="UTC")
     f=pd.DataFrame({"open":[1.1]*50,"high":[1.101]*50,"low":[1.099]*50,"close":[1.1]*50},index=idx)
     assert bot.swing_stop(f,"BUY",1.1,0.0002) is None
+
+
+def test_higher_timeframe_trend_direction():
+    buy = pd.Series({"close":1.12,"ema21":1.11,"ema50":1.10,"ema200":1.08})
+    sell = pd.Series({"close":1.07,"ema21":1.08,"ema50":1.09,"ema200":1.11})
+    mixed = pd.Series({"close":1.12,"ema21":1.11,"ema50":1.12,"ema200":1.08})
+    assert bot.trend_direction(buy) == "BUY"
+    assert bot.trend_direction(sell) == "SELL"
+    assert bot.trend_direction(mixed) is None
+
+
+def test_higher_timeframes_must_agree():
+    buy = pd.Series({"close":1.12,"ema21":1.11,"ema50":1.10,"ema200":1.08})
+    sell = pd.Series({"close":1.07,"ema21":1.08,"ema50":1.09,"ema200":1.11})
+    assert bot.trend_direction(buy) != bot.trend_direction(sell)
