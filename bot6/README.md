@@ -28,14 +28,14 @@ A liquidity sweep alone is never an entry. The bot detects patterns in public OH
 - Feed: BiQuote public FX OHLC plus its live quote endpoint; not broker-verified.
 - Manual signals only. Check the broker's live price and spread before entry.
 - The existing trade log and state files are retained; historical Bot 6 results are not reset.
-- The STOP kill-switch file is intentionally retained during validation.
+- The emergency STOP kill-switch can be restored by adding `bot6/STOP`; do not do this unless you intentionally want to pause all Bot 6 scans.
 
 ## Current operating status
-The scheduled scanner remains paused while the replacement strategy is validated. The GitHub Actions workflow currently performs syntax validation only; it does not send Telegram alerts or execute trades.
+**Live scanner enabled.** `.github/workflows/bot6-15m.yml` now runs Bot 6 every five minutes on weekdays and during the Sunday forex reopen window (UTC), with a manual run option. It sends signal-only Telegram alerts and does not place broker orders. GitHub scheduling is best-effort, not guaranteed real-time. The workflow requires repository Actions secrets `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`; it persists `state.json`, `signals.csv` and evidence back to the repository after each run. If either secret is missing, the run fails with a clear configuration error.
 
 
 ## Historical validation added
 
 A separate walk-forward backtest is provided by `backtest.py` and `.github/workflows/bot6-historical-validation.yml`. It downloads independent Dukascopy M5/H1 history for 27 major and cross pairs, over a selectable 1–7 year period (default seven years), builds completed M15 bars, uses only higher-timeframe candles that had closed at each M5 decision point, enters at the next M5 open, applies an assumed full spread, and treats same-candle stop/target touches conservatively as losses. Results are split chronologically: the final 30% of trades is held out from development. The workflow always uploads a trade ledger, even when the sample is too small, and fails closed if fewer than 30 out-of-sample trades are available or out-of-sample expectancy is not positive. Short-trade reward accounting treats the target as the ask-side exit level and does not subtract the spread twice.
 
-The forexsb.com mirror is independent of the BiQuote live feed and the user's broker; it mirrors DukasCopy historical bars and is not broker-verified. The backtest is a screening test, not proof of profitability. The live STOP file remains in place regardless of a passing backtest; review forward paper results and broker execution differences before considering reactivation.
+The forexsb.com mirror is independent of the BiQuote live feed and the user's broker; it mirrors DukasCopy historical bars and is not broker-verified. The backtest is a screening test, not proof of profitability. The scanner is now enabled by explicit user request while validation continues. This is not a profitability approval: use paper trading first, check broker quotes/spreads, and do not assume historical/public-feed outcomes equal executable broker trades.
