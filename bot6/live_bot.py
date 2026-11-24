@@ -165,104 +165,93 @@ def indicators(frame: pd.DataFrame):
 
 
 def get_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pair: str):
-    """Institutional-style proxy v2: H1/M15 directional alignment, M5 sweep, displacement/BOS,
-    FVG retest and a separate completed-candle confirmation. OHLC patterns do
-    not prove bank participation or reveal actual institutional order flow."""
-    m, mt, ht = indicators(m5), indicators(m15), indicators(h1)
-    if len(m) < 60 or len(mt) < 150 or len(ht) < 150:
+    """15-minute mini-BOS, deep 62-79% pullback and continuation confirmation."""
+    mt, ht = indicators(m15), indicators(h1)
+    if len(mt) < 150 or len(ht) < 150:
         return None
-    c, prev, mc, hc = m.iloc[-1], m.iloc[-2], mt.iloc[-1], ht.iloc[-1]
+    c, prev, hc = mt.iloc[-1], mt.iloc[-2], ht.iloc[-1]
     if pd.isna(c["atr"]) or float(c["atr"]) <= 0:
         return None
     h1_up = hc["close"] > hc["ema200"] and hc["ema21"] > hc["ema50"]
     h1_down = hc["close"] < hc["ema200"] and hc["ema21"] < hc["ema50"]
-    m15_up = mc["close"] > mc["ema200"] and mc["ema21"] > mc["ema50"]
-    m15_down = mc["close"] < mc["ema200"] and mc["ema21"] < mc["ema50"]
-    if h1_up and m15_up:
+    if h1_up:
         direction = "BUY"
-    elif h1_down and m15_down:
+    elif h1_down:
         direction = "SELL"
     else:
         return None
-    pip, n = pip_size(pair), len(m)
-    atr = float(c["atr"])
-    # Leave the latest completed M5 candle for independent entry confirmation.
-    for si in range(n - 7, n - 3):
-        if si < 25:
+
+    pip, atr, n = pip_size(pair), float(c["atr"]), len(mt)
+    for bi in range(n - 7, n - 2):
+        breakout = mt.iloc[bi]
+        before = mt.iloc[bi - 5:bi]
+        if len(before) != 5:
             continue
-        sweep = m.iloc[si]
-        prior = m.iloc[si - 12:si]
-        if len(prior) != 12:
+        brange = max(float(breakout["high"] - breakout["low"]), 1e-12)
+        bbody = abs(float(breakout["close"] - breakout["open"]))
+        batr = float(breakout["atr"]) if pd.notna(breakout["atr"]) else atr
+        if batr <= 0 or bbody < 0.35 * batr or brange < 0.55 * batr:
             continue
-        prior_high, prior_low = float(prior["high"].max()), float(prior["low"].min())
-        satr = float(sweep["atr"]) if pd.notna(sweep["atr"]) else atr
-        if satr <= 0:
-            continue
+
         if direction == "BUY":
-            swept = float(sweep["low"]) < prior_low and float(sweep["close"]) > prior_low
-            extreme = float(sweep["low"])
-            bos_level = float(m.iloc[si - 5:si]["high"].max())
+            structure = float(before["high"].max())
+            if not (float(breakout["close"]) > structure and float(breakout["close"]) > float(breakout["open"])):
+                continue
+            impulse_low, impulse_high = float(before["low"].min()), float(breakout["high"])
+            impulse_range = impulse_high - impulse_low
+            if impulse_range <= 0:
+                continue
+            zone_low = impulse_high - 0.79 * impulse_range
+            zone_high = impulse_high - 0.62 * impulse_range
+            swing = impulse_low
         else:
-            swept = float(sweep["high"]) > prior_high and float(sweep["close"]) < prior_high
-            extreme = float(sweep["high"])
-            bos_level = float(m.iloc[si - 5:si]["low"].min())
-        if not swept:
+            structure = float(before["low"].min())
+            if not (float(breakout["close"]) < structure and float(breakout["close"]) < float(breakout["open"])):
+                continue
+            impulse_high, impulse_low = float(before["high"].max()), float(breakout["low"])
+            impulse_range = impulse_high - impulse_low
+            if impulse_range <= 0:
+                continue
+            zone_low = impulse_low + 0.62 * impulse_range
+            zone_high = impulse_low + 0.79 * impulse_range
+            swing = impulse_high
+
+        pullback_time = None
+        for ri in range(bi + 1, n - 1):
+            r = mt.iloc[ri]
+            touched = float(r["low"]) <= zone_high and float(r["high"]) >= zone_low
+            held = float(r["close"]) >= zone_low if direction == "BUY" else float(r["close"]) <= zone_high
+            if touched and held:
+                pullback_time = mt.index[ri].isoformat()
+        if pullback_time is None:
             continue
-        for ii in range(si + 1, min(si + 5, n - 2)):
-            impulse = m.iloc[ii]
-            iatr = float(impulse["atr"]) if pd.notna(impulse["atr"]) else 0.0
-            if iatr <= 0:
-                continue
-            rng = max(float(impulse["high"] - impulse["low"]), 1e-12)
-            body = abs(float(impulse["close"] - impulse["open"]))
-            if direction == "BUY":
-                displacement = (float(impulse["close"]) > float(impulse["open"])
-                    and body >= 0.65 * iatr and rng >= 0.90 * iatr
-                    and (float(impulse["close"]) - float(impulse["low"])) / rng >= 0.65
-                    and float(impulse["close"]) > bos_level)
-                gap_low, gap_high = float(m.iloc[ii - 2]["high"]), float(impulse["low"])
-            else:
-                displacement = (float(impulse["close"]) < float(impulse["open"])
-                    and body >= 0.65 * iatr and rng >= 0.90 * iatr
-                    and (float(impulse["high"]) - float(impulse["close"])) / rng >= 0.65
-                    and float(impulse["close"]) < bos_level)
-                gap_low, gap_high = float(impulse["high"]), float(m.iloc[ii - 2]["low"])
-            if not displacement or gap_high <= gap_low or gap_high - gap_low < 0.03 * pip:
-                continue
-            retested = False
-            for ri in range(ii + 1, n - 1):
-                r = m.iloc[ri]
-                touched = float(r["low"]) <= gap_high and float(r["high"]) >= gap_low
-                held = (float(r["close"]) >= gap_low if direction == "BUY"
-                        else float(r["close"]) <= gap_high)
-                if touched and held:
-                    retested = True
-                    break
-            if not retested:
-                continue
-            if direction == "BUY":
-                confirmed = (float(c["close"]) > float(c["open"])
-                    and float(c["close"]) > float(prev["high"])
-                    and float(c["close"]) > gap_high
-                    and float(c["close"]) > float(c["ema21"]))
-                stop = extreme - max(0.15 * atr, 2.0 * pip)
-                risk = float(c["close"]) - stop
-            else:
-                confirmed = (float(c["close"]) < float(c["open"])
-                    and float(c["close"]) < float(prev["low"])
-                    and float(c["close"]) < gap_low
-                    and float(c["close"]) < float(c["ema21"]))
-                stop = extreme + max(0.15 * atr, 2.0 * pip)
-                risk = stop - float(c["close"])
-            if not confirmed or risk <= 0 or risk < 0.65 * atr or risk > 3.0 * atr:
-                continue
-            entry = float(c["close"])
-            target = entry + 1.5 * risk if direction == "BUY" else entry - 1.5 * risk
-            return {"direction": direction, "entry": entry, "stop": stop, "target": target,
-                "risk_pips": risk / pip, "rr": 1.5, "atr": atr,
-                "breakout_level": bos_level, "breakout_time": m.index[ii].isoformat(),
-                "confirmed_swing": extreme, "signal_time": m.index[-1].isoformat(),
-                "sweep_time": m.index[si].isoformat(), "fvg_low": gap_low, "fvg_high": gap_high}
+
+        if direction == "BUY":
+            confirmed = (float(c["close"]) > float(c["open"]) and
+                         float(c["close"]) > float(prev["high"]) and
+                         float(c["close"]) > zone_high and float(c["close"]) > float(c["ema21"]))
+            stop = swing - max(0.15 * atr, 2.0 * pip)
+            risk = float(c["close"]) - stop
+        else:
+            confirmed = (float(c["close"]) < float(c["open"]) and
+                         float(c["close"]) < float(prev["low"]) and
+                         float(c["close"]) < zone_low and float(c["close"]) < float(c["ema21"]))
+            stop = swing + max(0.15 * atr, 2.0 * pip)
+            risk = stop - float(c["close"])
+        if not confirmed or risk <= 0 or risk < 0.5 * atr or risk > 4.0 * atr:
+            continue
+
+        entry = float(c["close"])
+        target = entry + 1.5 * risk if direction == "BUY" else entry - 1.5 * risk
+        signal_close = mt.index[-1] + pd.Timedelta(minutes=15)
+        return {
+            "direction": direction, "entry": entry, "stop": stop, "target": target,
+            "risk_pips": risk / pip, "rr": 1.5, "atr": atr,
+            "breakout_level": structure, "breakout_time": mt.index[bi].isoformat(),
+            "confirmed_swing": swing, "signal_time": signal_close.isoformat(),
+            "pullback_time": pullback_time, "entry_zone_low": zone_low,
+            "entry_zone_high": zone_high,
+        }
     return None
 
 
@@ -409,8 +398,7 @@ def scan():
                     )
 
             quote = fetch_live_quote(pair)
-            candle_open = pd.Timestamp(signal["signal_time"])
-            candle_close = candle_open + pd.Timedelta(minutes=5)
+            candle_close = pd.Timestamp(signal["signal_time"])
             quote_time = pd.Timestamp(quote["timestamp"])
             if quote_time < candle_close:
                 raise ValueError(f"{pair}: live quote predates the completed M5 candle")
@@ -441,17 +429,16 @@ def scan():
                 "fvg_high": round(signal["fvg_high"], 6),
             }
             save_evidence(trade, m5, m15, h1, quote, signal)
-            candle_open = pd.Timestamp(trade["signal_time_utc"])
-            candle_close = candle_open + pd.Timedelta(minutes=5)
+            candle_close = pd.Timestamp(trade["signal_time_utc"])
             candle_age = max(0.0, (now_utc() - candle_close).total_seconds() / 60)
             message = (
-                f"📣 BOT 6 — LIQUIDITY SWEEP + FVG RETEST {trade['direction']} {pair}\n"
+                f"📣 BOT 6 — M15 MINI BOS + DEEP PULLBACK {trade['direction']} {pair}\n"
                 f"Entry: {trade['entry']}\nStop loss: {trade['stop_loss']}\n"
                 f"Take profit: {trade['take_profit']}\n"
                 f"Risk: {trade['risk_pips']} pips | Planned R:R 1:{trade['planned_rr']}\n"
-                f"M5 liquidity sweep + displacement/BOS + FVG retest + confirmation\n"
-                f"M15 and H1 trend aligned | Confirmed swing: {trade['confirmed_swing']}\n"
-                f"M5 candle close (UTC): {candle_close.isoformat()} | Data age: {candle_age:.1f} min\n"
+                f"M15 mini break of structure + 62–79% deep pullback + rejection confirmation\n"
+                f"H1 trend aligned | Entry zone: {signal["entry_zone_low"]:.6f}–{signal["entry_zone_high"]:.6f} | Confirmed swing: {trade['confirmed_swing']}\n"
+                f"M15 confirmation candle close (UTC): {candle_close.isoformat()} | Data age: {candle_age:.1f} min\n"
                 f"Live tick check: {quote['mid']} ({quote['age_seconds']:.0f}s old)\n"
                 f"Source: BiQuote OHLC + live tick check; not broker-verified. Check broker price/spread before entry. "
                 f"Manual signal only; risk no more than 0.25%."
