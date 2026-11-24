@@ -21,6 +21,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: bot6-historical-validation
+  cancel-in-progress: true
+
 jobs:
   backtest:
     runs-on: ubuntu-latest
