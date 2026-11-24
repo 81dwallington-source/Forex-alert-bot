@@ -165,7 +165,7 @@ def indicators(frame: pd.DataFrame):
 
 
 def get_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pair: str):
-    """Institutional-style proxy: H1/M15 alignment, M5 sweep, displacement/BOS,
+    """Institutional-style proxy v2: H1/M15 directional alignment, M5 sweep, displacement/BOS,
     FVG retest and a separate completed-candle confirmation. OHLC patterns do
     not prove bank participation or reveal actual institutional order flow."""
     m, mt, ht = indicators(m5), indicators(m15), indicators(h1)
@@ -174,10 +174,10 @@ def get_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pair: str)
     c, prev, mc, hc = m.iloc[-1], m.iloc[-2], mt.iloc[-1], ht.iloc[-1]
     if pd.isna(c["atr"]) or float(c["atr"]) <= 0:
         return None
-    h1_up = hc["close"] > hc["ema50"] > hc["ema200"] and hc["ema21"] > hc["ema50"]
-    h1_down = hc["close"] < hc["ema50"] < hc["ema200"] and hc["ema21"] < hc["ema50"]
-    m15_up = mc["close"] > mc["ema50"] > mc["ema200"] and mc["ema21"] > mc["ema50"]
-    m15_down = mc["close"] < mc["ema50"] < mc["ema200"] and mc["ema21"] < mc["ema50"]
+    h1_up = hc["close"] > hc["ema200"] and hc["ema21"] > hc["ema50"]
+    h1_down = hc["close"] < hc["ema200"] and hc["ema21"] < hc["ema50"]
+    m15_up = mc["close"] > mc["ema200"] and mc["ema21"] > mc["ema50"]
+    m15_down = mc["close"] < mc["ema200"] and mc["ema21"] < mc["ema50"]
     if h1_up and m15_up:
         direction = "BUY"
     elif h1_down and m15_down:
@@ -191,19 +191,19 @@ def get_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pair: str)
         if si < 25:
             continue
         sweep = m.iloc[si]
-        prior = m.iloc[si - 20:si]
-        if len(prior) != 20:
+        prior = m.iloc[si - 12:si]
+        if len(prior) != 12:
             continue
         prior_high, prior_low = float(prior["high"].max()), float(prior["low"].min())
         satr = float(sweep["atr"]) if pd.notna(sweep["atr"]) else atr
         if satr <= 0:
             continue
         if direction == "BUY":
-            swept = float(sweep["low"]) < prior_low - 0.03 * satr and float(sweep["close"]) > prior_low
+            swept = float(sweep["low"]) < prior_low and float(sweep["close"]) > prior_low
             extreme = float(sweep["low"])
             bos_level = float(m.iloc[si - 5:si]["high"].max())
         else:
-            swept = float(sweep["high"]) > prior_high + 0.03 * satr and float(sweep["close"]) < prior_high
+            swept = float(sweep["high"]) > prior_high and float(sweep["close"]) < prior_high
             extreme = float(sweep["high"])
             bos_level = float(m.iloc[si - 5:si]["low"].min())
         if not swept:
@@ -217,14 +217,14 @@ def get_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pair: str)
             body = abs(float(impulse["close"] - impulse["open"]))
             if direction == "BUY":
                 displacement = (float(impulse["close"]) > float(impulse["open"])
-                    and body >= 0.80 * iatr and rng >= 1.05 * iatr
-                    and (float(impulse["close"]) - float(impulse["low"])) / rng >= 0.75
+                    and body >= 0.65 * iatr and rng >= 0.90 * iatr
+                    and (float(impulse["close"]) - float(impulse["low"])) / rng >= 0.65
                     and float(impulse["close"]) > bos_level)
                 gap_low, gap_high = float(m.iloc[ii - 2]["high"]), float(impulse["low"])
             else:
                 displacement = (float(impulse["close"]) < float(impulse["open"])
-                    and body >= 0.80 * iatr and rng >= 1.05 * iatr
-                    and (float(impulse["high"]) - float(impulse["close"])) / rng >= 0.75
+                    and body >= 0.65 * iatr and rng >= 0.90 * iatr
+                    and (float(impulse["high"]) - float(impulse["close"])) / rng >= 0.65
                     and float(impulse["close"]) < bos_level)
                 gap_low, gap_high = float(impulse["high"]), float(m.iloc[ii - 2]["low"])
             if not displacement or gap_high <= gap_low or gap_high - gap_low < 0.03 * pip:
