@@ -1,28 +1,69 @@
-name: Bot 6 — institutional strategy validation
+name: Bot 6 — live Telegram scanner
 
 on:
+  # Run once when this activation workflow is installed, then on the schedule below.
   push:
     paths:
-      - "bot6/**"
       - ".github/workflows/bot6-15m.yml"
   workflow_dispatch:
+  schedule:
+    # GitHub Actions uses UTC. Forex market hours: Sunday reopen through Friday close.
+    - cron: "*/5 * * * 1-5"
+    - cron: "*/5 22-23 * * 0"
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: bot6-live-scanner
+  cancel-in-progress: false
 
 jobs:
-  validate:
+  scan:
     runs-on: ubuntu-latest
+    timeout-minutes: 8
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-      - name: Compile Bot 6
-        run: python -m py_compile bot6/live_bot.py
-      - name: Confirm safety pause remains active
+          python-version: "3.12"
+
+      - name: Install Bot 6 dependencies
         run: |
-          test -f bot6/STOP
-          echo "Validation only. Bot 6 scanning and Telegram alerts remain paused."
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Check Telegram configuration
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "::error::Add TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
+      - name: Run Bot 6 scan
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python bot6/live_bot.py
+
+      - name: Save Bot 6 trade log and outcome state
+        if: always()
+        run: |
+          mkdir -p bot6/evidence
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A bot6/state.json bot6/signals.csv bot6/evidence
+          if ! git diff --cached --quiet; then
+            git commit -m "Bot 6: save signal and outcome state"
+            git push
+          else
+            echo "No Bot 6 state or log changes to save."
+          fi
