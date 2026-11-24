@@ -1,15 +1,28 @@
-name: Bot 6 — PAUSED (manual trigger only)
+name: Bot 6 — institutional strategy validation
 
 on:
-  # Deliberately paused: no scheduled or push-triggered scans.
+  push:
+    paths:
+      - "bot6/**"
+      - ".github/workflows/bot6-15m.yml"
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  paused:
+  validate:
     runs-on: ubuntu-latest
     steps:
-      - name: Confirm Bot 6 is paused
-        run: echo "Bot 6 automatic scanning is paused. Do not enable until a replacement passes validation."
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile Bot 6
+        run: python -m py_compile bot6/live_bot.py
+      - name: Confirm safety pause remains active
+        run: |
+          test -f bot6/STOP
+          echo "Validation only. Bot 6 scanning and Telegram alerts remain paused."
