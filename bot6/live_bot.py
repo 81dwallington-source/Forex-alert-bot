@@ -424,9 +424,9 @@ def scan():
                 "live_quote_mid": round(quote["mid"], 6),
                 "live_quote_time_utc": quote["timestamp"],
                 "confirmed_swing": round(signal["confirmed_swing"], 6),
-                "sweep_time_utc": signal["sweep_time"],
-                "fvg_low": round(signal["fvg_low"], 6),
-                "fvg_high": round(signal["fvg_high"], 6),
+                "pullback_time_utc": signal["pullback_time"],
+                "entry_zone_low": round(signal["entry_zone_low"], 6),
+                "entry_zone_high": round(signal["entry_zone_high"], 6),
             }
             save_evidence(trade, m5, m15, h1, quote, signal)
             candle_close = pd.Timestamp(trade["signal_time_utc"])
