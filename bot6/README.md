@@ -1,41 +1,35 @@
-# Bot 6 — Institutional-style liquidity sweep and FVG retest
+# Bot 6 — M15 mini break of structure and deep pullback
 
-Bot 6 has been changed from its compression-breakout strategy to a selective, institutional-style price-action proxy. It remains signal-only: it does not place broker orders.
+Bot 6 is a selective, signal-only 15-minute continuation strategy. It does not place broker orders.
 
-## Required sequence
-1. H1 and M15 trend alignment must agree; disagreement means no trade.
-2. On M5, price must sweep a recent 20-candle high/low and close back through that level.
-3. Within the next four completed M5 candles, require decisive displacement that breaks nearby structure (BOS).
-4. Require a three-candle fair-value gap (FVG) created by the displacement.
-5. Price must later retrace into that FVG and hold the relevant side.
-6. A separate, latest completed M5 candle must confirm continuation before an alert is considered.
-
-A liquidity sweep alone is never an entry. The bot detects patterns in public OHLC data; it cannot see bank orders, dealer flows or prove that a bank caused a move.
+## Required entry sequence
+1. H1 trend direction must agree with the trade; if H1 is unclear, no trade.
+2. On M15, price must make a clear mini break of the previous five-candle micro-structure in the H1 direction.
+3. Define the impulse from the recent five-candle swing extreme to the M15 breakout candle.
+4. Wait for price to retrace deeply into the 62–79% pullback zone of that impulse. A touch alone is not an entry.
+5. Require a separate completed M15 candle to reject the zone, close back in the trend direction, break the prior candle's high/low and close beyond EMA21.
+6. Only then consider an alert. BUY logic is the exact inverse of SELL logic.
 
 ## Risk and filters
 - Scans 27 major and cross pairs.
-- H1 and M15 alignment is mandatory.
-- Structural stop is beyond the sweep extreme with an ATR/spread-style buffer.
-- Rejects risk smaller than 0.65 ATR or larger than 3.0 ATR.
+- H1 direction is mandatory; H1/M15 alignment is not required because M15 is the entry/setup timeframe.
+- Stop loss is beyond the impulse-origin swing with an ATR buffer.
+- Rejects unusually small or large structural risk (0.5–4.0 M15 ATR).
 - Planned target is 1:1.5 reward-to-risk.
 - Maximum five alerts per UTC day; one alert per pair per UTC day.
 - Maximum one pending JPY-cross trade.
-- Requires fresh completed M5/M15/H1 candles and a fresh live quote close to the planned entry.
+- Requires fresh completed M5/M15/H1 candles and a fresh live quote close to the confirmed M15 entry.
 - Does not chase an entry after price has moved away.
 - Every alert is logged; outcomes are resolved from later completed M5 candles. If SL and TP both touch in one candle, outcome is marked AMBIGUOUS rather than guessed. Unresolved trades expire after 24 hours.
 
 ## Data and safety
 - Feed: BiQuote public FX OHLC plus its live quote endpoint; not broker-verified.
 - Manual signals only. Check the broker's live price and spread before entry.
-- The existing trade log and state files are retained; historical Bot 6 results are not reset.
+- Existing trade log and state files are retained; historical results are not reset.
 - The emergency STOP kill-switch can be restored by adding `bot6/STOP`; do not do this unless you intentionally want to pause all Bot 6 scans.
 
 ## Current operating status
-**Live scanner enabled.** `.github/workflows/bot6-15m.yml` now runs Bot 6 every five minutes on weekdays and during the Sunday forex reopen window (UTC), with a manual run option. It sends signal-only Telegram alerts and does not place broker orders. GitHub scheduling is best-effort, not guaranteed real-time. The workflow requires repository Actions secrets `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`; it persists `state.json`, `signals.csv` and evidence back to the repository after each run. If either secret is missing, the run fails with a clear configuration error.
+**Live scanner enabled.** `.github/workflows/bot6-15m.yml` runs every five minutes on weekdays and during the Sunday forex reopen window (UTC), with a manual run option. GitHub scheduling is best-effort, not guaranteed real-time. The workflow requires Actions secrets `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`, and persists `state.json`, `signals.csv` and evidence after each run.
 
-
-## Historical validation added
-
-A separate walk-forward backtest is provided by `backtest.py` and `.github/workflows/bot6-historical-validation.yml`. It downloads independent Dukascopy M5/H1 history for 27 major and cross pairs, over a selectable 1–7 year period (default seven years), builds completed M15 bars, uses only higher-timeframe candles that had closed at each M5 decision point, enters at the next M5 open, applies an assumed full spread, and treats same-candle stop/target touches conservatively as losses. Results are split chronologically: the final 30% of trades is held out from development. The workflow always uploads a trade ledger, even when the sample is too small, and fails closed if fewer than 30 out-of-sample trades are available or out-of-sample expectancy is not positive. Short-trade reward accounting treats the target as the ask-side exit level and does not subtract the spread twice.
-
-The forexsb.com mirror is independent of the BiQuote live feed and the user's broker; it mirrors DukasCopy historical bars and is not broker-verified. The backtest is a screening test, not proof of profitability. The scanner is now enabled by explicit user request while validation continues. This is not a profitability approval: use paper trading first, check broker quotes/spreads, and do not assume historical/public-feed outcomes equal executable broker trades.
+## Historical validation
+A separate walk-forward backtest is provided by `backtest.py` and `.github/workflows/bot6-historical-validation.yml`. It is a screening test, not proof of profitability. Public historical/live-feed outcomes may differ from executable broker prices. Use paper trading first.
