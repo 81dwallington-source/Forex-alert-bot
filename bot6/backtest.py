@@ -97,7 +97,7 @@ def evaluate(pair: str, folder: Path, spread_pips: float):
             elif hit_sl:
                 outcome, r_multiple = "LOSS", -1.0
             elif hit_tp:
-                reward = (tp - entry) if sig["direction"] == "BUY" else entry - (tp - spread)
+                reward = (tp - entry) if sig["direction"] == "BUY" else entry - tp  # short TP is already the ask-side exit level
                 outcome, r_multiple = "WIN", reward / risk
             if outcome:
                 exit_time = m5.index[j].isoformat()
@@ -127,16 +127,21 @@ def main():
         print(f"{pair.strip().upper()}: {stats(rows)}", flush=True)
         all_trades.extend(rows)
     all_trades.sort(key=lambda x: x["signal_time"])
+    fields = ["signal_time", "exit_time", "pair", "direction", "entry", "stop", "target",
+              "risk_pips", "result", "r"]
+    # Always publish the ledger, including an empty/header-only file when the
+    # strategy produces too few trades. A failed sample-size gate must not hide results.
+    with open("bot6_backtest_trades.csv", "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=fields)
+        w.writeheader()
+        w.writerows(all_trades)
+    print("ALL RESOLVED TRADES:", stats(all_trades), flush=True)
     if len(all_trades) < 20:
         raise SystemExit(f"INCONCLUSIVE: only {len(all_trades)} resolved trades; no win rate claimed")
     split = int(len(all_trades) * 0.70)
     development, oos = all_trades[:split], all_trades[split:]
     print("DEVELOPMENT (first 70% chronologically):", stats(development), flush=True)
     print("UNTOUCHED OUT-OF-SAMPLE (last 30%):", stats(oos), flush=True)
-    with open("bot6_backtest_trades.csv", "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=list(all_trades[0]))
-        w.writeheader()
-        w.writerows(all_trades)
     if len(oos) < a.minimum_oos_trades:
         raise SystemExit(f"INCONCLUSIVE: only {len(oos)} out-of-sample trades; need {a.minimum_oos_trades}")
     if stats(oos)["expectancy_R"] <= 0:

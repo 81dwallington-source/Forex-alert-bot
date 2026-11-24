@@ -13,7 +13,13 @@ import pandas as pd
 
 BASE = "https://data.forexsb.com/datafeed/data/dukascopy"
 INFO = "https://data.forexsb.com/datafeed/info/premium.json.gz"
-PAIRS = ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "USDCAD", "AUDUSD", "NZDUSD"]
+PAIRS = [
+    "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "USDCAD", "AUDUSD", "NZDUSD",
+    "EURGBP", "EURJPY", "EURCHF", "EURAUD", "EURCAD", "EURNZD",
+    "GBPJPY", "GBPCHF", "GBPAUD", "GBPCAD", "GBPNZD",
+    "AUDJPY", "AUDCHF", "AUDCAD", "AUDNZD",
+    "NZDJPY", "NZDCHF", "NZDCAD", "CADJPY", "CHFJPY",
+]
 
 
 def get_bytes(url: str) -> bytes:
@@ -75,7 +81,7 @@ def write_frame(frame: pd.DataFrame, path: Path):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--years", type=int, choices=(1, 2), default=1)
+    parser.add_argument("--years", type=int, choices=(1, 2, 3, 5, 7), default=7)
     parser.add_argument("--data-dir", default="historical_data")
     args = parser.parse_args()
     end = pd.Timestamp.now(tz="UTC").floor("D")

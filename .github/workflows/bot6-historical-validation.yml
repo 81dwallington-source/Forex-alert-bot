@@ -11,8 +11,8 @@ on:
         description: Historical years to test
         required: true
         type: choice
-        options: ["1", "2"]
-        default: "1"
+        options: ["1", "2", "3", "5", "7"]
+        default: "7"
       spread_pips:
         description: Assumed full spread in pips
         required: true
@@ -43,7 +43,7 @@ jobs:
           pytest -q
       - name: Download independent Dukascopy history
         env:
-          YEARS: ${{ inputs.years || '1' }}
+          YEARS: ${{ inputs.years || '7' }}
         run: |
           python bot6/download_forexsb_history.py --years "$YEARS" --data-dir historical_data
       - name: Run spread-aware walk-forward backtest
