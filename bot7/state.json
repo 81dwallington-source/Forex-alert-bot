@@ -1,5 +1,8 @@
 {
   "pending": [],
   "completed": [],
-  "sent_today": {}
+  "sent_today": {
+    "2026-11-24": 0
+  },
+  "last_scan_utc": "2026-11-24T17:32:25.277140+00:00"
 }
