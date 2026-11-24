@@ -26,6 +26,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
       - name: Install dependencies
         run: python -m pip install --upgrade pip pandas requests pytest
       - name: Compile Bot 6 and run offline tests
@@ -36,8 +39,6 @@ jobs:
       - name: Download independent Dukascopy history
         run: |
           python -m pip install --upgrade pip
-          sudo apt-get update
-          sudo apt-get install -y nodejs npm
           python download_historical_data.py --years "${{ inputs.years }}" --data-dir historical_data
       - name: Run spread-aware walk-forward backtest
         run: |
