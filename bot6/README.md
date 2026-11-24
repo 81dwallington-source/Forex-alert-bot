@@ -32,3 +32,10 @@ A liquidity sweep alone is never an entry. The bot detects patterns in public OH
 
 ## Current operating status
 The scheduled scanner remains paused while the replacement strategy is validated. The GitHub Actions workflow currently performs syntax validation only; it does not send Telegram alerts or execute trades.
+
+
+## Historical validation added
+
+A separate walk-forward backtest is provided by `backtest.py` and `.github/workflows/bot6-historical-validation.yml`. It downloads independent Dukascopy M5/H1 history for seven major pairs, builds completed M15 bars, uses only higher-timeframe candles that had closed at each M5 decision point, enters at the next M5 open, applies an assumed full spread, and treats same-candle stop/target touches conservatively as losses. Results are split chronologically: the final 30% of trades is held out from development. The workflow fails closed if fewer than 30 out-of-sample trades are available or out-of-sample expectancy is not positive.
+
+Dukascopy is an independent historical feed, not the BiQuote live feed or the user's broker. The backtest is a screening test, not proof of profitability. The live STOP file remains in place regardless of a passing backtest; review forward paper results and broker execution differences before considering reactivation.
