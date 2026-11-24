@@ -1,4 +1,5 @@
 name: Bot 6 — live Telegram scanner
+# Activation follow-up: ensure first scheduled scan runs after STOP removal.
 
 on:
   # Run once when this activation workflow is installed, then on the schedule below.
