@@ -4,7 +4,6 @@ on:
   push:
     paths:
       - "bot6/**"
-      - "download_historical_data.py"
       - ".github/workflows/bot6-historical-validation.yml"
   workflow_dispatch:
     inputs:
@@ -31,9 +30,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
       - name: Install dependencies
         run: python -m pip install --upgrade pip pandas requests pytest
       - name: Compile Bot 6 and run offline tests
@@ -45,7 +41,7 @@ jobs:
         env:
           YEARS: ${{ inputs.years || '1' }}
         run: |
-          python download_historical_data.py --years "$YEARS" --data-dir historical_data
+          python bot6/download_forexsb_history.py --years "$YEARS" --data-dir historical_data
       - name: Run spread-aware walk-forward backtest
         env:
           SPREAD_PIPS: ${{ inputs.spread_pips || '1.2' }}
