@@ -15,7 +15,7 @@ concurrency:
 jobs:
   paper-scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -31,8 +31,8 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          for i in $(seq 1 70); do
-            echo "Bot 7 paper scan $i/70"
+          for i in $(seq 1 65); do
+            echo "Bot 7 paper scan $i/65"
             python bot7/live_bot.py || echo "Scan failed; continuing next cycle"
             git add bot7/state.json bot7/signals.csv
             git diff --cached --quiet || {
@@ -41,5 +41,5 @@ jobs:
               git commit -m "Update Bot 7 paper forward-test results"
               git push
             }
-            if [ "$i" -lt 70 ]; then sleep 300; fi
+            if [ "$i" -lt 65 ]; then sleep 300; fi
           done
