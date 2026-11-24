@@ -1,6 +1,11 @@
 name: Bot 6 — institutional strategy historical validation
 
 on:
+  push:
+    paths:
+      - "bot6/**"
+      - "download_historical_data.py"
+      - ".github/workflows/bot6-historical-validation.yml"
   workflow_dispatch:
     inputs:
       years:
@@ -37,13 +42,16 @@ jobs:
           python -m py_compile live_bot.py backtest.py
           pytest -q
       - name: Download independent Dukascopy history
+        env:
+          YEARS: ${{ inputs.years || '1' }}
         run: |
-          python -m pip install --upgrade pip
-          python download_historical_data.py --years "${{ inputs.years }}" --data-dir historical_data
+          python download_historical_data.py --years "$YEARS" --data-dir historical_data
       - name: Run spread-aware walk-forward backtest
+        env:
+          SPREAD_PIPS: ${{ inputs.spread_pips || '1.2' }}
         run: |
           cd bot6
-          python backtest.py --data-dir ../historical_data --spread-pips "${{ inputs.spread_pips }}" --minimum-oos-trades 30
+          python backtest.py --data-dir ../historical_data --spread-pips "$SPREAD_PIPS" --minimum-oos-trades 30
       - name: Upload trade ledger
         if: always()
         uses: actions/upload-artifact@v4
