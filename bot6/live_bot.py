@@ -437,7 +437,7 @@ def scan():
                 f"Take profit: {trade['take_profit']}\n"
                 f"Risk: {trade['risk_pips']} pips | Planned R:R 1:{trade['planned_rr']}\n"
                 f"M15 mini break of structure + 62–79% deep pullback + rejection confirmation\n"
-                f"H1 trend aligned | Entry zone: {signal["entry_zone_low"]:.6f}–{signal["entry_zone_high"]:.6f} | Confirmed swing: {trade['confirmed_swing']}\n"
+                f"H1 trend aligned | Entry zone: {signal['entry_zone_low']:.6f}–{signal['entry_zone_high']:.6f} | Confirmed swing: {trade['confirmed_swing']}\n"
                 f"M15 confirmation candle close (UTC): {candle_close.isoformat()} | Data age: {candle_age:.1f} min\n"
                 f"Live tick check: {quote['mid']} ({quote['age_seconds']:.0f}s old)\n"
                 f"Source: BiQuote OHLC + live tick check; not broker-verified. Check broker price/spread before entry. "
