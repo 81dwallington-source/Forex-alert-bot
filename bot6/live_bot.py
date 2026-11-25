@@ -165,14 +165,17 @@ def indicators(frame: pd.DataFrame):
 
 
 def get_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pair: str):
-    """Impulse-origin retest: M15 structure/zone, M5 rejection entry, H1 trend filter."""
+    """Impulse-origin retest: M15 structure/zone, M5 rejection entry, H1 trend filter.
+    Log every early rejection with its exact source line for audit."""
     mt, ht, m5i = indicators(m15), indicators(h1), indicators(m5)
     if len(mt) < 150 or len(ht) < 150 or len(m5i) < 210:
+        print(f"BOT6_REJECT {pair}: strategy gate at live_bot.py line {__import__('inspect').currentframe().f_lineno}", flush=True)
         return None
 
     c15, prev15, hc = mt.iloc[-1], mt.iloc[-2], ht.iloc[-1]
     c5, prev5 = m5i.iloc[-1], m5i.iloc[-2]
     if pd.isna(c15["atr"]) or float(c15["atr"]) <= 0 or pd.isna(c5["atr"]):
+        print(f"BOT6_REJECT {pair}: strategy gate at live_bot.py line {__import__('inspect').currentframe().f_lineno}", flush=True)
         return None
 
     h1_up = hc["close"] > hc["ema200"] and hc["ema21"] > hc["ema50"]
@@ -182,6 +185,7 @@ def get_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pair: str)
     elif h1_down:
         direction = "SELL"
     else:
+        print(f"BOT6_REJECT {pair}: strategy gate at live_bot.py line {__import__('inspect').currentframe().f_lineno}", flush=True)
         return None
 
     pip = pip_size(pair)
@@ -431,7 +435,7 @@ def scan():
     analysed = 0
     no_setup = 0
     error_details = []
-    print(f"BOT 6 starting institutional-style liquidity-sweep scan: {len(PAIRS)} pairs", flush=True)
+    print(f"BOT 6 starting impulse-origin retest scan: {len(PAIRS)} pairs | UTC={now_utc().isoformat()}", flush=True)
     for pair in PAIRS:
         if MAX_ONE_PER_PAIR_PER_UTC_DAY and pair in used_pairs:
             continue
@@ -445,9 +449,11 @@ def scan():
             check_fresh(m15, 15, 25)
             check_fresh(h1, 60, 75)
             analysed += 1
+            print(f"BOT6_DATA_OK {pair}: M5/M15/H1 fresh; evaluating impulse-origin retest", flush=True)
             signal = get_signal(m5, m15, h1, pair)
             if not signal:
                 no_setup += 1
+                print(f"BOT6_NO_SIGNAL {pair}: no complete qualified origin/retest/confirmation sequence", flush=True)
                 continue
             # One open JPY-cross position at a time: avoid stacking the same
             # JPY exposure across pairs such as AUDJPY and EURJPY.
