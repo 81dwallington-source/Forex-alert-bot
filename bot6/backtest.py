@@ -67,11 +67,17 @@ def evaluate(pair: str, folder: Path, spread_pips: float):
         if i < next_allowed:
             continue
         close_time = m5.index[i] + pd.Timedelta(minutes=5)
-        x15 = m15i.loc[m15i.index + pd.Timedelta(minutes=15) <= close_time]
-        x1 = h1i.loc[h1i.index + pd.Timedelta(hours=1) <= close_time]
-        if len(x15) < 150 or len(x1) < 150:
+        # Indicators are precomputed causally on the full series. Pass only the
+        # rolling windows the live strategy actually inspects; this is equivalent
+        # to the full prefix but avoids repeatedly slicing years of history.
+        end15 = m15i.index.searchsorted(close_time - pd.Timedelta(minutes=15), side="right")
+        end1 = h1i.index.searchsorted(close_time - pd.Timedelta(hours=1), side="right")
+        if end15 < 150 or end1 < 150:
             continue
-        sig = get_signal(m5i.iloc[:i + 1], x15, x1, stem)
+        x15 = m15i.iloc[max(0, end15 - 150):end15]
+        x1 = h1i.iloc[max(0, end1 - 150):end1]
+        m5_window = m5i.iloc[max(0, i - 209):i + 1]
+        sig = get_signal(m5_window, x15, x1, stem, verbose=False)
         if not sig:
             continue
         # Signal is formed at candle close; execution is next candle open.
