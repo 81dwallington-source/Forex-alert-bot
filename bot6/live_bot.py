@@ -493,11 +493,11 @@ def scan():
             candle_close = pd.Timestamp(trade["signal_time_utc"])
             candle_age = max(0.0, (now_utc() - candle_close).total_seconds() / 60)
             message = (
-                f"📣 BOT 6 — M15 MINI BOS + DEEP PULLBACK {trade['direction']} {pair}\n"
+                f"📣 BOT 6 — IMPULSE ORIGIN + RETEST {trade['direction']} {pair}\n"
                 f"Entry: {trade['entry']}\nStop loss: {trade['stop_loss']}\n"
                 f"Take profit: {trade['take_profit']}\n"
                 f"Risk: {trade['risk_pips']} pips | Planned R:R 1:{trade['planned_rr']}\n"
-                f"M15 mini break of structure + 62–79% deep pullback + rejection confirmation\n"
+                f"M15 structure break + origin-candle retest + M5 rejection confirmation\n"
                 f"H1 trend aligned | Entry zone: {signal['entry_zone_low']:.6f}–{signal['entry_zone_high']:.6f} | Confirmed swing: {trade['confirmed_swing']}\n"
                 f"M15 confirmation candle close (UTC): {candle_close.isoformat()} | Data age: {candle_age:.1f} min\n"
                 f"Live tick check: {quote['mid']} ({quote['age_seconds']:.0f}s old)\n"
