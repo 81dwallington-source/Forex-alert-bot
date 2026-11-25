@@ -165,13 +165,16 @@ def indicators(frame: pd.DataFrame):
 
 
 def get_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pair: str):
-    """15-minute mini-BOS, deep 62-79% pullback and continuation confirmation."""
-    mt, ht = indicators(m15), indicators(h1)
-    if len(mt) < 150 or len(ht) < 150:
+    """Impulse-origin retest: M15 structure/zone, M5 rejection entry, H1 trend filter."""
+    mt, ht, m5i = indicators(m15), indicators(h1), indicators(m5)
+    if len(mt) < 150 or len(ht) < 150 or len(m5i) < 210:
         return None
-    c, prev, hc = mt.iloc[-1], mt.iloc[-2], ht.iloc[-1]
-    if pd.isna(c["atr"]) or float(c["atr"]) <= 0:
+
+    c15, prev15, hc = mt.iloc[-1], mt.iloc[-2], ht.iloc[-1]
+    c5, prev5 = m5i.iloc[-1], m5i.iloc[-2]
+    if pd.isna(c15["atr"]) or float(c15["atr"]) <= 0 or pd.isna(c5["atr"]):
         return None
+
     h1_up = hc["close"] > hc["ema200"] and hc["ema21"] > hc["ema50"]
     h1_down = hc["close"] < hc["ema200"] and hc["ema21"] < hc["ema50"]
     if h1_up:
@@ -181,79 +184,137 @@ def get_signal(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame, pair: str)
     else:
         return None
 
-    pip, atr, n = pip_size(pair), float(c["atr"]), len(mt)
-    for bi in range(n - 7, n - 2):
+    pip = pip_size(pair)
+    atr15, atr5 = float(c15["atr"]), float(c5["atr"])
+    n = len(mt)
+
+    # Search only recent completed M15 structure breaks. The origin is the
+    # final opposing candle immediately before the displacement candle.
+    for bi in range(n - 12, n - 2):
         breakout = mt.iloc[bi]
         before = mt.iloc[bi - 5:bi]
         if len(before) != 5:
             continue
+
         brange = max(float(breakout["high"] - breakout["low"]), 1e-12)
         bbody = abs(float(breakout["close"] - breakout["open"]))
-        batr = float(breakout["atr"]) if pd.notna(breakout["atr"]) else atr
-        if batr <= 0 or bbody < 0.35 * batr or brange < 0.55 * batr:
+        batr = float(breakout["atr"]) if pd.notna(breakout["atr"]) else atr15
+        if batr <= 0 or bbody < 0.55 * batr or brange < 0.80 * batr:
             continue
 
-        if direction == "BUY":
-            structure = float(before["high"].max())
-            if not (float(breakout["close"]) > structure and float(breakout["close"]) > float(breakout["open"])):
-                continue
-            impulse_low, impulse_high = float(before["low"].min()), float(breakout["high"])
-            impulse_range = impulse_high - impulse_low
-            if impulse_range <= 0:
-                continue
-            zone_low = impulse_high - 0.79 * impulse_range
-            zone_high = impulse_high - 0.62 * impulse_range
-            swing = impulse_low
-        else:
+        if direction == "SELL":
             structure = float(before["low"].min())
-            if not (float(breakout["close"]) < structure and float(breakout["close"]) < float(breakout["open"])):
+            if not (float(breakout["close"]) < structure and
+                    float(breakout["close"]) < float(breakout["open"])):
                 continue
-            impulse_high, impulse_low = float(before["high"].max()), float(breakout["low"])
-            impulse_range = impulse_high - impulse_low
-            if impulse_range <= 0:
+            opposing = [j for j in range(bi - 5, bi)
+                        if float(mt.iloc[j]["close"]) > float(mt.iloc[j]["open"])]
+            if not opposing:
                 continue
-            zone_low = impulse_low + 0.62 * impulse_range
-            zone_high = impulse_low + 0.79 * impulse_range
-            swing = impulse_high
+            oi = opposing[-1]
+            origin = mt.iloc[oi]
+            # Bearish origin zone: open-to-high of the last bullish candle.
+            zone_low, zone_high = float(origin["open"]), float(origin["high"])
+            origin_extreme = float(origin["high"])
+        else:
+            structure = float(before["high"].max())
+            if not (float(breakout["close"]) > structure and
+                    float(breakout["close"]) > float(breakout["open"])):
+                continue
+            opposing = [j for j in range(bi - 5, bi)
+                        if float(mt.iloc[j]["close"]) < float(mt.iloc[j]["open"])]
+            if not opposing:
+                continue
+            oi = opposing[-1]
+            origin = mt.iloc[oi]
+            # Bullish origin zone: low-to-open of the last bearish candle.
+            zone_low, zone_high = float(origin["low"]), float(origin["open"])
+            origin_extreme = float(origin["low"])
 
-        pullback_time = None
+        if zone_high <= zone_low:
+            continue
+
+        # A later completed M15 candle must revisit the origin zone and hold
+        # on the correct side. A touch of the zone is never an entry by itself.
+        touches = []
         for ri in range(bi + 1, n - 1):
             r = mt.iloc[ri]
             touched = float(r["low"]) <= zone_high and float(r["high"]) >= zone_low
-            held = float(r["close"]) >= zone_low if direction == "BUY" else float(r["close"]) <= zone_high
-            if touched and held:
-                pullback_time = mt.index[ri].isoformat()
-        if pullback_time is None:
+            if not touched:
+                continue
+            held = (float(r["close"]) <= zone_high if direction == "SELL"
+                    else float(r["close"]) >= zone_low)
+            if held:
+                touches.append(ri)
+        if not touches:
+            continue
+        pullback_i = touches[-1]
+        pullback_time = mt.index[pullback_i].isoformat()
+
+        # M15 must still support the H1 direction after the retest.
+        m15_confirmed = (
+            float(c15["close"]) < float(prev15["low"]) and
+            float(c15["close"]) < float(c15["ema21"])
+            if direction == "SELL" else
+            float(c15["close"]) > float(prev15["high"]) and
+            float(c15["close"]) > float(c15["ema21"])
+        )
+        if not m15_confirmed:
             continue
 
-        if direction == "BUY":
-            confirmed = (float(c["close"]) > float(c["open"]) and
-                         float(c["close"]) > float(prev["high"]) and
-                         float(c["close"]) > zone_high and float(c["close"]) > float(c["ema21"]))
-            stop = swing - max(0.15 * atr, 2.0 * pip)
-            risk = float(c["close"]) - stop
+        # M5 must itself have revisited the same origin zone after the M15
+        # retest, then print a separate rejection/continuation candle.
+        pullback_stamp = mt.index[pullback_i] + pd.Timedelta(minutes=15)
+        recent5 = m5i.loc[m5i.index >= pullback_stamp].tail(36)
+        if recent5.empty:
+            continue
+        m5_touched = ((recent5["low"] <= zone_high) &
+                      (recent5["high"] >= zone_low)).any()
+        if not m5_touched:
+            continue
+
+        if direction == "SELL":
+            confirmed = (
+                float(c5["close"]) < float(c5["open"]) and
+                float(c5["close"]) < float(prev5["low"]) and
+                float(c5["close"]) < zone_low and
+                float(c5["close"]) < float(c5["ema21"])
+            )
         else:
-            confirmed = (float(c["close"]) < float(c["open"]) and
-                         float(c["close"]) < float(prev["low"]) and
-                         float(c["close"]) < zone_low and float(c["close"]) < float(c["ema21"]))
-            stop = swing + max(0.15 * atr, 2.0 * pip)
-            risk = stop - float(c["close"])
-        if not confirmed or risk <= 0 or risk < 0.5 * atr or risk > 4.0 * atr:
+            confirmed = (
+                float(c5["close"]) > float(c5["open"]) and
+                float(c5["close"]) > float(prev5["high"]) and
+                float(c5["close"]) > zone_high and
+                float(c5["close"]) > float(c5["ema21"])
+            )
+        if not confirmed:
             continue
 
-        entry = float(c["close"])
-        target = entry + 1.5 * risk if direction == "BUY" else entry - 1.5 * risk
-        signal_close = mt.index[-1] + pd.Timedelta(minutes=15)
+        entry = float(c5["close"])
+        buffer = max(0.15 * atr5, 2.0 * pip)
+        try:
+            swing_stop, swing = confirmed_swing_stop(m5i, direction, entry, buffer)
+        except ValueError:
+            continue
+        # Keep the stop beyond both the latest confirmed M5 swing and the
+        # original candle boundary; never compress it to an arbitrary tiny stop.
+        stop = (max(swing_stop, zone_high + buffer) if direction == "SELL"
+                else min(swing_stop, zone_low - buffer))
+        risk = stop - entry if direction == "SELL" else entry - stop
+        if risk <= 0 or risk < 0.5 * atr5 or risk > 4.0 * atr15:
+            continue
+
+        target = entry - 1.5 * risk if direction == "SELL" else entry + 1.5 * risk
+        signal_close = m5i.index[-1] + pd.Timedelta(minutes=5)
         return {
             "direction": direction, "entry": entry, "stop": stop, "target": target,
-            "risk_pips": risk / pip, "rr": 1.5, "atr": atr,
+            "risk_pips": risk / pip, "rr": 1.5, "atr": atr5,
             "breakout_level": structure, "breakout_time": mt.index[bi].isoformat(),
             "confirmed_swing": swing, "signal_time": signal_close.isoformat(),
             "pullback_time": pullback_time, "entry_zone_low": zone_low,
-            "entry_zone_high": zone_high,
+            "entry_zone_high": zone_high, "origin_time": mt.index[oi].isoformat(),
         }
     return None
-
 
 def send_telegram(message: str):
     if not TOKEN or not CHAT_ID:
