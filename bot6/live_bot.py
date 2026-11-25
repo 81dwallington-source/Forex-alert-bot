@@ -42,40 +42,114 @@ def pip_size(pair: str) -> float:
     return 0.01 if pair.endswith("JPY") else 0.0001
 
 
-def fetch_bars(pair: str, interval: str, required: int):
+def _normalise_bars(rows, pair: str, interval: str, required: int, source: str):
+    frame = pd.DataFrame(rows)
+    if frame.empty:
+        raise ValueError(f"{pair} {interval}: {source} returned no completed candles")
+    frame = frame.set_index("time").sort_index()
+    frame = frame[~frame.index.duplicated(keep="last")]
+    if len(frame) < required:
+        raise ValueError(f"{pair} {interval}: {source} returned {len(frame)} candles; need {required}")
+    frame.attrs["source"] = source
+    return frame
+
+
+def _fetch_yahoo_bars(pair: str, interval: str, required: int):
+    """Secondary intraday OHLC source; live BiQuote tick remains the entry cross-check."""
+    yahoo_interval = {"5m": "5m", "15m": "15m", "1h": "60m"}.get(interval)
+    minutes = {"5m": 5, "15m": 15, "1h": 60}.get(interval)
+    if not yahoo_interval or not minutes:
+        raise ValueError(f"unsupported Yahoo interval: {interval}")
+    symbol = f"{pair}=X"
+    period = "5d" if interval in ("5m", "15m") else "1mo"
     response = SESSION.get(
-        BASE_URL.format(symbol=pair),
-        params={"interval": interval, "limit": 500},
+        f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}",
+        params={"range": period, "interval": yahoo_interval, "includePrePost": "true"},
+        headers={"User-Agent": "Mozilla/5.0"},
         timeout=20,
     )
     response.raise_for_status()
     payload = response.json()
+    result = (payload.get("chart", {}).get("result") or [None])[0]
+    if not result:
+        raise ValueError(f"Yahoo returned no chart for {symbol}: {payload.get('chart', {}).get('error')}")
+    timestamps = result.get("timestamp") or []
+    quote = (result.get("indicators", {}).get("quote") or [{}])[0]
     rows = []
-    for bar in payload.get("bars") or []:
-        if bar.get("isOpen") is True:
-            continue
+    current = now_utc()
+    for i, stamp in enumerate(timestamps):
         try:
+            open_time = pd.to_datetime(stamp, unit="s", utc=True)
+            if open_time + pd.Timedelta(minutes=minutes) > current:
+                continue
             row = {
-                "time": pd.to_datetime(bar["openTime"], utc=True),
-                "open": float(bar["open"]),
-                "high": float(bar["high"]),
-                "low": float(bar["low"]),
-                "close": float(bar["close"]),
+                "time": open_time,
+                "open": float(quote["open"][i]),
+                "high": float(quote["high"][i]),
+                "low": float(quote["low"][i]),
+                "close": float(quote["close"][i]),
             }
+            if any(pd.isna(row[k]) for k in ("open", "high", "low", "close")):
+                continue
             if row["low"] <= 0 or row["high"] < max(row["open"], row["close"]) or row["low"] > min(row["open"], row["close"]):
                 continue
             rows.append(row)
-        except (KeyError, TypeError, ValueError):
+        except (IndexError, KeyError, TypeError, ValueError, OverflowError):
             continue
-    frame = pd.DataFrame(rows)
-    if frame.empty:
-        raise ValueError(f"{pair} {interval}: no completed candles returned")
-    frame = frame.set_index("time").sort_index()
-    frame = frame[~frame.index.duplicated(keep="last")]
-    if len(frame) < required:
-        raise ValueError(f"{pair} {interval}: only {len(frame)} completed candles; need {required}")
+    source = "Yahoo Finance intraday OHLC (secondary; not broker-verified)"
+    frame = _normalise_bars(rows, pair, interval, required, source)
+    age = (now_utc() - (frame.index[-1] + pd.Timedelta(minutes=minutes))).total_seconds() / 60
+    allowed_age = {"5m": 5, "15m": 25, "1h": 75}[interval]
+    if age < -1 or age > allowed_age:
+        raise ValueError(f"Yahoo {interval} candles are stale ({age:.1f} minutes old)")
     return frame
 
+
+def fetch_bars(pair: str, interval: str, required: int):
+    """Use BiQuote first; fall back to independent Yahoo candles only when BiQuote is stale/unusable."""
+    biquote_error = None
+    try:
+        response = SESSION.get(
+            BASE_URL.format(symbol=pair),
+            params={"interval": interval, "limit": 500},
+            timeout=20,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        rows = []
+        for bar in payload.get("bars") or []:
+            if bar.get("isOpen") is True:
+                continue
+            try:
+                row = {
+                    "time": pd.to_datetime(bar["openTime"], utc=True),
+                    "open": float(bar["open"]),
+                    "high": float(bar["high"]),
+                    "low": float(bar["low"]),
+                    "close": float(bar["close"]),
+                }
+                if row["low"] <= 0 or row["high"] < max(row["open"], row["close"]) or row["low"] > min(row["open"], row["close"]):
+                    continue
+                rows.append(row)
+            except (KeyError, TypeError, ValueError):
+                continue
+        frame = _normalise_bars(rows, pair, interval, required, "BiQuote OHLC")
+        minutes = {"5m": 5, "15m": 15, "1h": 60}[interval]
+        allowed_age = {"5m": 5, "15m": 25, "1h": 75}[interval]
+        age = (now_utc() - (frame.index[-1] + pd.Timedelta(minutes=minutes))).total_seconds() / 60
+        if age < -1 or age > allowed_age:
+            raise ValueError(f"BiQuote completed candles stale ({age:.1f} minutes old)")
+        return frame
+    except Exception as exc:
+        biquote_error = exc
+    try:
+        fallback = _fetch_yahoo_bars(pair, interval, required)
+        print(f"BOT6_FEED_FALLBACK {pair} {interval}: BiQuote unavailable ({biquote_error}); using {fallback.attrs.get('source')}", flush=True)
+        return fallback
+    except Exception as fallback_error:
+        raise ValueError(
+            f"{pair} {interval}: BiQuote failed ({biquote_error}); Yahoo fallback failed ({fallback_error})"
+        ) from fallback_error
 
 def check_fresh(frame: pd.DataFrame, interval_minutes: int, max_age_minutes: int):
     candle_close = frame.index[-1] + pd.Timedelta(minutes=interval_minutes)
@@ -506,7 +580,7 @@ def scan():
                 "stop_loss": round(signal["stop"], 6), "take_profit": round(signal["target"], 6),
                 "risk_pips": round(signal["risk_pips"], 1), "planned_rr": signal["rr"],
                 "outcome": "PENDING", "outcome_time_utc": "", "outcome_note": "",
-                "data_source": "BiQuote OHLC plus live tick cross-check; not broker-verified",
+                "data_source": " | ".join([m5.attrs.get("source", "unknown"), m15.attrs.get("source", "unknown"), h1.attrs.get("source", "unknown")]) + " + BiQuote live tick; not broker-verified",
                 "live_quote_mid": round(quote["mid"], 6),
                 "live_quote_time_utc": quote["timestamp"],
                 "confirmed_swing": round(signal["confirmed_swing"], 6),
@@ -526,7 +600,7 @@ def scan():
                 f"H1 trend aligned | Entry zone: {signal['entry_zone_low']:.6f}–{signal['entry_zone_high']:.6f} | Confirmed swing: {trade['confirmed_swing']}\n"
                 f"M15 confirmation candle close (UTC): {candle_close.isoformat()} | Data age: {candle_age:.1f} min\n"
                 f"Live tick check: {quote['mid']} ({quote['age_seconds']:.0f}s old)\n"
-                f"Source: BiQuote OHLC + live tick check; not broker-verified. Check broker price/spread before entry. "
+                f"Source: {m5.attrs.get('source', 'unknown')} + BiQuote live tick check; not broker-verified. Check broker price/spread before entry. "
                 f"Manual signal only; risk no more than 0.25%."
             )
             send_telegram(message)
