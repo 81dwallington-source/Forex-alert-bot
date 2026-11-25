@@ -101,6 +101,24 @@ def fetch_live_quote(pair: str):
             "source": quote.get("source", "BiQuote live tick")}
 
 
+def diagnose_primary_feed():
+    """Separate live-tick health from candle-collector health before the full scan."""
+    pair = "EURUSD"
+    try:
+        quote = fetch_live_quote(pair)
+        quote_note = f"live_tick_age={quote['age_seconds']:.0f}s price={quote['mid']}"
+    except Exception as exc:
+        quote_note = f"live_tick_error={type(exc).__name__}: {exc}"
+    try:
+        bars = fetch_bars(pair, "5m", 2)
+        latest_open = bars.index[-1]
+        age = (now_utc() - (latest_open + pd.Timedelta(minutes=5))).total_seconds() / 60
+        candle_note = f"latest_completed_M5={latest_open.isoformat()} age={age:.1f}m"
+    except Exception as exc:
+        candle_note = f"M5_error={type(exc).__name__}: {exc}"
+    print(f"BOT6_FEED_DIAGNOSTIC {pair}: {quote_note}; {candle_note}", flush=True)
+
+
 def confirmed_swing_stop(frame: pd.DataFrame, direction: str, entry: float, buffer: float):
     """Use the nearest confirmed 2-left/2-right pivot, not an arbitrary six-bar extreme."""
     window = frame.iloc[-42:-2]
@@ -436,6 +454,7 @@ def scan():
     no_setup = 0
     error_details = []
     print(f"BOT 6 starting impulse-origin retest scan: {len(PAIRS)} pairs | UTC={now_utc().isoformat()}", flush=True)
+    diagnose_primary_feed()
     for pair in PAIRS:
         if MAX_ONE_PER_PAIR_PER_UTC_DAY and pair in used_pairs:
             continue
@@ -526,6 +545,12 @@ def scan():
     print(f"BOT 6 scan complete. Alerts sent={sent}; pairs analysed={analysed}; no setup={no_setup}; data/errors={errors}; pending={len(state['pending'])}; outcomes={len(state['completed'])}", flush=True)
     if error_details:
         print("BOT 6 error summary: " + " | ".join(error_details[:8]), flush=True)
+    # Do not let GitHub report a green scan when every pair failed data validation.
+    if errors > 0 and analysed == 0:
+        raise RuntimeError(
+            f"Bot 6 unavailable: zero pairs analysed and {errors} data errors. "
+            "No signals were sent; inspect BOT6_FEED_DIAGNOSTIC and error summary."
+        )
 
 
 if __name__ == "__main__":
