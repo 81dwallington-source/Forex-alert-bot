@@ -1,6 +1,0 @@
-name = "best-bot-five-minute-scheduler"
-main = "worker.js"
-compatibility_date = "2026-11-18"
-
-[triggers]
-crons = ["*/5 * * * *"]
