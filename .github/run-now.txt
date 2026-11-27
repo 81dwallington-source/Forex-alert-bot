@@ -1,1 +1,0 @@
-One-time push trigger to start the Forex Alert Bot workflow. This file is not used by the bot.
