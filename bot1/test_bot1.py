@@ -10,7 +10,7 @@ def test_pip_size():
     assert pip_size("USDJPY")==0.01
 
 def test_m5_bos_requires_close_through_confirmed_swing():
-    highs=[1.100,1.102,1.105,1.103,1.101,1.102,1.104,1.106]
+    highs=[1.100,1.102,1.105,1.103,1.101,1.102,1.104,1.108]
     f=frame([[h-0.002,h,h-0.004,h-0.001] for h in highs])
     result=find_m5_bos(f,"BUY")
     assert result is not None and result["close"]>result["level"]
