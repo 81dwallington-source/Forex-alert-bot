@@ -1,1 +1,0 @@
-One-time trigger to start the Forex Alert Bot workflow after scheduled scans were delayed. This file is not used by the bot.
