@@ -4,10 +4,6 @@ on:
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
-  push:
-    paths:
-      - "bot1/**"
-      - ".github/workflows/bot1-h1-pullback.yml"
 
 permissions:
   contents: write
