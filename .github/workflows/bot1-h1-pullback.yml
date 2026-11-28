@@ -1,26 +1,27 @@
 name: Bot 1 — H1 Pullback M5 Mini BOS
 
 on:
-  # One long-lived worker covers almost six hours; the next run restarts it.
+  # GitHub Actions accepts a five-minute cron cadence. Actual start times can be delayed by GitHub.
   schedule:
-    - cron: "0 */6 * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
   push:
     paths:
       - ".github/workflows/bot1-h1-pullback.yml"
-      - "bot1/worker.py"
+      - "bot1/live_bot.py"
+      - "bot1/test_bot1.py"
 
 permissions:
   contents: write
 
 concurrency:
   group: bot1-h1-pullback-live
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 350
+    timeout-minutes: 4
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,13 +33,13 @@ jobs:
         run: python -m pip install requests pandas pytest
       - name: Validate Bot 1
         run: |
-          python -m py_compile bot1/live_bot.py bot1/worker.py
+          python -m py_compile bot1/live_bot.py
           cd bot1 && pytest -q
-      - name: Scan pairs and send Telegram alerts every five minutes
+      - name: Scan all pairs and send Telegram alerts
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python bot1/worker.py
+        run: python bot1/live_bot.py
       - name: Save Bot 1 state and signal log
         if: always()
         run: |
